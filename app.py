@@ -1,10 +1,44 @@
 import os, random, re
+from threading import BoundedSemaphore
 from flask import Flask, request, jsonify, render_template
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 from availability import check_all, check_many
 from ai_engine import generate_ai_names, trademark_links
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_CONTENT_LENGTH", "32768"))
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+def bounded_int_env(name, default, minimum, maximum):
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+app.config["MAX_CONTENT_LENGTH"] = bounded_int_env(
+    "MAX_CONTENT_LENGTH", 32768, 4096, 1048576
+)
+
+RATE_LIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
+AI_RATE_LIMIT = os.environ.get("AI_RATE_LIMIT", "5 per minute;30 per hour")
+CHECK_RATE_LIMIT = os.environ.get("CHECK_RATE_LIMIT", "60 per minute")
+LEGACY_RATE_LIMIT = os.environ.get("LEGACY_RATE_LIMIT", "20 per minute")
+MAX_CONCURRENT_AI_REQUESTS = bounded_int_env(
+    "MAX_CONCURRENT_AI_REQUESTS", 2, 1, 8
+)
+AI_REQUEST_SLOTS = BoundedSemaphore(MAX_CONCURRENT_AI_REQUESTS)
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri=RATE_LIMIT_STORAGE_URI,
+    headers_enabled=False,
+)
 
 
 @app.after_request
@@ -32,6 +66,15 @@ def add_security_headers(response):
 @app.errorhandler(413)
 def request_too_large(_error):
     return jsonify({"error": "Request body is too large"}), 413
+
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    return jsonify({
+        "error": "Too many requests. Please wait before trying again.",
+        "detail": str(error.description),
+        "retry_after": 60,
+    }), 429, {"Retry-After": "60"}
 
 
 def json_object():
@@ -145,12 +188,14 @@ def home(): return render_template("index.html")
 def health(): return {"status":"ok"}
 
 @app.get("/api/check/<name>")
+@limiter.limit(CHECK_RATE_LIMIT)
 def api_check(name):
     n=clean(name)
     if not 3<=len(n)<=30: return jsonify({"error":"Name must contain 3-30 latin letters"}),400
     row={"name":n.capitalize(),"score":score_name(n),"length":len(n)}; row.update(check_all(n)); return jsonify(row)
 
 @app.post("/api/ai-names")
+@limiter.limit(AI_RATE_LIMIT)
 def api_ai_names():
     data=json_object()
     if data is None:
@@ -162,21 +207,30 @@ def api_ai_names():
         count=max(1,min(20,int(data.get("count",10))))
     except (ValueError,TypeError):
         count=10
-    last_error=None
-    for attempt in range(3):
-        try:
-            names=generate_ai_names(brief,count,clean_preferences(data.get("preferences")))
-            for row in names:
-                row["trademark"]=trademark_links(row["name"])
-            return jsonify(names)
-        except Exception as error:
-            last_error=error
-            app.logger.warning("AI names attempt %s failed: %s",attempt+1,type(error).__name__)
-    app.logger.exception("AI names failed",exc_info=last_error)
-    return jsonify({"error":"Temporary AI error. Please try again.","error_type":type(last_error).__name__}),503
+    if not AI_REQUEST_SLOTS.acquire(blocking=False):
+        return jsonify({
+            "error":"AI is busy. Please try again in a few seconds.",
+            "retry_after":5,
+        }),503,{"Retry-After":"5"}
+    try:
+        last_error=None
+        for attempt in range(3):
+            try:
+                names=generate_ai_names(brief,count,clean_preferences(data.get("preferences")))
+                for row in names:
+                    row["trademark"]=trademark_links(row["name"])
+                return jsonify(names)
+            except Exception as error:
+                last_error=error
+                app.logger.warning("AI names attempt %s failed: %s",attempt+1,type(error).__name__)
+        app.logger.exception("AI names failed",exc_info=last_error)
+        return jsonify({"error":"Temporary AI error. Please try again.","error_type":type(last_error).__name__}),503
+    finally:
+        AI_REQUEST_SLOTS.release()
 
 
 @app.post("/api/ai-generate")
+@limiter.limit(AI_RATE_LIMIT)
 def api_ai_generate():
     data=json_object()
     if data is None:
@@ -185,6 +239,11 @@ def api_ai_generate():
     if not 3<=len(brief)<=500: return jsonify({"error":"Brief must contain 3-500 characters"}),400
     try: count=max(1,min(20,int(data.get("count",10))))
     except (ValueError,TypeError): count=10
+    if not AI_REQUEST_SLOTS.acquire(blocking=False):
+        return jsonify({
+            "error":"AI is busy. Please try again in a few seconds.",
+            "retry_after":5,
+        }),503,{"Retry-After":"5"}
     try:
         last_error = None
         for attempt in range(3):
@@ -205,8 +264,11 @@ def api_ai_generate():
     except Exception as error:
         app.logger.exception("AI generation failed")
         return jsonify({"error":"Temporary AI error. Please tap Generate again.","error_type":type(error).__name__}),503
+    finally:
+        AI_REQUEST_SLOTS.release()
 
 @app.get("/api/generate")
+@limiter.limit(LEGACY_RATE_LIMIT)
 def api_generate():
     try: count=max(1,min(40,int(request.args.get("count",20))))
     except ValueError: count=20
