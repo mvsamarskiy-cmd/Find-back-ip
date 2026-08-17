@@ -100,3 +100,14 @@ def check_all(name):
         "all_available": all(status == "available" for status in statuses),
         "all_verified": all(status != "unknown" for status in statuses),
     }
+
+
+def check_many(names, max_workers=None):
+    """Check several names concurrently while keeping outbound load bounded."""
+    names = list(names)
+    if not names:
+        return []
+    workers = max_workers or int(os.environ.get("AVAILABILITY_WORKERS", "8"))
+    workers = max(1, min(workers, 12, len(names)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return list(executor.map(check_all, names))
