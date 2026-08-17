@@ -1,12 +1,13 @@
-# NameMachine v4.0
+# NameMachine v4.1
 
 Deploy-ready Flask application for generating and screening international brand-name candidates.
 
 ## Features
 
 - heuristic name generation with configurable blacklists and scoring
-- concurrent .com, Instagram, and Telegram checks
-- OpenAI-powered generation from a brand brief
+- concurrent .com, Instagram, Telegram, TikTok, YouTube, Facebook, and X checks
+- OpenAI-powered generation from a project brief, automatically screened across all seven resources
+- ranking by confirmed available count, with UNKNOWN kept separate from AVAILABLE
 - language-risk notes and pronunciation guidance
 - manual EUIPO, WIPO, and UPRP trademark-search links
 - health endpoint and automated tests
