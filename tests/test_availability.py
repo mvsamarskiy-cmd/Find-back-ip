@@ -57,6 +57,10 @@ class AvailabilityTests(unittest.TestCase):
             patch("availability.check_com", return_value=available),
             patch("availability.check_instagram", return_value=available),
             patch("availability.check_telegram", return_value=unknown),
+            patch("availability.check_tiktok", return_value=unknown),
+            patch("availability.check_youtube", return_value=unknown),
+            patch("availability.check_facebook", return_value=unknown),
+            patch("availability.check_x", return_value=unknown),
         ):
             result = availability.check_all("Example")
         self.assertFalse(result["all_available"])
