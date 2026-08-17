@@ -117,6 +117,22 @@ class AvailabilityTests(unittest.TestCase):
         self.assertFalse(result["all_available"])
         self.assertFalse(result["all_verified"])
 
+    def test_check_all_contains_one_checker_crash(self):
+        available = {"status": "available"}
+        with (
+            patch("availability.check_com", side_effect=RuntimeError("boom")),
+            patch("availability.check_instagram", return_value=available),
+            patch("availability.check_telegram", return_value=available),
+            patch("availability.check_tiktok", return_value=available),
+            patch("availability.check_youtube", return_value=available),
+            patch("availability.check_facebook", return_value=available),
+            patch("availability.check_x", return_value=available),
+        ):
+            result = availability.check_all("Example")
+        self.assertEqual(result["availability"]["com"]["status"], "unknown")
+        self.assertEqual(result["availability"]["com"]["method"], "checker_error")
+        self.assertEqual(result["unknown_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
