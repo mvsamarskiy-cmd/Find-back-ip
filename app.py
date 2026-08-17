@@ -1,5 +1,5 @@
 import os, random, re
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template
 from availability import check_all, check_many
 from ai_engine import generate_ai_names, trademark_links
 
@@ -12,6 +12,35 @@ NUCLEI = ["a","e","i","o","u","ae","ai","ea","eo","oa","ui"]
 CODAS = ["","n","r","s","l","m","x","v","d","t","k"]
 
 def clean(s): return re.sub(r"[^a-z]", "", s.lower())
+
+def clean_preferences(value):
+    """Bound browser-supplied feedback before it reaches the model prompt."""
+    if not isinstance(value, dict):
+        return {"liked": [], "disliked": [], "reasons": {}}
+
+    def examples(key):
+        raw = value.get(key, [])
+        if not isinstance(raw, list):
+            return []
+        output = []
+        for item in raw[:20]:
+            name = clean(str(item))[:30]
+            if name and name not in output:
+                output.append(name)
+        return output
+
+    raw_reasons = value.get("reasons", {})
+    reasons = {}
+    if isinstance(raw_reasons, dict):
+        for key, score in list(raw_reasons.items())[:20]:
+            safe_key = re.sub(r"[^a-z_]", "", str(key).lower())[:30]
+            if not safe_key:
+                continue
+            try:
+                reasons[safe_key] = max(-20, min(20, int(score)))
+            except (TypeError, ValueError):
+                continue
+    return {"liked": examples("liked"), "disliked": examples("disliked"), "reasons": reasons}
 
 def score_name(name):
     n=clean(name); score=100
@@ -76,7 +105,7 @@ if(window.matchMedia('(max-width:860px)').matches){document.querySelector('.cont
 </script></body></html>"""
 
 @app.get("/")
-def home(): return render_template_string(HTML)
+def home(): return render_template("index.html")
 
 @app.get("/health")
 def health(): return {"status":"ok"}
@@ -100,7 +129,7 @@ def api_ai_names():
     last_error=None
     for attempt in range(3):
         try:
-            names=generate_ai_names(brief,count)
+            names=generate_ai_names(brief,count,clean_preferences(data.get("preferences")))
             for row in names:
                 row["trademark"]=trademark_links(row["name"])
             return jsonify(names)
@@ -121,7 +150,7 @@ def api_ai_generate():
         last_error = None
         for attempt in range(3):
             try:
-                names=generate_ai_names(brief,count)
+                names=generate_ai_names(brief,count,clean_preferences(data.get("preferences")))
                 break
             except Exception as error:
                 last_error = error

@@ -2,11 +2,14 @@ import json
 import os
 
 
-SYSTEM_PROMPT = """You are a rigorous international brand-name generator.
-Return short names that are easy to pronounce in English and are not tied to a
-country, pins, or one product. They should fit a community that votes ideas into
-limited physical products. Never claim trademark or handle availability. Flag
-possible negative meanings and phonetic concerns honestly."""
+SYSTEM_PROMPT = """You are a rigorous international naming strategist.
+Generate names for the exact entity, audience, market, language, and purpose in
+the user's brief. Prefer distinctive, memorable, pronounceable names over random
+letter strings or generic descriptions. Treat project feedback as evidence of
+the user's taste: learn patterns from liked examples, avoid patterns from disliked
+examples, but do not merely mutate or copy them. Never claim trademark, domain,
+company, website, or handle availability. Explain every candidate in Ukrainian
+and report possible negative meanings and pronunciation concerns honestly."""
 
 
 SCHEMA = {
@@ -32,7 +35,33 @@ SCHEMA = {
 }
 
 
-def generate_ai_names(brief, count=10):
+def _preference_context(preferences):
+    if not isinstance(preferences, dict):
+        return "No project-specific feedback yet."
+
+    def clean_examples(key):
+        values = preferences.get(key, [])
+        if not isinstance(values, list):
+            return []
+        return [str(value).strip()[:40] for value in values[:20] if str(value).strip()]
+
+    liked = clean_examples("liked")
+    disliked = clean_examples("disliked")
+    reasons = preferences.get("reasons", {})
+    if not isinstance(reasons, dict):
+        reasons = {}
+    safe_reasons = {
+        str(key)[:30]: max(-20, min(20, int(value)))
+        for key, value in list(reasons.items())[:20]
+        if isinstance(value, (int, float))
+    }
+    return json.dumps(
+        {"liked_examples": liked, "disliked_examples": disliked, "reason_weights": safe_reasons},
+        ensure_ascii=False,
+    )
+
+
+def generate_ai_names(brief, count=10, preferences=None):
     if not os.environ.get("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is not configured")
     from openai import OpenAI
@@ -41,7 +70,11 @@ def generate_ai_names(brief, count=10):
     response = client.responses.create(
         model=os.environ.get("OPENAI_MODEL", "gpt-5.6-luna"),
         instructions=SYSTEM_PROMPT,
-        input=f"Generate exactly {count} distinct candidates. Brand brief: {brief}",
+        input=(
+            f"Generate exactly {count} distinct candidates.\n"
+            f"Project brief: {brief}\n"
+            f"Project-specific feedback: {_preference_context(preferences)}"
+        ),
         text={"format": {"type": "json_schema", "name": "brand_names", "strict": True, "schema": SCHEMA}},
         store=False,
     )
