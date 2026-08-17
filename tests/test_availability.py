@@ -27,6 +27,13 @@ def response(status_code, text=""):
 
 
 class AvailabilityTests(unittest.TestCase):
+    def test_result_has_auditable_evidence_fields(self):
+        result = availability._result("unknown", "test", "https://example.test")
+        self.assertEqual(result["claimability"], "unconfirmed")
+        self.assertEqual(result["occupancy"], "unknown")
+        self.assertIn("checked_at", result)
+        self.assertIn("confidence", result)
+
     @patch("availability.requests.get", return_value=response(404))
     def test_com_404_is_available(self, _get):
         self.assertEqual(availability.check_com("Example")["status"], "available")
@@ -61,6 +68,27 @@ class AvailabilityTests(unittest.TestCase):
     @patch("availability.requests.get", return_value=response(404))
     def test_x_404_does_not_claim_availability(self, _get):
         self.assertEqual(availability.check_x("Example")["status"], "unknown")
+
+    @patch.dict("availability.os.environ", {"YOUTUBE_API_KEY": "test"}, clear=False)
+    @patch("availability.requests.get")
+    def test_youtube_official_lookup_confirms_occupied(self, get):
+        official = response(200)
+        official.json = lambda: {"items": [{"id": "channel"}]}
+        get.return_value = official
+        result = availability.check_youtube("Yuno")
+        self.assertEqual(result["status"], "taken")
+        self.assertEqual(result["source"], "youtube_data_api")
+        self.assertEqual(result["confidence"], 0.99)
+
+    @patch.dict("availability.os.environ", {"X_BEARER_TOKEN": "test"}, clear=False)
+    @patch("availability.requests.get")
+    def test_x_official_lookup_confirms_occupied(self, get):
+        official = response(200)
+        official.json = lambda: {"data": {"id": "user"}}
+        get.return_value = official
+        result = availability.check_x("Example")
+        self.assertEqual(result["status"], "taken")
+        self.assertEqual(result["source"], "x_api")
 
     @patch(
         "availability.requests.get",
