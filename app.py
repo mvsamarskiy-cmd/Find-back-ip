@@ -1,6 +1,7 @@
 import os, random, re
 from flask import Flask, request, jsonify, render_template_string
-from availability import check_all
+from availability import check_all, check_many
+from ai_engine import generate_ai_names, trademark_links
 
 app = Flask(__name__)
 
@@ -38,9 +39,10 @@ def generate(count=40, verify=False):
         sc=score_name(n)
         if sc<72: continue
         row={"name":n,"score":sc,"length":len(k)}
-        if verify:
-            row.update(check_all(n))
         rows.append(row); seen.add(k)
+    if verify and rows:
+        checks=check_many(row["name"] for row in rows)
+        for row, result in zip(rows, checks): row.update(result)
     return sorted(rows,key=lambda x:(not x.get("all_available",False),-x["score"],x["length"],x["name"]))
 
 HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -63,6 +65,20 @@ def api_check(name):
     n=clean(name)
     if not 3<=len(n)<=30: return jsonify({"error":"Name must contain 3-30 latin letters"}),400
     row={"name":n.capitalize(),"score":score_name(n),"length":len(n)}; row.update(check_all(n)); return jsonify(row)
+
+@app.post("/api/ai-generate")
+def api_ai_generate():
+    data=request.get_json(silent=True) or {}; brief=str(data.get("brief","")).strip()
+    if not 3<=len(brief)<=500: return jsonify({"error":"Brief must contain 3-500 characters"}),400
+    try: count=max(1,min(20,int(data.get("count",10))))
+    except (ValueError,TypeError): count=10
+    try:
+        names=generate_ai_names(brief,count)
+        for row in names: row["trademark"]=trademark_links(row["name"])
+        return jsonify(names)
+    except Exception:
+        app.logger.exception("AI generation failed")
+        return jsonify({"error":"AI generation is temporarily unavailable"}),503
 
 @app.get("/api/generate")
 def api_generate():
