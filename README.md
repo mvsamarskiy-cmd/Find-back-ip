@@ -29,6 +29,20 @@ The staged implementation and reliability requirements are documented in
 
 Deploy the `main` branch and set `OPENAI_API_KEY` as a Railway environment variable. The included Procfile starts Gunicorn and Railway supplies `PORT`.
 
+### API protection
+
+The default limits are intentionally conservative for a public, AI-backed service:
+
+- AI generation: `5 per minute;30 per hour` per client IP
+- live name checks: `60 per minute` per client IP
+- concurrent AI requests: `2` per application process
+
+They can be changed with `AI_RATE_LIMIT`, `CHECK_RATE_LIMIT`, and
+`MAX_CONCURRENT_AI_REQUESTS`. A single replica can use the default in-memory
+counter. For multiple workers or replicas, provision Redis and set
+`RATELIMIT_STORAGE_URI` to its `redis://` or `rediss://` URL so every process
+shares the same counters.
+
 ## Tests
 
 `python -m unittest discover -s tests -v`
