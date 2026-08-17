@@ -2,7 +2,11 @@ import json
 import unittest
 
 from ai_engine import (
+    BANNED_ROOTS,
+    BANNED_SUFFIXES,
+    SYSTEM_PROMPT,
     _generation_plan,
+    _is_allowed_name,
     _phonetic_signature,
     _preference_context,
     select_diverse_names,
@@ -46,8 +50,35 @@ class PreferenceContextTests(unittest.TestCase):
         )
 
     def test_select_diverse_names_rejects_invalid_rows(self):
-        rows = [None, {}, {"name": "12"}, {"name": "Valid"}]
-        self.assertEqual(select_diverse_names(rows, 2), [{"name": "Valid"}])
+        rows = [
+            None,
+            {},
+            {"name": "12"},
+            {"name": "Спільнодум"},
+            {"name": "Véya"},
+            {"name": "IdeaSync"},
+            {"name": "VoteNest"},
+            {"name": "BrightHub"},
+            {"name": "Valid"},
+        ]
+        self.assertEqual(select_diverse_names(rows, 10), [{"name": "Valid"}])
+
+    def test_allowed_name_enforces_ascii_and_blacklist(self):
+        self.assertTrue(_is_allowed_name("Nuvexa"))
+        self.assertFalse(_is_allowed_name("Nuvexa2"))
+        self.assertFalse(_is_allowed_name("Nuvéxa"))
+        self.assertFalse(_is_allowed_name("IdeaNest"))
+        self.assertFalse(_is_allowed_name("BrightHub"))
+
+    def test_generation_plan_contains_canonical_blacklist(self):
+        plan = _generation_plan(5)[1]
+        self.assertIn("Forbidden roots", plan)
+        self.assertIn("Forbidden endings", plan)
+        self.assertTrue(BANNED_ROOTS.issubset(set(plan.replace(",", "").replace(".", "").split())))
+        self.assertTrue(BANNED_SUFFIXES.issubset(set(plan.replace(",", "").replace(".", "").split())))
+
+    def test_prompt_requires_ascii_latin_names(self):
+        self.assertIn("ASCII Latin letters A-Z", SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":
