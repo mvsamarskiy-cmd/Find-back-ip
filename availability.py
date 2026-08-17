@@ -1,73 +1,102 @@
-from urllib.parse import quote
 import os
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
+
 import requests
 
 HTTP_TIMEOUT = float(os.environ.get("HTTP_TIMEOUT", "4"))
 USER_AGENT = os.environ.get("HTTP_USER_AGENT", "NameMachine/3.0")
 
 
+def _result(status, detail, url):
+    return {"status": status, "detail": detail, "url": url}
+
+
 def check_com(name):
     domain = f"{name.lower()}.com"
-    url = f"https://rdap.verisign.com/com/v1/domain/{quote(domain)}"
+    public_url = f"https://{domain}"
+    rdap_url = f"https://rdap.verisign.com/com/v1/domain/{quote(domain)}"
     try:
-        r = requests.get(url, timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT})
-        if r.status_code == 200:
-            return {"status": "taken", "detail": "Registered in .com RDAP", "url": f"https://{domain}"}
-        if r.status_code == 404:
-            return {"status": "available", "detail": "Not found in .com RDAP", "url": f"https://{domain}"}
-        return {"status": "unknown", "detail": f"RDAP HTTP {r.status_code}", "url": f"https://{domain}"}
-    except requests.RequestException as e:
-        return {"status": "unknown", "detail": f"RDAP error: {type(e).__name__}", "url": f"https://{domain}"}
+        response = requests.get(
+            rdap_url,
+            timeout=HTTP_TIMEOUT,
+            headers={"User-Agent": USER_AGENT},
+        )
+        if response.status_code == 200:
+            return _result("taken", "Registered in .com RDAP", public_url)
+        if response.status_code == 404:
+            return _result("available", "Not found in .com RDAP", public_url)
+        return _result("unknown", f"RDAP HTTP {response.status_code}", public_url)
+    except requests.RequestException as error:
+        return _result("unknown", f"RDAP error: {type(error).__name__}", public_url)
 
 
 def check_instagram(name):
-    handle = name.lower()
-    url = f"https://www.instagram.com/{handle}/"
+    url = f"https://www.instagram.com/{name.lower()}/"
     try:
-        r = requests.get(url, timeout=HTTP_TIMEOUT, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code == 404:
-            return {"status": "available", "detail": "Profile returned 404", "url": url}
-        if r.status_code == 200:
-            text = r.text.lower()
-            if "page isn't available" in text or "sorry, this page isn't available" in text:
-                return {"status": "available", "detail": "Instagram reports page unavailable", "url": url}
-            return {"status": "taken", "detail": "Public profile page exists", "url": url}
-        if r.status_code in (401, 403, 429):
-            return {"status": "unknown", "detail": f"Instagram blocked check ({r.status_code})", "url": url}
-        return {"status": "unknown", "detail": f"Instagram HTTP {r.status_code}", "url": url}
-    except requests.RequestException as e:
-        return {"status": "unknown", "detail": f"Instagram error: {type(e).__name__}", "url": url}
+        response = requests.get(
+            url,
+            timeout=HTTP_TIMEOUT,
+            allow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if response.status_code == 404:
+            return _result("available", "Profile returned 404", url)
+        if response.status_code == 200:
+            text = response.text.lower()
+            missing_markers = ("page isn't available", "sorry, this page isn't available")
+            if any(marker in text for marker in missing_markers):
+                return _result("available", "Instagram reports page unavailable", url)
+            # A generic HTTP 200 may be a login/challenge page, so it is not
+            # sufficient evidence that the requested handle exists.
+            handle = name.lower()
+            profile_markers = (f'\"username\":\"{handle}\"', f'@{handle}')
+            if any(marker in text for marker in profile_markers):
+                return _result("taken", "Public profile page exists", url)
+            return _result("unknown", "Instagram response inconclusive", url)
+        if response.status_code in (401, 403, 429):
+            return _result("unknown", f"Instagram blocked check ({response.status_code})", url)
+        return _result("unknown", f"Instagram HTTP {response.status_code}", url)
+    except requests.RequestException as error:
+        return _result("unknown", f"Instagram error: {type(error).__name__}", url)
 
 
 def check_telegram(name):
-    handle = name.lower()
-    url = f"https://t.me/{handle}"
+    url = f"https://t.me/{name.lower()}"
     try:
-        r = requests.get(url, timeout=HTTP_TIMEOUT, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
-        text = r.text.lower()
-        if r.status_code == 404:
-            return {"status": "available", "detail": "Telegram returned 404", "url": url}
-        if r.status_code == 200:
-            markers = ("view in telegram", "tgme_page_title", "tgme_page_extra")
-            if any(m in text for m in markers):
-                return {"status": "taken", "detail": "Public Telegram page exists", "url": url}
-            return {"status": "unknown", "detail": "Telegram response inconclusive", "url": url}
-        if r.status_code in (401, 403, 429):
-            return {"status": "unknown", "detail": f"Telegram blocked check ({r.status_code})", "url": url}
-        return {"status": "unknown", "detail": f"Telegram HTTP {r.status_code}", "url": url}
-    except requests.RequestException as e:
-        return {"status": "unknown", "detail": f"Telegram error: {type(e).__name__}", "url": url}
+        response = requests.get(
+            url,
+            timeout=HTTP_TIMEOUT,
+            allow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        text = response.text.lower()
+        if response.status_code == 404:
+            return _result("available", "Telegram returned 404", url)
+        if response.status_code == 200:
+            if "tgme_page_title" in text and "tgme_page_extra" in text:
+                return _result("taken", "Public Telegram page exists", url)
+            return _result("unknown", "Telegram response inconclusive", url)
+        if response.status_code in (401, 403, 429):
+            return _result("unknown", f"Telegram blocked check ({response.status_code})", url)
+        return _result("unknown", f"Telegram HTTP {response.status_code}", url)
+    except requests.RequestException as error:
+        return _result("unknown", f"Telegram error: {type(error).__name__}", url)
 
 
 def check_all(name):
-    result = {
-        "com": check_com(name),
-        "instagram": check_instagram(name),
-        "telegram": check_telegram(name),
+    checks = {
+        "com": check_com,
+        "instagram": check_instagram,
+        "telegram": check_telegram,
     }
-    statuses = [v["status"] for v in result.values()]
+    with ThreadPoolExecutor(max_workers=len(checks)) as executor:
+        futures = {key: executor.submit(check, name) for key, check in checks.items()}
+        result = {key: future.result() for key, future in futures.items()}
+
+    statuses = [value["status"] for value in result.values()]
     return {
         "availability": result,
-        "all_available": all(s == "available" for s in statuses),
-        "all_verified": all(s != "unknown" for s in statuses),
+        "all_available": all(status == "available" for status in statuses),
+        "all_verified": all(status != "unknown" for status in statuses),
     }
