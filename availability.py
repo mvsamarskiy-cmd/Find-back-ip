@@ -280,7 +280,18 @@ def check_all(name):
     }
     with ThreadPoolExecutor(max_workers=len(checks)) as executor:
         futures = {key: executor.submit(check, name) for key, check in checks.items()}
-        result = {key: future.result() for key, future in futures.items()}
+        result = {}
+        for key, future in futures.items():
+            try:
+                result[key] = future.result()
+            except Exception as error:
+                result[key] = _result(
+                    "unknown",
+                    f"Internal checker error: {type(error).__name__}",
+                    _public_url(key, name),
+                    source="internal",
+                    method="checker_error",
+                )
 
     statuses = [value["status"] for value in result.values()]
     available_count = sum(status == "available" for status in statuses)
@@ -295,6 +306,19 @@ def check_all(name):
         "all_available": available_count == len(checks),
         "all_verified": unknown_count == 0,
     }
+
+
+def _public_url(platform, name):
+    handle = name.lower()
+    return {
+        "com": f"https://{handle}.com",
+        "instagram": f"https://www.instagram.com/{handle}/",
+        "telegram": f"https://t.me/{handle}",
+        "tiktok": f"https://www.tiktok.com/@{handle}",
+        "youtube": f"https://www.youtube.com/@{handle}",
+        "facebook": f"https://www.facebook.com/{handle}",
+        "x": f"https://x.com/{handle}",
+    }[platform]
 
 
 def check_many(names, max_workers=None):

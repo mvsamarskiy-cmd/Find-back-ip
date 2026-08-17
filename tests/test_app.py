@@ -13,6 +13,22 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"status": "ok"})
 
+    def test_security_headers_are_present(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertIn("default-src 'self'", response.headers["Content-Security-Policy"])
+        self.assertIn("max-age=31536000", response.headers["Strict-Transport-Security"])
+
+    def test_request_body_limit_returns_json(self):
+        response = self.client.post(
+            "/api/ai-names",
+            data=b"x" * 33000,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.get_json()["error"], "Request body is too large")
+
     def test_check_rejects_invalid_name(self):
         self.assertEqual(self.client.get("/api/check/12").status_code, 400)
 
@@ -23,6 +39,15 @@ class AppTests(unittest.TestCase):
 
     def test_ai_requires_brief(self):
         self.assertEqual(self.client.post("/api/ai-generate", json={}).status_code, 400)
+
+    def test_ai_names_rejects_non_object_json(self):
+        response = self.client.post("/api/ai-names", json=[{"brief": "test"}])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "JSON body must be an object")
+
+    def test_ai_generate_rejects_non_object_json(self):
+        response = self.client.post("/api/ai-generate", json=[{"brief": "test"}])
+        self.assertEqual(response.status_code, 400)
 
     def test_clean_preferences_bounds_and_sanitizes_feedback(self):
         result = app.clean_preferences({
@@ -57,3 +82,5 @@ class AppTests(unittest.TestCase):
         self.assertIn("Профіль смаку", body)
         self.assertIn("Подобається", body)
         self.assertIn("projectSelect", body)
+        self.assertIn("window.confirm", body)
+        self.assertIn("Помилка перевірки", body)
