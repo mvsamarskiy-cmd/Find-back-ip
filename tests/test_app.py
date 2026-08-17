@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import app
 
@@ -29,6 +29,12 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
         self.assertEqual(response.get_json()["error"], "Request body is too large")
 
+    def test_bounded_int_env_survives_invalid_configuration(self):
+        with patch.dict("app.os.environ", {"TEST_LIMIT": "broken"}):
+            self.assertEqual(app.bounded_int_env("TEST_LIMIT", 2, 1, 8), 2)
+        with patch.dict("app.os.environ", {"TEST_LIMIT": "99"}):
+            self.assertEqual(app.bounded_int_env("TEST_LIMIT", 2, 1, 8), 8)
+
     def test_check_rejects_invalid_name(self):
         self.assertEqual(self.client.get("/api/check/12").status_code, 400)
 
@@ -48,6 +54,54 @@ class AppTests(unittest.TestCase):
     def test_ai_generate_rejects_non_object_json(self):
         response = self.client.post("/api/ai-generate", json=[{"brief": "test"}])
         self.assertEqual(response.status_code, 400)
+
+    @patch("app.trademark_links", return_value={})
+    @patch("app.generate_ai_names", return_value=[{
+        "name": "Veya", "reason": "Причина", "pronunciation": "VEY-a",
+        "language_risks": [],
+    }])
+    def test_ai_endpoint_rate_limit_returns_json(self, _generate, _trademark):
+        responses = [
+            self.client.post(
+                "/api/ai-names",
+                json={"brief": "Rate limit test"},
+                environ_base={"REMOTE_ADDR": "198.51.100.41"},
+            )
+            for _ in range(6)
+        ]
+        self.assertTrue(all(response.status_code == 200 for response in responses[:5]))
+        self.assertEqual(responses[5].status_code, 429)
+        self.assertIn("Too many requests", responses[5].get_json()["error"])
+        self.assertIsNotNone(responses[5].headers.get("Retry-After"))
+
+    def test_ai_busy_response_does_not_call_openai(self):
+        slots = MagicMock()
+        slots.acquire.return_value = False
+        with (
+            patch.object(app, "AI_REQUEST_SLOTS", slots),
+            patch("app.generate_ai_names") as generate,
+        ):
+            response = self.client.post(
+                "/api/ai-names",
+                json={"brief": "Busy test"},
+                environ_base={"REMOTE_ADDR": "198.51.100.42"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.headers["Retry-After"], "5")
+        self.assertEqual(response.get_json()["retry_after"], 5)
+        generate.assert_not_called()
+        slots.release.assert_not_called()
+
+    @patch("app.check_all", return_value={"availability": {}})
+    def test_check_endpoint_rate_limit(self, _check_all):
+        responses = [
+            self.client.get(
+                "/api/check/example",
+                environ_base={"REMOTE_ADDR": "198.51.100.43"},
+            )
+            for _ in range(61)
+        ]
+        self.assertEqual(responses[-1].status_code, 429)
 
     def test_clean_preferences_bounds_and_sanitizes_feedback(self):
         result = app.clean_preferences({
