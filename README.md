@@ -1,0 +1,1 @@
+# NameMachine v2.0\n\nDeploy-ready Flask web app for Railway.\n\nImportant: generated-name scores are heuristics only. Verify trademark, domain and social-handle availability independently before choosing a brand.\n
