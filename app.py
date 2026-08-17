@@ -4,6 +4,40 @@ from availability import check_all, check_many
 from ai_engine import generate_ai_names, trademark_links
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_CONTENT_LENGTH", "32768"))
+
+
+@app.after_request
+def add_security_headers(response):
+    """Apply a conservative browser baseline without breaking the inline UI."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; "
+        "form-action 'self'",
+    )
+    response.headers.setdefault(
+        "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+    )
+    return response
+
+
+@app.errorhandler(413)
+def request_too_large(_error):
+    return jsonify({"error": "Request body is too large"}), 413
+
+
+def json_object():
+    """Return a JSON object, rejecting arrays/scalars instead of raising 500s."""
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else None
 
 BANNED_ROOTS = {"idea","product","make","maker","creat","build","factory","forge","foundry","lab","studio","shop","store","market","communit","crowd","vote","preorder","drop","pin","merch","object","reality","real","ai","tech"}
 BANNED_SUFFIXES = {"ora","ova","ira","iva","eya","aya","io","ly","ify","verse","works","base","hub","flow","labs"}
@@ -118,7 +152,9 @@ def api_check(name):
 
 @app.post("/api/ai-names")
 def api_ai_names():
-    data=request.get_json(silent=True) or {}
+    data=json_object()
+    if data is None:
+        return jsonify({"error":"JSON body must be an object"}),400
     brief=str(data.get("brief","")).strip()
     if not 3<=len(brief)<=500:
         return jsonify({"error":"Brief must contain 3-500 characters"}),400
@@ -142,7 +178,10 @@ def api_ai_names():
 
 @app.post("/api/ai-generate")
 def api_ai_generate():
-    data=request.get_json(silent=True) or {}; brief=str(data.get("brief","")).strip()
+    data=json_object()
+    if data is None:
+        return jsonify({"error":"JSON body must be an object"}),400
+    brief=str(data.get("brief","")).strip()
     if not 3<=len(brief)<=500: return jsonify({"error":"Brief must contain 3-500 characters"}),400
     try: count=max(1,min(20,int(data.get("count",10))))
     except (ValueError,TypeError): count=10
