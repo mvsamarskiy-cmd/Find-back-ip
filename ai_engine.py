@@ -5,6 +5,18 @@ import unicodedata
 from difflib import SequenceMatcher
 
 
+BANNED_ROOTS = {
+    "idea", "product", "make", "maker", "creat", "build", "factory", "forge",
+    "foundry", "lab", "studio", "shop", "store", "market", "communit", "crowd",
+    "vote", "preorder", "drop", "pin", "merch", "object", "reality", "real",
+    "ai", "tech",
+}
+BANNED_SUFFIXES = {
+    "ora", "ova", "ira", "iva", "eya", "aya", "io", "ly", "ify", "verse",
+    "works", "base", "hub", "flow", "labs",
+}
+
+
 SYSTEM_PROMPT = """You are a rigorous international naming strategist.
 Generate names for the exact entity, audience, market, language, and purpose in
 the user's brief. Prefer distinctive, memorable, pronounceable names over random
@@ -12,7 +24,10 @@ letter strings or generic descriptions. Treat project feedback as evidence of
 the user's taste: learn patterns from liked examples, avoid patterns from disliked
 examples, but do not merely mutate or copy them. Never claim trademark, domain,
 company, website, or handle availability. Explain every candidate in Ukrainian
-and report possible negative meanings and pronunciation concerns honestly."""
+and report possible negative meanings and pronunciation concerns honestly.
+Candidate names must contain only ASCII Latin letters A-Z: no spaces, hyphens,
+apostrophes, digits, diacritics, or Cyrillic. Never use a candidate containing any
+forbidden root or ending listed in the generation plan."""
 
 
 GENERATION_FAMILIES = (
@@ -105,6 +120,19 @@ def _too_similar(left, right):
     )
 
 
+def _is_allowed_name(value):
+    """Enforce the canonical candidate alphabet and blacklist."""
+    name = str(value).strip()
+    if not re.fullmatch(r"[A-Za-z]{3,30}", name):
+        return False
+    normalized = name.lower()
+    if any(root in normalized for root in BANNED_ROOTS):
+        return False
+    if any(normalized.endswith(suffix) for suffix in BANNED_SUFFIXES):
+        return False
+    return True
+
+
 def select_diverse_names(candidates, count):
     """Keep valid candidates while removing exact and near duplicates."""
     selected = []
@@ -112,8 +140,7 @@ def select_diverse_names(candidates, count):
         if not isinstance(candidate, dict):
             continue
         name = str(candidate.get("name", "")).strip()
-        normalized = _normalized_name(name)
-        if not 3 <= len(normalized) <= 30:
+        if not _is_allowed_name(name):
             continue
         if any(_too_similar(name, row["name"]) for row in selected):
             continue
@@ -132,7 +159,9 @@ def _generation_plan(count):
         "Diversify the pool evenly across these naming families:\n"
         f"{families}\n"
         "Avoid repeated suffixes, one-letter variants, and names with the same "
-        "consonant skeleton. Do not repeat a candidate in another spelling."
+        "consonant skeleton. Do not repeat a candidate in another spelling.\n"
+        f"Forbidden roots anywhere in a name: {', '.join(sorted(BANNED_ROOTS))}.\n"
+        f"Forbidden endings: {', '.join(sorted(BANNED_SUFFIXES))}."
     )
 
 
@@ -156,7 +185,12 @@ def generate_ai_names(brief, count=10, preferences=None):
         store=False,
     )
     data = json.loads(response.output_text)
-    return select_diverse_names(data["names"], count)
+    selected = select_diverse_names(data["names"], count)
+    if len(selected) < count:
+        raise ValueError(
+            f"AI returned only {len(selected)} valid candidates; expected {count}"
+        )
+    return selected
 
 
 def trademark_links(name):
