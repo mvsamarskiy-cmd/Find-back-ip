@@ -2,6 +2,7 @@ import json
 import unittest
 
 from ai_engine import (
+    SYSTEM_PROMPT,
     _generation_plan,
     _phonetic_signature,
     _preference_context,
@@ -46,8 +47,12 @@ class PreferenceContextTests(unittest.TestCase):
         )
 
     def test_select_diverse_names_rejects_invalid_rows(self):
-        rows = [None, {}, {"name": "12"}, {"name": "Valid"}]
+        rows = [None, {}, {"name": "12"}, {"name": "Спільнодум"}, {"name": "Valid"}]
         self.assertEqual(select_diverse_names(rows, 2), [{"name": "Valid"}])
+
+    def test_prompt_requires_ascii_latin_candidate_names(self):
+        self.assertIn("only ASCII Latin letters A-Z", SYSTEM_PROMPT)
+        self.assertIn("Ukrainian is used only for", SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":

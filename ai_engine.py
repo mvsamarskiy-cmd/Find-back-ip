@@ -12,7 +12,10 @@ letter strings or generic descriptions. Treat project feedback as evidence of
 the user's taste: learn patterns from liked examples, avoid patterns from disliked
 examples, but do not merely mutate or copy them. Never claim trademark, domain,
 company, website, or handle availability. Explain every candidate in Ukrainian
-and report possible negative meanings and pronunciation concerns honestly."""
+and report possible negative meanings and pronunciation concerns honestly.
+Candidate names themselves must contain only ASCII Latin letters A-Z: no spaces,
+hyphens, apostrophes, digits, diacritics, or Cyrillic. Ukrainian is used only for
+the explanation and language-risk fields."""
 
 
 GENERATION_FAMILIES = (
@@ -156,7 +159,10 @@ def generate_ai_names(brief, count=10, preferences=None):
         store=False,
     )
     data = json.loads(response.output_text)
-    return select_diverse_names(data["names"], count)
+    selected = select_diverse_names(data["names"], count)
+    if not selected:
+        raise ValueError("AI returned no valid ASCII Latin candidates")
+    return selected
 
 
 def trademark_links(name):
