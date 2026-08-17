@@ -138,3 +138,6 @@ class AppTests(unittest.TestCase):
         self.assertIn("projectSelect", body)
         self.assertIn("window.confirm", body)
         self.assertIn("Помилка перевірки", body)
+        self.assertIn("Сервер тимчасово недоступний", body)
+        self.assertIn("підтверджено вільних", body)
+        self.assertIn("jsonResponse", body)
