@@ -5,7 +5,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 from availability import check_all, check_many
-from ai_engine import generate_ai_names, trademark_links
+from ai_engine import BANNED_ROOTS, BANNED_SUFFIXES, generate_ai_names, trademark_links
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -82,8 +82,6 @@ def json_object():
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else None
 
-BANNED_ROOTS = {"idea","product","make","maker","creat","build","factory","forge","foundry","lab","studio","shop","store","market","communit","crowd","vote","preorder","drop","pin","merch","object","reality","real","ai","tech"}
-BANNED_SUFFIXES = {"ora","ova","ira","iva","eya","aya","io","ly","ify","verse","works","base","hub","flow","labs"}
 ONSETS = ["v","n","m","r","l","s","t","k","d","f","z","b","p","c","g","h","br","cr","dr","fr","gr","kr","pr","tr","vr","st","sk","cl","fl","pl"]
 NUCLEI = ["a","e","i","o","u","ae","ai","ea","eo","oa","ui"]
 CODAS = ["","n","r","s","l","m","x","v","d","t","k"]
