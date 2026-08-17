@@ -27,7 +27,7 @@ The staged implementation and reliability requirements are documented in
 
 ## Railway
 
-Deploy the `main` branch and set `OPENAI_API_KEY` as a Railway environment variable. The included Procfile starts Gunicorn and Railway supplies `PORT`.
+Deploy the `main` branch and set `OPENAI_API_KEY` as a Railway environment variable. Railway uses `railway.json` to start Gunicorn with the checked-in `gunicorn.conf.py`; the default 180-second worker timeout leaves enough time for multi-candidate AI responses. Railway supplies `PORT`. `GUNICORN_TIMEOUT` can override the default without changing the start command.
 
 ### API protection
 
