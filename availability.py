@@ -41,12 +41,20 @@ def check_instagram(name):
             headers={"User-Agent": "Mozilla/5.0"},
         )
         if response.status_code == 404:
-            return _result("available", "Profile returned 404", url)
+            return _result(
+                "unknown",
+                "Public profile not found; claimability is not confirmed",
+                url,
+            )
         if response.status_code == 200:
             text = response.text.lower()
             missing_markers = ("page isn't available", "sorry, this page isn't available")
             if any(marker in text for marker in missing_markers):
-                return _result("available", "Instagram reports page unavailable", url)
+                return _result(
+                    "unknown",
+                    "Instagram page is unavailable; claimability is not confirmed",
+                    url,
+                )
             # A generic HTTP 200 may be a login/challenge page, so it is not
             # sufficient evidence that the requested handle exists.
             handle = name.lower()
@@ -72,7 +80,11 @@ def check_telegram(name):
         )
         text = response.text.lower()
         if response.status_code == 404:
-            return _result("available", "Telegram returned 404", url)
+            return _result(
+                "unknown",
+                "Public Telegram page not found; claimability is not confirmed",
+                url,
+            )
         if response.status_code == 200:
             if "tgme_page_title" in text and "tgme_page_extra" in text:
                 return _result("taken", "Public Telegram page exists", url)
@@ -85,7 +97,13 @@ def check_telegram(name):
 
 
 def _check_public_profile(name, platform, url, taken_markers=(), missing_markers=()):
-    """Return only evidence-backed states; login/challenge pages stay unknown."""
+    """Classify public evidence without equating absence with claimability.
+
+    Social platforms can return a 404 or a missing-account page for blocked,
+    reserved, suspended, localized, or otherwise unavailable handles. Those
+    responses are useful evidence that no public profile was observed, but
+    they do not prove the handle can be claimed.
+    """
     handle = name.lower()
     try:
         response = requests.get(
@@ -94,13 +112,21 @@ def _check_public_profile(name, platform, url, taken_markers=(), missing_markers
         )
         text = response.text.lower()
         if response.status_code == 404:
-            return _result("available", f"{platform} returned 404", url)
+            return _result(
+                "unknown",
+                f"{platform} public profile not found; claimability is not confirmed",
+                url,
+            )
         if response.status_code in (401, 403, 429):
             return _result("unknown", f"{platform} blocked check ({response.status_code})", url)
         if response.status_code != 200:
             return _result("unknown", f"{platform} HTTP {response.status_code}", url)
         if any(marker.format(handle=handle) in text for marker in missing_markers):
-            return _result("available", f"{platform} reports page unavailable", url)
+            return _result(
+                "unknown",
+                f"{platform} reports no public profile; claimability is not confirmed",
+                url,
+            )
         if any(marker.format(handle=handle) in text for marker in taken_markers):
             return _result("taken", f"Public {platform} profile exists", url)
         return _result("unknown", f"{platform} response inconclusive", url)

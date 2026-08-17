@@ -39,6 +39,29 @@ class AvailabilityTests(unittest.TestCase):
     def test_instagram_generic_200_is_unknown(self, _get):
         self.assertEqual(availability.check_instagram("Example")["status"], "unknown")
 
+    @patch("availability.requests.get", return_value=response(404))
+    def test_instagram_404_does_not_claim_availability(self, _get):
+        self.assertEqual(availability.check_instagram("Example")["status"], "unknown")
+
+    @patch("availability.requests.get", return_value=response(404))
+    def test_tiktok_404_does_not_claim_availability(self, _get):
+        self.assertEqual(availability.check_tiktok("Mova")["status"], "unknown")
+
+    @patch(
+        "availability.requests.get",
+        return_value=response(200, "Couldn't find this account"),
+    )
+    def test_tiktok_missing_marker_does_not_claim_availability(self, _get):
+        self.assertEqual(availability.check_tiktok("Mova")["status"], "unknown")
+
+    @patch("availability.requests.get", return_value=response(404))
+    def test_youtube_404_does_not_claim_availability(self, _get):
+        self.assertEqual(availability.check_youtube("Yuno")["status"], "unknown")
+
+    @patch("availability.requests.get", return_value=response(404))
+    def test_x_404_does_not_claim_availability(self, _get):
+        self.assertEqual(availability.check_x("Example")["status"], "unknown")
+
     @patch(
         "availability.requests.get",
         return_value=response(200, '<script>{"username":"example"}</script>'),
