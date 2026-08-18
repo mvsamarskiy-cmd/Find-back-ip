@@ -40,7 +40,26 @@
     switchTab(activeTab);
   };
 
-  function mergeStreamingRow(row, runId, batchNumber) {
+  function entryMode() {
+    return typeof window.nameMachineEntryMode === 'function'
+      ? window.nameMachineEntryMode()
+      : (current?.entryMode || 'other');
+  }
+
+  function searchContext(prompt) {
+    if (typeof window.nameMachineSearchContext === 'function') {
+      return window.nameMachineSearchContext(prompt);
+    }
+    return {
+      mode: 'new_brand',
+      brand_name: '',
+      guidance: current.directionAnchors.length
+        ? 'Орієнтуйся на: ' + current.directionAnchors.slice(-5).join(', ')
+        : '',
+    };
+  }
+
+  function mergeStreamingRow(row, runId, batchNumber, productMode) {
     const key = String(row?.name || '').toLowerCase();
     if (!key) return 0;
     const exists = current.results.some(item => String(item?.name || '').toLowerCase() === key);
@@ -49,6 +68,7 @@
     current.results.push({
       ...row,
       checked: true,
+      product_mode: productMode,
       run_id: runId,
       batch_number: batchNumber,
       received_seq: current.streamCounter,
@@ -104,6 +124,7 @@
 
   async function runStreamingBatch(prompt, resources, run, batchNumber, batchLabel, batchCount) {
     activeController = new AbortController();
+    const context = searchContext(prompt);
     const response = await fetch('/api/ai-generate-stream', {
       method: 'POST',
       signal: activeController.signal,
@@ -112,13 +133,7 @@
         brief: prompt,
         count: batchCount,
         preferences: buildPreferences(),
-        search_context: {
-          mode: 'new_brand',
-          brand_name: '',
-          guidance: current.directionAnchors.length
-            ? 'Орієнтуйся на: ' + current.directionAnchors.slice(-5).join(', ')
-            : '',
-        },
+        search_context: context,
         brand_dna: null,
         resources,
         required_resources: resources,
@@ -137,7 +152,7 @@
           return;
         }
         if (event.type === 'result' && event.row) {
-          const added = mergeStreamingRow(event.row, run.id, batchNumber);
+          const added = mergeStreamingRow(event.row, run.id, batchNumber, run.entry_mode || entryMode());
           if (added) {
             delivered += added;
             saveCurrent();
@@ -166,6 +181,7 @@
     if (activeController) return;
     const prompt = document.getElementById('prompt').value.trim();
     const resources = selectedResources();
+    const mode = entryMode();
     if (prompt.length < 3) {
       document.getElementById('status').textContent = 'Опиши задачу хоча б кількома словами.';
       return;
@@ -174,13 +190,24 @@
       document.getElementById('status').textContent = 'Обери хоча б один ресурс.';
       return;
     }
+    // Validate mode-specific fields before creating a run.
+    try { searchContext(prompt); } catch (error) {
+      document.getElementById('status').textContent = error.message || 'Уточни задачу.';
+      return;
+    }
 
     if (!current) current = emptySession();
+    current.entryMode = mode;
     current.resources = resources;
     write(RESOURCES_KEY, resources);
     const previousPrompt = current.promptHistory.at(-1)?.text || '';
     if (prompt !== previousPrompt) {
-      current.promptHistory.push({ text: prompt, at: new Date().toISOString(), feedback: feedbackSummary() });
+      current.promptHistory.push({
+        text: prompt,
+        at: new Date().toISOString(),
+        feedback: feedbackSummary(),
+        entry_mode: mode,
+      });
     }
     if (current.title === 'Нова сесія') current.title = prompt.replace(/\s+/g, ' ').slice(0, 48);
 
@@ -190,6 +217,7 @@
     const run = {
       id: 'r' + Date.now(),
       prompt,
+      entry_mode: mode,
       started: new Date().toISOString(),
       status: 'running',
       startResultCount: current.results.length,

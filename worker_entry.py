@@ -5,7 +5,14 @@ from __future__ import annotations
 import threading
 
 from audit_store import AUDIT_STORE
+from entry_mode_backend import install_entry_mode_intelligence
 import search_worker
+
+
+# The web bootstrap installs the same wrapper for foreground/HTTP generation.
+# Background generation imports app directly, so install it here as well before
+# the worker loop can interpret its first durable job.
+install_entry_mode_intelligence(search_worker.app_module)
 
 
 def _audit_cleanup_loop():

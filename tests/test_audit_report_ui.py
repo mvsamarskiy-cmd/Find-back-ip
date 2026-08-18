@@ -8,11 +8,13 @@ class AuditReportUiTests(unittest.TestCase):
     def test_internal_audit_and_client_report_load_before_client_controls(self):
         body = app.test_client().get("/").get_data(as_text=True)
         self.assertIn('/static/audit_report.js?v=4', body)
-        self.assertIn('/static/client_report.js?v=5', body)
+        self.assertIn('/static/client_report.js?v=6', body)
+        self.assertIn('/static/client_report_modes.js?v=1', body)
         self.assertIn('/static/report_controls.js?v=5', body)
         self.assertLess(body.index('/static/background_search.js'), body.index('/static/audit_report.js?v=4'))
-        self.assertLess(body.index('/static/audit_report.js?v=4'), body.index('/static/client_report.js?v=5'))
-        self.assertLess(body.index('/static/client_report.js?v=5'), body.index('/static/report_controls.js?v=5'))
+        self.assertLess(body.index('/static/audit_report.js?v=4'), body.index('/static/client_report.js?v=6'))
+        self.assertLess(body.index('/static/client_report.js?v=6'), body.index('/static/client_report_modes.js?v=1'))
+        self.assertLess(body.index('/static/client_report_modes.js?v=1'), body.index('/static/report_controls.js?v=5'))
         self.assertLess(body.index('/static/report_controls.js?v=5'), body.index('/static/feed_navigation.js'))
 
     def test_internal_compact_report_is_categorized_and_single_clock(self):
