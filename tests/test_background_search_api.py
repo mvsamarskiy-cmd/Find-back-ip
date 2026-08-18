@@ -62,6 +62,9 @@ class BackgroundSearchApiTests(unittest.TestCase):
         self.assertTrue(data["procedural_search"]["default_for_hunter"])
         self.assertTrue(data["procedural_search"]["one_root_at_a_time"])
         self.assertIn("phonetic", data["procedural_search"]["strategies"])
+        self.assertTrue(data["turbo_search"]["supported"])
+        self.assertTrue(data["turbo_search"]["primary_feed_strict_free_only"])
+        self.assertTrue(data["turbo_search"]["rejected_rows_remain_durable"])
 
     def test_create_list_read_and_cancel_job(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
@@ -98,9 +101,26 @@ class BackgroundSearchApiTests(unittest.TestCase):
         self.assertEqual(hunter["target_matches"], 3)
         self.assertEqual(hunter["max_checks"], 800)
         self.assertEqual(hunter["match_policy"], "claimable")
+        self.assertEqual(job["search_context"]["search_strategy"], "procedural")
         procedural = job["search_context"]["procedural_search"]
         self.assertTrue(procedural["enabled"])
         self.assertEqual(procedural["strategy"], "procedural")
+
+    def test_create_turbo_hunter_keeps_broad_search_and_marks_primary_feed(self):
+        path = f"/api/sessions/{self.session['session_id']}/search-jobs"
+        created = self.client.post(
+            path,
+            json=self.payload(target_matches=3, max_checks=500, search_strategy="turbo"),
+            headers=self.headers,
+        )
+        self.assertEqual(created.status_code, 202)
+        job = created.get_json()["job"]
+        context = job["search_context"]
+        self.assertEqual(context["search_strategy"], "turbo")
+        self.assertTrue(context["turbo_search"]["enabled"])
+        self.assertTrue(context["turbo_search"]["strict_free_primary_feed"])
+        self.assertNotIn("procedural_search", context)
+        self.assertIn("Turbo search", context["guidance"])
 
     def test_hunter_can_explicitly_keep_old_adaptive_strategy(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
@@ -112,7 +132,9 @@ class BackgroundSearchApiTests(unittest.TestCase):
         self.assertEqual(created.status_code, 202)
         job = created.get_json()["job"]
         self.assertIn("availability_hunter", job["search_context"])
+        self.assertEqual(job["search_context"]["search_strategy"], "adaptive")
         self.assertNotIn("procedural_search", job["search_context"])
+        self.assertNotIn("turbo_search", job["search_context"])
 
     def test_availability_hunter_bounds_and_strategy_are_enforced(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
