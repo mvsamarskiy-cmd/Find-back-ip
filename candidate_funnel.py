@@ -6,7 +6,7 @@ LOCAL_SOURCE = "local_lexical_expansion"
 DEFAULT_LOCAL_RAW_LIMIT = 4000
 DEFAULT_STRUCTURAL_LIMIT = 1200
 DEFAULT_LINGUISTIC_LIMIT = 420
-DEFAULT_COLLISION_LIMIT = 160
+DEFAULT_COLLISION_LIMIT = 180
 
 # Deliberately small stoplist: the local expander should use project-specific
 # nouns/adjectives, not prose glue from a brief. It is not a semantic model.
@@ -95,14 +95,8 @@ def _candidate(name, family, roots, pattern):
     }
 
 
-def expand_local_families(brief="", brand_dna=None, limit=DEFAULT_LOCAL_RAW_LIMIT):
-    """Create a large deterministic local pool without another AI request.
-
-    The generator intentionally uses substantial root pieces and multi-root
-    composition rather than one-letter spelling mutations. The result is still a
-    raw pool: later stages rank readability, collapse internal collisions, and
-    finally apply the stricter product-level dedupe and family quotas.
-    """
+def _expand_raw_local_families(brief="", brand_dna=None, limit=DEFAULT_LOCAL_RAW_LIMIT):
+    """Create a large deterministic raw pool without another AI request."""
     limit = max(0, min(10000, int(limit)))
     seeds = lexical_seeds(brief, brand_dna)
     if len(seeds) < 2 or limit == 0:
@@ -124,7 +118,6 @@ def expand_local_families(brief="", brand_dna=None, limit=DEFAULT_LOCAL_RAW_LIMI
         output.append(row)
         return len(output) < limit
 
-    # Ordered direct compounds preserve literal semantic anchors.
     for left in seeds:
         for right in seeds:
             if left == right:
@@ -132,30 +125,16 @@ def expand_local_families(brief="", brand_dna=None, limit=DEFAULT_LOCAL_RAW_LIMI
             if not add(left + right, "semantic_compound", (left, right), "compound"):
                 return output
 
-    # Pairwise blends use substantial pieces from both roots.
     for index, left in enumerate(seeds):
         for right in seeds[index + 1:]:
             left_front = max(2, min(5, (len(left) + 1) // 2))
             right_back = max(2, min(5, len(right) // 2))
-            if not add(
-                left[:left_front] + right[-right_back:],
-                "root_blend",
-                (left, right),
-                "front/back blend",
-            ):
+            if not add(left[:left_front] + right[-right_back:], "root_blend", (left, right), "front/back blend"):
+                return output
+            if not add(right[:left_front] + left[-right_back:], "root_blend", (right, left), "front/back blend"):
                 return output
             if not add(
-                right[:left_front] + left[-right_back:],
-                "root_blend",
-                (right, left),
-                "front/back blend",
-            ):
-                return output
-
-            left_mid = left[: max(2, len(left) // 2)]
-            right_mid = right[max(1, len(right) // 2):]
-            if not add(
-                left_mid + right_mid,
+                left[: max(2, len(left) // 2)] + right[max(1, len(right) // 2):],
                 "invented_phonetic",
                 (left, right),
                 "midpoint blend",
@@ -169,8 +148,6 @@ def expand_local_families(brief="", brand_dna=None, limit=DEFAULT_LOCAL_RAW_LIMI
             ):
                 return output
 
-    # Three-root compositions increase breadth cheaply without inventing unrelated
-    # vocabulary. Only compact slices are kept so candidates do not become phrases.
     seed_count = len(seeds)
     for i in range(seed_count - 2):
         for j in range(i + 1, seed_count - 1):
@@ -181,24 +158,14 @@ def expand_local_families(brief="", brand_dna=None, limit=DEFAULT_LOCAL_RAW_LIMI
                     + second[:2]
                     + third[-max(2, min(4, len(third) // 2)):]
                 )
-                if not add(
-                    compact,
-                    "root_blend",
-                    (first, second, third),
-                    "three-root blend",
-                ):
+                if not add(compact, "root_blend", (first, second, third), "three-root blend"):
                     return output
                 rotated = (
                     second[: max(2, min(4, len(second) // 2))]
                     + third[:2]
                     + first[-max(2, min(4, len(first) // 2)):]
                 )
-                if not add(
-                    rotated,
-                    "invented_phonetic",
-                    (second, third, first),
-                    "rotated three-root blend",
-                ):
+                if not add(rotated, "invented_phonetic", (second, third, first), "rotated three-root blend"):
                     return output
 
     return output
@@ -263,12 +230,7 @@ def structural_quality(name):
 
 
 def linguistic_quality(name):
-    """Return a conservative readability/pronounceability proxy, not semantics.
-
-    This stage is intentionally language-light. It does not claim that a word is
-    good in a particular language; it only removes mechanically awkward strings
-    before expensive external checks.
-    """
+    """Conservative readability/pronounceability proxy, not semantic judgement."""
     value = _letters(name)
     if not value:
         return 0
@@ -289,8 +251,6 @@ def linguistic_quality(name):
         score -= 12
     if any(pair in value for pair in ("qx", "xq", "qj", "jq", "wq", "qz", "zq")):
         score -= 18
-    if value[0] in "xq" and len(value) > 7:
-        score -= 6
     if len(value) > 12:
         score -= 18
     if 5 <= len(value) <= 9 and 2 <= syllable_proxy <= 3:
@@ -316,7 +276,7 @@ def rank_candidate_pool(candidates):
 
 
 def _collision_signature(name):
-    """Coarse internal-cluster key used only to prevent morphology monoculture."""
+    """Coarse internal cluster key; this is not legal/trademark collision data."""
     value = _letters(name)
     if not value:
         return ""
@@ -340,30 +300,17 @@ def _dedupe_exact(candidates):
     return output
 
 
-def staged_candidate_pool(
-    model_candidates,
-    brief="",
-    brand_dna=None,
-    local_limit=DEFAULT_LOCAL_RAW_LIMIT,
+def _stage_rows(
+    candidates,
     structural_limit=DEFAULT_STRUCTURAL_LIMIT,
     linguistic_limit=DEFAULT_LINGUISTIC_LIMIT,
     collision_limit=DEFAULT_COLLISION_LIMIT,
 ):
-    """Run cheap deterministic stages before product-level shortlist selection.
-
-    Returns `(rows, metrics)`. The `collision` stage here means collisions inside
-    the generated candidate pool, not trademark/domain/social collision evidence.
-    External identity checks still happen later and remain capped by the caller.
-    """
-    local_limit = max(0, min(10000, int(local_limit)))
     structural_limit = max(1, min(5000, int(structural_limit)))
     linguistic_limit = max(1, min(structural_limit, int(linguistic_limit)))
     collision_limit = max(1, min(linguistic_limit, int(collision_limit)))
 
-    model_rows = [dict(row) for row in model_candidates if isinstance(row, dict)]
-    local_rows = expand_local_families(brief, brand_dna, limit=local_limit)
-    raw = _dedupe_exact(model_rows + local_rows)
-
+    raw = _dedupe_exact(candidates)
     structural = rank_candidate_pool(raw)[:structural_limit]
 
     linguistic = []
@@ -382,14 +329,12 @@ def staged_candidate_pool(
     collision_rows = []
     signature_counts = {}
     family_counts = {}
+    family_cap = max(8, collision_limit // 3)
     for row in linguistic_rows:
         signature = _collision_signature(row.get("name", ""))
         family = str(row.get("family", "unknown"))
-        # Keep several representatives from a broad family, but at most two from
-        # the same coarse sound/morphology shape.
         if signature and signature_counts.get(signature, 0) >= 2:
             continue
-        family_cap = max(8, collision_limit // 3)
         if family_counts.get(family, 0) >= family_cap:
             continue
         signature_counts[signature] = signature_counts.get(signature, 0) + 1
@@ -398,12 +343,60 @@ def staged_candidate_pool(
         if len(collision_rows) >= collision_limit:
             break
 
-    metrics = {
-        "model_candidates": len(model_rows),
-        "local_candidates": len(local_rows),
+    return collision_rows, {
         "raw_unique": len(raw),
         "structural_survivors": len(structural),
         "linguistic_survivors": len(linguistic_rows),
         "collision_survivors": len(collision_rows),
     }
-    return collision_rows, metrics
+
+
+def expand_local_families(brief="", brand_dna=None, limit=180):
+    """Return the best local survivors from a much larger cheap candidate space.
+
+    The public `limit` remains the returned-pool limit for backward compatibility.
+    Internally the generator explores up to 4,000 deterministic candidates and
+    reduces them through structural, readability, and internal-collision stages.
+    """
+    limit = max(0, min(DEFAULT_COLLISION_LIMIT, int(limit)))
+    if limit == 0:
+        return []
+    raw = _expand_raw_local_families(
+        brief,
+        brand_dna,
+        limit=DEFAULT_LOCAL_RAW_LIMIT,
+    )
+    survivors, _metrics = _stage_rows(
+        raw,
+        structural_limit=DEFAULT_STRUCTURAL_LIMIT,
+        linguistic_limit=DEFAULT_LINGUISTIC_LIMIT,
+        collision_limit=max(limit, 1),
+    )
+    return survivors[:limit]
+
+
+def staged_candidate_pool(
+    model_candidates,
+    brief="",
+    brand_dna=None,
+    local_limit=DEFAULT_LOCAL_RAW_LIMIT,
+    structural_limit=DEFAULT_STRUCTURAL_LIMIT,
+    linguistic_limit=DEFAULT_LINGUISTIC_LIMIT,
+    collision_limit=DEFAULT_COLLISION_LIMIT,
+):
+    """Expose the full hybrid pre-check funnel with stage metrics for tests/audit."""
+    local_limit = max(0, min(10000, int(local_limit)))
+    model_rows = [dict(row) for row in model_candidates if isinstance(row, dict)]
+    local_rows = _expand_raw_local_families(brief, brand_dna, limit=local_limit)
+    survivors, metrics = _stage_rows(
+        model_rows + local_rows,
+        structural_limit=structural_limit,
+        linguistic_limit=linguistic_limit,
+        collision_limit=collision_limit,
+    )
+    metrics = {
+        "model_candidates": len(model_rows),
+        "local_candidates": len(local_rows),
+        **metrics,
+    }
+    return survivors, metrics
