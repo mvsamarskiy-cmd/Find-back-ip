@@ -21,17 +21,23 @@ app_module.check_many = check_many_v2
 install_streaming_routes(app, app_module)
 
 
-RELEASE_MARKER = "v6.8-stream-verification-feed"
+RELEASE_MARKER = "v6.9-resource-progress-stream"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
+RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 
 
 @app.after_request
 def prevent_stale_html(response):
-    """Disable stale shells and load the incremental feed client on HTML pages."""
+    """Disable stale shells and load incremental clients on HTML pages."""
     if response.mimetype == "text/html":
         body = response.get_data(as_text=True)
-        if STREAM_CLIENT_TAG not in body and "</body>" in body:
-            response.set_data(body.replace("</body>", STREAM_CLIENT_TAG + "\n</body>", 1))
+        tags = []
+        if STREAM_CLIENT_TAG not in body:
+            tags.append(STREAM_CLIENT_TAG)
+        if RESOURCE_PROGRESS_TAG not in body:
+            tags.append(RESOURCE_PROGRESS_TAG)
+        if tags and "</body>" in body:
+            response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
@@ -103,6 +109,8 @@ def api_verification_diagnostics():
             "transport": "ndjson",
             "endpoint": "/api/ai-generate-stream",
             "newest_first_feed": True,
+            "candidate_events": True,
+            "resource_progress_events": True,
         },
         "providers": providers,
     })
