@@ -1,7 +1,7 @@
 # NameMachine implementation status
 
-Updated for the selectable-resource release prepared from GitHub `main`
-commit `477d2f4dab16732b271bdc352c3047d54c6c604a` on 2026-08-18.
+Updated for the Brand DNA v1 release prepared from GitHub `main` commit
+`12ab1188ea05cf0ab3842df3d4f79f2c888e67c7` on 2026-08-18.
 
 This file records what exists now. `PRODUCT_PLAN.md` remains the implementation
 order for unfinished work.
@@ -20,12 +20,14 @@ order for unfinished work.
 | Evidence envelope and optional official YouTube/X adapters | PR #9 | Included |
 | Evidence-correct status vocabulary and ranking | Phase 2.1 release | Included |
 | Single UI source of truth | Phase 2.1 release | Obsolete embedded v4.2 UI removed; `templates/index.html` is canonical |
-| Name.com confirmation after `.com` RDAP screening | Current registrar release | Implemented and tested; production credentials and live actionable proof remain pending |
-| Per-search resource selection and dynamic `N/N` results | Current selectable-resource release | Implemented for API, mobile UI, local persistence, and historical searches |
+| Name.com confirmation after `.com` RDAP screening | Registrar release | Implemented and tested; production credentials and live actionable proof remain pending |
+| Per-search resource selection and dynamic `N/N` results | Selectable-resource release | Implemented for API, mobile UI, local persistence, and historical searches |
 | API, browser-history, dependency, and security stabilization | PR #10 | Included |
 | AI/check rate limits and bounded AI concurrency | PR #11 | Included |
 | Clear UI handling of HTML/5xx responses | PR #13 | Included |
-| Railway timeout-safe Gunicorn configuration and health check | commits `3a31297` through `0437175` | Included and deployed |
+| Railway timeout-safe Gunicorn configuration and health check | commits `3a31297` through `0437175` | Included |
+| Lightweight Git-based production rollback | PR #19 | Included; verified revert workflow preserves normal Git history and CI |
+| Structured Brand DNA and safe public-website analysis contract | Brand DNA v1 release | Implemented for API and naming context; browser UI wiring remains pending |
 
 ## Product-plan status
 
@@ -36,35 +38,41 @@ order for unfinished work.
   Production Name.com credentials and a live actionable proof are pending;
   Telegram MTProto and Fragment classification are not implemented.
 - Phase 3 is partially complete: bounded multi-family generation, basic
-  deduplication, and exact required-resource selection exist. Brand DNA, the
-  20,000-candidate funnel, and full availability-composition scoring are not
-  implemented.
-- Phase 4 is not implemented. Projects, history, and preferences remain in the
-  current browser; PostgreSQL, migrations, accounts, idempotency, export, and
-  server-side deletion are pending.
-- Phase 5 is partially complete only at the web-process level: timeouts, health,
-  bounded concurrency, rate limits, and controlled errors exist. The queue,
-  resumable jobs, metrics, alerts, load tests, and atomic staging promotion are
-  pending.
+  deduplication, exact required-resource selection, a bounded Brand DNA schema,
+  `/api/brand-dna`, safe public website extraction, and Brand-DNA-aware naming
+  exist. Browser controls for website/DNA review, the 20,000-candidate funnel,
+  and full availability-composition scoring remain pending.
+- Phase 4 is not implemented. Projects, history, preferences, and Brand DNA are
+  not yet durable server-side data; PostgreSQL, migrations, accounts,
+  idempotency, export, and server-side deletion are pending.
+- Phase 5 is partially complete only at the web-process/release level: timeouts,
+  health, bounded concurrency, rate limits, controlled errors, CI, branch cleanup,
+  and Git-based rollback exist. The queue, resumable jobs, metrics, alerts, load
+  tests, and atomic staging promotion are pending.
 
-## Verification performed before Railway cleanup
+## Last confirmed production verification
 
-- GitHub `main` and canonical Railway deployment use commit
-  `043717542c9ad71174a14ffafe3074766a7d850e`.
-- The complete unit suite passes: 43 tests.
-- The production root and `/health` return HTTP 200.
-- A production AI request returned HTTP 200 in the deployment logs.
-- No production HTTP 5xx responses were present in the inspected two-hour window.
-- `resourceful-stillness` is the only attached project containing the
-  `OPENAI_API_KEY` variable name and the established `04fec` domain.
-- The 15 duplicate projects have no variables, volumes, buckets, or custom
-  domains. Their only services point to this same repository.
+The last fully recorded Railway live verification predates later GitHub releases:
+
+- canonical Railway production used commit `043717542c9ad71174a14ffafe3074766a7d850e`;
+- the then-current complete unit suite passed 43 tests;
+- the production root and `/health` returned HTTP 200;
+- a production AI request returned HTTP 200 in inspected deployment logs;
+- no production HTTP 5xx responses were present in the inspected two-hour window;
+- `resourceful-stillness` was the only attached project containing the
+  `OPENAI_API_KEY` variable name and established `04fec` domain;
+- the inspected duplicate projects had no variables, volumes, buckets, or custom
+  domains.
+
+Later GitHub releases must not be described as live-verified until the normal
+post-deploy smoke and commit match are confirmed.
 
 ## Next implementation order
 
-1. Define structured Brand DNA input and a safe website-analysis contract.
+1. Wire website URL + Brand DNA review/edit into the browser project flow so the
+   compiled DNA is visible, reusable, and automatically sent with generation.
 2. Improve the evidence operator and external adapters for the selected social
-   platforms, starting with Telegram classification.
+   platforms, starting with Telegram MTProto/Fragment classification.
 3. Add durable PostgreSQL history with idempotency before scaling generation.
 4. Implement the mathematical generation funnel in small, independently tested
    releases.
