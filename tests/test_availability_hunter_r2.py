@@ -84,15 +84,16 @@ class AvailabilityHunterR2Tests(unittest.TestCase):
         ))
 
     def test_hunter_stops_when_strict_match_target_is_reached(self):
-        job = self.enqueue_hunter(target_matches=2, max_checks=8, batch_size=2)
+        self.enqueue_hunter(target_matches=2, max_checks=8, batch_size=2)
         batches = []
+        suffixes = ["Alpha", "Beta", "Gamma", "Delta"]
 
         def generate(_job, _count, context):
             batches.append(context)
-            index = len(batches)
+            suffix = suffixes[len(batches) - 1]
             return [
-                {"name": f"Free{index}A"},
-                {"name": f"Taken{index}B"},
+                {"name": f"Free{suffix}"},
+                {"name": f"Taken{suffix}"},
             ]
 
         def verify(_job, candidate):
@@ -114,11 +115,10 @@ class AvailabilityHunterR2Tests(unittest.TestCase):
 
     def test_purchasable_does_not_satisfy_free_match_goal(self):
         self.enqueue_hunter(target_matches=1, max_checks=2, batch_size=1, max_batches=2)
-        counter = {"value": 0}
+        suffixes = iter(["Alpha", "Beta"])
 
         def generate(_job, _count, _context):
-            counter["value"] += 1
-            return [{"name": f"Market{counter['value']}"}]
+            return [{"name": f"Market{next(suffixes)}"}]
 
         def verify(_job, candidate):
             return self.verified(candidate, "purchasable")
@@ -133,14 +133,10 @@ class AvailabilityHunterR2Tests(unittest.TestCase):
 
     def test_hunter_stops_at_check_budget_when_no_match_exists(self):
         self.enqueue_hunter(target_matches=2, max_checks=3, batch_size=2, max_batches=4)
-        counter = {"value": 0}
+        suffixes = iter(["Alpha", "Beta", "Gamma"])
 
         def generate(_job, count, _context):
-            rows = []
-            for _ in range(count):
-                counter["value"] += 1
-                rows.append({"name": f"Taken{counter['value']}"})
-            return rows
+            return [{"name": f"Taken{next(suffixes)}"} for _ in range(count)]
 
         def verify(_job, candidate):
             return self.verified(candidate, "taken")
