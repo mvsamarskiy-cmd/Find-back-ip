@@ -13,7 +13,7 @@ class ClientReportV5Tests(unittest.TestCase):
         self.assertIn('/static/client_report.js?v=5', body)
         self.assertIn('/static/report_controls.js?v=5', body)
         self.assertLess(body.index('/static/client_report.js?v=5'), body.index('/static/report_controls.js?v=5'))
-        self.assertEqual(RELEASE_MARKER, 'v7.8-telegram-channel-proof')
+        self.assertEqual(RELEASE_MARKER, 'v7.9-availability-hunter')
 
     def test_normal_menu_is_client_facing_not_technical_dump(self):
         source = Path('static/report_controls.js').read_text(encoding='utf-8')

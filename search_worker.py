@@ -20,8 +20,9 @@ from telegram_integration import install
 install()
 
 import app as app_module  # noqa: E402
+from availability_hunter import run_availability_hunter_job  # noqa: E402
 from availability_v2 import check_all as check_all_v2  # noqa: E402
-from background_jobs import JOB_STORE, run_one_job, search_jobs  # noqa: E402
+from background_jobs import JOB_STORE, search_jobs  # noqa: E402
 from session_store import _iso, _utcnow, candidates, feedback, sessions  # noqa: E402
 from streaming_search import _generate_candidates  # noqa: E402
 from worker_heartbeat import beat, remove  # noqa: E402
@@ -289,7 +290,7 @@ def main():
 
     try:
         while not STOP.is_set():
-            result = run_one_job(
+            result = run_availability_hunter_job(
                 JOB_STORE,
                 worker_id,
                 generate_batch,
@@ -299,11 +300,16 @@ def main():
             if result is None:
                 STOP.wait(idle_seconds)
             else:
+                hunter = (result.get("preferences") or {}).get("_hunter_runtime") or {}
+                suffix = (
+                    f" matches={hunter.get('matches', 0)}/{hunter.get('target_matches', 0)}"
+                    if hunter else ""
+                )
                 print(
                     "background job",
                     result.get("id"),
                     result.get("state"),
-                    f"{result.get('delivered_count', 0)}/{result.get('target_count', 0)}",
+                    f"{result.get('delivered_count', 0)}/{result.get('target_count', 0)}{suffix}",
                     result.get("stop_reason") or "",
                     flush=True,
                 )

@@ -30,11 +30,12 @@ install_audit_routes(app, app_module)
 install_background_search_routes(app, app_module)
 
 
-RELEASE_MARKER = "v7.8-telegram-channel-proof"
+RELEASE_MARKER = "v7.9-availability-hunter"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=5"></script>'
 BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
+HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=1"></script>'
 AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'
 AUDIT_REPORT_TAG = '<script src="/static/audit_report.js?v=4"></script>'
 CLIENT_REPORT_TAG = '<script src="/static/client_report.js?v=5"></script>'
@@ -57,6 +58,8 @@ def prevent_stale_html(response):
             tags.append(SESSION_SYNC_TAG)
         if BACKGROUND_SEARCH_TAG not in body:
             tags.append(BACKGROUND_SEARCH_TAG)
+        if HUNTER_UI_TAG not in body:
+            tags.append(HUNTER_UI_TAG)
         if AUDIT_SYNC_TAG not in body:
             tags.append(AUDIT_SYNC_TAG)
         if AUDIT_REPORT_TAG not in body:
@@ -164,6 +167,9 @@ def api_verification_diagnostics():
             "candidate_delta_endpoint": "/api/sessions/<session_id>/candidate-feed",
             "candidate_page_size": 100,
             "targets": [500, 1000, 5000, 20000],
+            "availability_hunter_api": True,
+            "result_goal_field": "target_matches",
+            "budget_field": "max_checks",
         },
         "session_storage": session_storage_diagnostics(),
         "background_search": background_search_diagnostics(),
