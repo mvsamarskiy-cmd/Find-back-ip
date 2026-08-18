@@ -11,6 +11,7 @@ from verification.benchmark import KNOWN_FIXTURES, evaluate, summary
 from verification.providers import (
     instagram_web_adapter,
     maigret_adapter,
+    meta_instagram_oembed_adapter,
     socialscan_adapter,
     whatsmyname_adapter,
 )
@@ -19,6 +20,7 @@ from verification.providers import (
 PROVIDERS = {
     "socialscan": socialscan_adapter.check_username,
     "instagram_web": instagram_web_adapter.check_username,
+    "meta_instagram_oembed": meta_instagram_oembed_adapter.check_username,
     "whatsmyname": whatsmyname_adapter.check_username,
     "maigret": maigret_adapter.check_username,
 }
@@ -27,7 +29,7 @@ PROVIDERS = {
 def _eligible(fixtures, provider_name):
     if provider_name == "socialscan":
         allowed = {"instagram", "x"}
-    elif provider_name == "instagram_web":
+    elif provider_name in {"instagram_web", "meta_instagram_oembed"}:
         allowed = {"instagram"}
     else:
         allowed = {"instagram", "telegram", "tiktok", "youtube", "facebook", "x"}
