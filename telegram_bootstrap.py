@@ -30,7 +30,7 @@ install_audit_routes(app, app_module)
 install_background_search_routes(app, app_module)
 
 
-RELEASE_MARKER = "v7.6-client-report"
+RELEASE_MARKER = "v7.7-strict-claimability"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=5"></script>'
@@ -40,6 +40,7 @@ AUDIT_REPORT_TAG = '<script src="/static/audit_report.js?v=4"></script>'
 CLIENT_REPORT_TAG = '<script src="/static/client_report.js?v=5"></script>'
 REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=5"></script>'
 FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js"></script>'
+CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
 
 
 @app.after_request
@@ -66,6 +67,8 @@ def prevent_stale_html(response):
             tags.append(REPORT_CONTROLS_TAG)
         if FEED_NAVIGATION_TAG not in body:
             tags.append(FEED_NAVIGATION_TAG)
+        if CLAIMABILITY_UI_TAG not in body:
+            tags.append(CLAIMABILITY_UI_TAG)
         if tags and "</body>" in body:
             response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
@@ -134,6 +137,11 @@ def api_verification_diagnostics():
     }
     return jsonify({
         "verification_engine": "v2",
+        "strict_free_semantics": {
+            "green_status": "claimable",
+            "purchasable_is_green": False,
+            "not_found_is_green": False,
+        },
         "streaming_feed": {
             "enabled": True,
             "transport": "ndjson",

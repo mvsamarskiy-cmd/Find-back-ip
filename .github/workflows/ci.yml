@@ -33,6 +33,7 @@ jobs:
       - run: node --check static/client_report.js
       - run: node --check static/report_controls.js
       - run: node --check static/feed_navigation.js
+      - run: node --check static/claimability_ui.js
 
   postgres-session-store:
     runs-on: ubuntu-latest
