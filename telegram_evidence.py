@@ -4,8 +4,14 @@ from urllib.parse import quote
 import requests
 
 
-ALLOWED_MTProto_STATUSES = frozenset({"occupied", "not_found", "reserved", "unknown"})
+ALLOWED_MTPROTO_STATUSES = frozenset({"occupied", "not_found", "reserved", "unknown"})
 ALLOWED_FRAGMENT_STATUSES = frozenset({"for_sale", "occupied", "not_found", "reserved", "unknown"})
+ALLOWED_CLAIMABILITY_STATUSES = frozenset({"claimable", "occupied", "purchasable", "invalid", "unknown"})
+ALLOWED_CLAIMABILITY_METHODS = frozenset({
+    "account.checkUsername",
+    "channels.checkUsername",
+    "bots.checkUsername",
+})
 
 
 def _clean_text(value, limit=300):
@@ -18,6 +24,35 @@ def _clean_price(value):
     if isinstance(value, (int, float)) and value >= 0:
         return value
     return None
+
+
+def _normalize_claimability(value):
+    """Normalize an optional authoritative Telegram username assignment check.
+
+    Older evidence services may omit this block; callers must then keep the
+    result at not_found/unknown rather than manufacturing a green result.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("Telegram claimability evidence must be an object")
+
+    status = _clean_text(value.get("status"), 30).lower()
+    method = _clean_text(value.get("method"), 64)
+    scope = _clean_text(value.get("scope"), 30).lower() or "account"
+    if status not in ALLOWED_CLAIMABILITY_STATUSES:
+        raise ValueError("Unsupported Telegram claimability status")
+    if method not in ALLOWED_CLAIMABILITY_METHODS:
+        raise ValueError("Unsupported Telegram claimability method")
+    if scope not in {"account", "channel", "bot"}:
+        raise ValueError("Unsupported Telegram claimability scope")
+
+    return {
+        "status": status,
+        "method": method,
+        "scope": scope,
+        "detail": _clean_text(value.get("detail")),
+    }
 
 
 def _normalize_payload(payload, expected_username):
@@ -36,7 +71,7 @@ def _normalize_payload(payload, expected_username):
 
     mtproto_status = _clean_text(mtproto.get("status"), 30).lower()
     fragment_status = _clean_text(fragment.get("status"), 30).lower()
-    if mtproto_status not in ALLOWED_MTProto_STATUSES:
+    if mtproto_status not in ALLOWED_MTPROTO_STATUSES:
         raise ValueError("Unsupported MTProto evidence status")
     if fragment_status not in ALLOWED_FRAGMENT_STATUSES:
         raise ValueError("Unsupported Fragment evidence status")
@@ -45,7 +80,7 @@ def _normalize_payload(payload, expected_username):
     if fragment_url and not fragment_url.startswith("https://fragment.com/"):
         fragment_url = ""
 
-    return {
+    result = {
         "username": username,
         "mtproto": {
             "status": mtproto_status,
@@ -59,6 +94,10 @@ def _normalize_payload(payload, expected_username):
             "currency": _clean_text(fragment.get("currency"), 12).upper(),
         },
     }
+    claimability = _normalize_claimability(payload.get("claimability"))
+    if claimability is not None:
+        result["claimability"] = claimability
+    return result
 
 
 def fetch_telegram_evidence(username, *, timeout=6.0):
