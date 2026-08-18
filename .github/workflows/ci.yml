@@ -29,6 +29,7 @@ jobs:
       - run: node --check static/session_sync.js
       - run: node --check static/background_search.js
       - run: node --check static/audit_report.js
+      - run: node --check static/report_controls.js
       - run: node --check static/feed_navigation.js
 
   postgres-session-store:
