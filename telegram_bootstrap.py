@@ -10,7 +10,7 @@ install()
 from app import app  # noqa: E402
 
 
-RELEASE_MARKER = "v5.1"
+RELEASE_MARKER = "v6.0"
 
 
 @app.after_request
