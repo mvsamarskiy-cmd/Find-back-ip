@@ -52,7 +52,13 @@ No estimated monetary value is shown without comparable market sales.
   with conservative credential, throttling, and malformed-response handling.
 - [ ] Configure production Name.com credentials and verify a live
   `claimable`/`purchasable` result.
-- [ ] Add Telegram MTProto and Fragment classification as a separate secured service.
+- [x] Add Telegram MTProto/Fragment classification behind a separate secured
+  evidence-service boundary. The main web process never stores Telegram session
+  credentials; it consumes a narrow HTTPS/token contract and preserves
+  occupied/for-sale/reserved/not-found/rate-limit/unknown distinctions.
+- [ ] Deploy/configure that external Telegram evidence service in production and
+  verify live MTProto/Fragment observations. Until configured, the current public
+  `t.me` checker remains the conservative fallback.
 - [x] Add a trademark/collision risk contract as a separate non-binary dimension:
   territory + Nice classes + identical/similar sign + status/priority criteria,
   official EUIPO/WIPO/UPRP search routes, and deterministic scoring for trusted

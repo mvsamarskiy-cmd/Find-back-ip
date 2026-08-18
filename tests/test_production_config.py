@@ -42,12 +42,19 @@ class ProductionConfigTests(TestCase):
 
         self.assertEqual(
             railway["deploy"]["startCommand"],
-            "gunicorn app:app --config gunicorn.conf.py",
+            "gunicorn telegram_bootstrap:app --config gunicorn.conf.py",
         )
         self.assertEqual(railway["deploy"]["healthcheckPath"], "/health")
 
     def test_procfile_does_not_duplicate_runtime_settings(self):
-        self.assertEqual((ROOT / "Procfile").read_text().strip(), "web: gunicorn app:app")
+        self.assertEqual(
+            (ROOT / "Procfile").read_text().strip(),
+            "web: gunicorn telegram_bootstrap:app",
+        )
+
+    def test_bootstrap_installs_telegram_integration_before_importing_app(self):
+        source = (ROOT / "telegram_bootstrap.py").read_text(encoding="utf-8")
+        self.assertLess(source.index("install()"), source.index("from app import app"))
 
     def test_ui_has_one_source_of_truth(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")

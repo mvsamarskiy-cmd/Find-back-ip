@@ -1,7 +1,7 @@
 # NameMachine implementation status
 
-Updated for the trademark-risk framework release prepared from GitHub `main`
-commit `416a3656a74ca7b75e553e10afcc97062abd8156` on 2026-08-18.
+Updated for the secured Telegram evidence release prepared from GitHub `main`
+commit `79d27a267099d9574d5b0c187cba63d9a98a6539` on 2026-08-18.
 
 This file records what exists now. `PRODUCT_PLAN.md` remains the implementation
 order for unfinished work.
@@ -32,24 +32,26 @@ order for unfinished work.
 | MUST-HAVE Identity Bundle classification and split result columns | PR #22 | Included in `main` |
 | Adaptive multi-batch deep search with a 100-check safety cap | PR #23 | Included in `main` |
 | Browser website analysis and editable Brand DNA project workflow | PR #24 | Included in `main` |
-| Legally conservative trademark/collision risk contract | Current release | Implemented on release branch; requires green CI and merge |
+| Legally conservative trademark/collision risk contract | PR #25 | Included in `main` |
+| Secured MTProto/Fragment Telegram evidence boundary | Current release | Implemented on release branch; requires green CI and merge before production |
 
 ## Product-plan status
 
 - Phase 1 is functionally complete and captures signed reasons on likes and
   dislikes so future generation has explicit positive and negative taste evidence.
-- Phase 2 is materially advanced: the full digital-resource evidence vocabulary,
-  metadata, conservative `not_found` handling, deterministic tests, optional
-  official YouTube/X adapters, and optional Name.com registration adapter exist.
-  Trademark candidates now also receive a separate non-binary collision plan with
-  territory, Nice-class scope, identical/similar-sign criteria, status/priority
-  criteria, and official EUIPO TMview/eSearch, WIPO, and Polish UPRP search routes.
-  Trusted observations can be scored deterministically as high/medium/low-observed
-  risk, but the product intentionally never treats no results as globally `free`.
-  A permitted machine-readable trademark registry adapter is still pending; the
-  WIPO public Global Brand Database must not be scraped or queried automatically.
-  Production Name.com credentials/live proof and Telegram MTProto/Fragment also
-  remain pending.
+- Phase 2 is materially advanced. Digital-resource checks use evidence-correct
+  statuses and metadata; optional official YouTube/X and Name.com adapters exist;
+  trademark candidates receive a non-binary territory/Nice-class collision plan.
+  Telegram now also has a secured evidence-service adapter contract: the main web
+  process stores no Telegram user session, and a separately isolated service can
+  return MTProto + Fragment evidence. `for_sale` becomes `purchasable`, occupied
+  becomes `taken`, reserved stays `reserved`, dual not-found stays `not_found`
+  with claimability explicitly unconfirmed, and stronger-service auth/network or
+  malformed failures remain unknown instead of silently downgrading to weaker web
+  evidence. The public `t.me` checker is used only when the secured integration is
+  not configured. Live production configuration of that external service is still
+  pending, as are production Name.com credentials/live proof and a permitted
+  machine-readable trademark registry adapter.
 - Phase 3 is materially advanced: resource selection, search intent, natural-
   language guidance, structured Brand DNA, safe website extraction, editable
   browser DNA review, MUST-HAVE vs optional resources, deterministic Identity
@@ -88,8 +90,8 @@ post-deploy smoke and commit match are confirmed.
 
 ## Next implementation order
 
-1. Improve Telegram evidence with MTProto/Fragment classification where a secure
-   credential/service boundary is available.
+1. Deploy/configure the separate Telegram evidence service with real MTProto and
+   permitted Fragment observation capability, then verify live production evidence.
 2. Add a permitted machine-readable trademark registry adapter when an official or
    licensed data path is available; feed its normalized records into the existing
    trademark-risk contract rather than scraping public search pages.
