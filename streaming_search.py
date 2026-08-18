@@ -1,9 +1,9 @@
 """Incremental AI generation + resource-level verification delivery.
 
 The historical JSON endpoint remains intact for compatibility. This module adds
-an NDJSON endpoint where generated candidates are emitted immediately, selected
-resources are checked in one bounded pool, and every completed resource is sent
-to the browser before the candidate's final bundle verdict is assembled.
+an NDJSON endpoint that starts responding before AI generation finishes, reports
+truthful operational phases, emits generated candidates immediately, and then
+streams every selected resource check before the final bundle verdict.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -57,15 +57,7 @@ def _generate_candidates(
     brand_dna,
     search_context,
     generation_context,
-    resources,
 ):
-    if os.environ.get("OPENAI_API_KEY"):
-        brief, search_context, _intelligence = app_module.apply_prompt_intelligence(
-            brief,
-            resources,
-            search_context,
-        )
-
     last_error = None
     for attempt in range(3):
         try:
@@ -236,35 +228,59 @@ def install_streaming_routes(app, app_module):
                 "retry_after": 5,
             }), 503, {"Retry-After": "5"}
 
-        try:
-            names = _generate_candidates(
-                app_module,
-                brief,
-                count,
-                data,
-                brand_dna,
-                search_context,
-                generation_context,
-                resources,
-            )
-        except Exception as error:
-            app_module.app.logger.exception("Streaming AI generation failed")
-            return jsonify({
-                "error": "Temporary AI error. Please tap Generate again.",
-                "error_type": type(error).__name__,
-            }), 503
-        finally:
-            app_module.AI_REQUEST_SLOTS.release()
-
-        rows = [row for row in (names or []) if isinstance(row, dict) and row.get("name")]
-
         @stream_with_context
         def generate_stream():
+            prepared_brief = brief
+            prepared_search_context = search_context
+            try:
+                if os.environ.get("OPENAI_API_KEY"):
+                    yield _event(
+                        "phase",
+                        phase="understanding",
+                        label="Інтерпретую запит і фіксую правила пошуку",
+                    )
+                    prepared_brief, prepared_search_context, _intelligence = (
+                        app_module.apply_prompt_intelligence(
+                            prepared_brief,
+                            resources,
+                            prepared_search_context,
+                        )
+                    )
+
+                yield _event(
+                    "phase",
+                    phase="generating",
+                    label="Генерую, ранжую та відсіюю дублікати",
+                    requested=count,
+                )
+                names = _generate_candidates(
+                    app_module,
+                    prepared_brief,
+                    count,
+                    data,
+                    brand_dna,
+                    prepared_search_context,
+                    generation_context,
+                )
+            except Exception as error:
+                app_module.app.logger.exception("Streaming AI generation failed")
+                yield _event(
+                    "fatal_error",
+                    stage="generation",
+                    message="Тимчасова помилка генерації. Часткові результати попередніх партій збережено.",
+                    error_type=type(error).__name__,
+                )
+                return
+            finally:
+                app_module.AI_REQUEST_SLOTS.release()
+
+            rows = [row for row in (names or []) if isinstance(row, dict) and row.get("name")]
             total_candidates = len(rows)
             total_checks = total_candidates * len(resources)
             yield _event(
                 "phase",
                 phase="generated",
+                label="Кандидати сформовані — запускаю перевірку ресурсів",
                 total=total_candidates,
                 total_resource_checks=total_checks,
             )
@@ -299,6 +315,7 @@ def install_streaming_routes(app, app_module):
             yield _event(
                 "phase",
                 phase="verifying",
+                label="Перевіряю вибрані ресурси паралельно",
                 total=total_candidates,
                 total_resource_checks=total_checks,
             )
