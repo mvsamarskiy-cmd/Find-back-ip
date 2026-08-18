@@ -11,6 +11,12 @@ from telegram_bootstrap import app
 class StreamingSearchTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
+        # Streaming behavior tests are independent request scenarios. Keep the
+        # shared in-memory limiter from making test order look like a stream bug.
+        try:
+            app_module.limiter.storage.reset()
+        except Exception:
+            pass
 
     @staticmethod
     def _payload(resource, status="claimable"):
