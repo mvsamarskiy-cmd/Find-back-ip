@@ -6,6 +6,7 @@ from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 from availability import RESOURCE_KEYS, check_all, check_many, normalize_resources
 from ai_engine import BANNED_ROOTS, BANNED_SUFFIXES, generate_ai_names, trademark_links
+from brand_dna import WebsiteFetchError, build_brand_dna, clean_brand_dna, fetch_public_website
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -94,11 +95,14 @@ def query_resources():
     raw = request.args.get("resources")
     return normalize_resources(None if raw is None else raw)
 
+
 ONSETS = ["v","n","m","r","l","s","t","k","d","f","z","b","p","c","g","h","br","cr","dr","fr","gr","kr","pr","tr","vr","st","sk","cl","fl","pl"]
 NUCLEI = ["a","e","i","o","u","ae","ai","ea","eo","oa","ui"]
 CODAS = ["","n","r","s","l","m","x","v","d","t","k"]
 
+
 def clean(s): return re.sub(r"[^a-z]", "", s.lower())
+
 
 def clean_preferences(value):
     """Bound browser-supplied feedback before it reaches the model prompt."""
@@ -129,6 +133,16 @@ def clean_preferences(value):
                 continue
     return {"liked": examples("liked"), "disliked": examples("disliked"), "reasons": reasons}
 
+
+def generate_ai_with_context(brief, count, preferences, brand_dna):
+    """Keep legacy call shape when no Brand DNA exists, easing staged rollout."""
+    if brand_dna:
+        return generate_ai_names(
+            brief, count, preferences, brand_dna=brand_dna
+        )
+    return generate_ai_names(brief, count, preferences)
+
+
 def score_name(name):
     n=clean(name); score=100
     if not 5 <= len(n) <= 8: score-=18
@@ -140,6 +154,7 @@ def score_name(name):
     if any(n.endswith(x) for x in BANNED_SUFFIXES): score-=100
     if re.search(r"(.)\1",n): score-=5
     return max(0,min(100,score))
+
 
 def candidate():
     s=""
@@ -163,6 +178,7 @@ def availability_sort_key(row):
         row.get("name", "").lower(),
     )
 
+
 def generate(count=40, verify=False, resources=None):
     seen=set(); rows=[]; attempts=0
     while len(rows)<count and attempts<20000:
@@ -177,11 +193,14 @@ def generate(count=40, verify=False, resources=None):
         for row, result in zip(rows, checks): row.update(result)
     return sorted(rows, key=availability_sort_key)
 
+
 @app.get("/")
 def home(): return render_template("index.html")
 
+
 @app.get("/health")
 def health(): return {"status":"ok"}
+
 
 @app.get("/api/check/<name>")
 @limiter.limit(CHECK_RATE_LIMIT)
@@ -194,6 +213,49 @@ def api_check(name):
         return resource_error(error)
     row={"name":n.capitalize(),"score":score_name(n),"length":len(n)}; row.update(check_all(n,resources)); return jsonify(row)
 
+
+@app.post("/api/brand-dna")
+@limiter.limit(AI_RATE_LIMIT)
+def api_brand_dna():
+    data = json_object()
+    if data is None:
+        return jsonify({"error": "JSON body must be an object"}), 400
+    brief = " ".join(str(data.get("brief", "")).split())
+    website_url = str(data.get("website_url", "")).strip()
+    if len(brief) > 1000:
+        return jsonify({"error": "Brief must contain at most 1000 characters"}), 400
+    if len(website_url) > 2048:
+        return jsonify({"error": "Website URL is too long"}), 400
+    if not brief and not website_url:
+        return jsonify({"error": "Brief or website_url is required"}), 400
+    if not AI_REQUEST_SLOTS.acquire(blocking=False):
+        return jsonify({
+            "error":"AI is busy. Please try again in a few seconds.",
+            "retry_after":5,
+        }),503,{"Retry-After":"5"}
+    try:
+        website = fetch_public_website(website_url) if website_url else None
+        dna = build_brand_dna(brief, website)
+        source = {
+            "brief_used": bool(brief),
+            "website_used": bool(website),
+            "website_url": website.get("url") if website else None,
+            "website_title": website.get("title") if website else None,
+            "website_text_chars": len(website.get("text", "")) if website else 0,
+        }
+        return jsonify({"brand_dna": dna, "source": source})
+    except WebsiteFetchError as error:
+        return jsonify({"error": str(error), "error_type": "WebsiteFetchError"}), 422
+    except Exception as error:
+        app.logger.exception("Brand DNA analysis failed")
+        return jsonify({
+            "error": "Temporary Brand DNA analysis error. Please try again.",
+            "error_type": type(error).__name__,
+        }), 503
+    finally:
+        AI_REQUEST_SLOTS.release()
+
+
 @app.post("/api/ai-names")
 @limiter.limit(AI_RATE_LIMIT)
 def api_ai_names():
@@ -203,6 +265,7 @@ def api_ai_names():
     brief=str(data.get("brief","")).strip()
     if not 3<=len(brief)<=500:
         return jsonify({"error":"Brief must contain 3-500 characters"}),400
+    brand_dna = clean_brand_dna(data.get("brand_dna"))
     try:
         count=max(1,min(20,int(data.get("count",10))))
     except (ValueError,TypeError):
@@ -216,7 +279,9 @@ def api_ai_names():
         last_error=None
         for attempt in range(3):
             try:
-                names=generate_ai_names(brief,count,clean_preferences(data.get("preferences")))
+                names=generate_ai_with_context(
+                    brief, count, clean_preferences(data.get("preferences")), brand_dna
+                )
                 for row in names:
                     row["trademark"]=trademark_links(row["name"])
                 return jsonify(names)
@@ -237,6 +302,7 @@ def api_ai_generate():
         return jsonify({"error":"JSON body must be an object"}),400
     brief=str(data.get("brief","")).strip()
     if not 3<=len(brief)<=500: return jsonify({"error":"Brief must contain 3-500 characters"}),400
+    brand_dna = clean_brand_dna(data.get("brand_dna"))
     try:
         resources=normalize_resources(data.get("resources"))
     except ValueError as error:
@@ -252,7 +318,9 @@ def api_ai_generate():
         last_error = None
         for attempt in range(3):
             try:
-                names=generate_ai_names(brief,count,clean_preferences(data.get("preferences")))
+                names=generate_ai_with_context(
+                    brief, count, clean_preferences(data.get("preferences")), brand_dna
+                )
                 break
             except Exception as error:
                 last_error = error
@@ -271,6 +339,7 @@ def api_ai_generate():
     finally:
         AI_REQUEST_SLOTS.release()
 
+
 @app.get("/api/generate")
 @limiter.limit(LEGACY_RATE_LIMIT)
 def api_generate():
@@ -284,6 +353,7 @@ def api_generate():
     if request.args.get("resources") is None:
         return jsonify(generate(count,verify))
     return jsonify(generate(count,verify,resources))
+
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=int(os.environ.get("PORT",8080)))

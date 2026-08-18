@@ -53,7 +53,15 @@ No estimated monetary value is shown without comparable market sales.
 - [x] Let every search select any non-empty subset of the seven resources.
 - [x] Persist the selection in browser history and use it as the exact `N/N`
   denominator in API and UI results.
-- Convert the brief to structured Brand DNA.
+- [x] Define bounded structured Brand DNA and a `/api/brand-dna` compiler from a
+  user brief and optional public website extract.
+- [x] Add a conservative website-analysis boundary: HTTP(S) only, standard ports,
+  public-address validation, manual redirect validation, response-size limits,
+  visible-text extraction, and explicit prompt-injection isolation.
+- [x] Allow AI naming endpoints to consume sanitized Brand DNA without breaking
+  legacy brief-only calls.
+- [ ] Add website URL and Brand DNA review/edit controls to the browser UI and
+  persist the resulting DNA inside the local project profile.
 - Generate diversified local candidate families.
 - Funnel: 20,000 -> 6,000 structural -> 1,500 linguistic -> 300 collision ->
   100 external checks -> 20 final reports.

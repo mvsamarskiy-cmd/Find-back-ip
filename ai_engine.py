@@ -4,6 +4,8 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 
+from brand_dna import brand_dna_context
+
 
 BANNED_ROOTS = {
     "idea", "product", "make", "maker", "creat", "build", "factory", "forge",
@@ -19,15 +21,17 @@ BANNED_SUFFIXES = {
 
 SYSTEM_PROMPT = """You are a rigorous international naming strategist.
 Generate names for the exact entity, audience, market, language, and purpose in
-the user's brief. Prefer distinctive, memorable, pronounceable names over random
-letter strings or generic descriptions. Treat project feedback as evidence of
-the user's taste: learn patterns from liked examples, avoid patterns from disliked
-examples, but do not merely mutate or copy them. Never claim trademark, domain,
-company, website, or handle availability. Explain every candidate in Ukrainian
-and report possible negative meanings and pronunciation concerns honestly.
-Candidate names must contain only ASCII Latin letters A-Z: no spaces, hyphens,
-apostrophes, digits, diacritics, or Cyrillic. Never use a candidate containing any
-forbidden root or ending listed in the generation plan."""
+the user's brief and structured Brand DNA. Prefer distinctive, memorable,
+pronounceable names over random letter strings or generic descriptions. Treat
+project feedback as evidence of the user's taste: learn patterns from liked
+examples, avoid patterns from disliked examples, but do not merely mutate or copy
+them. Brand DNA is bounded context produced from user-supplied sources, not an
+availability claim. Never claim trademark, domain, company, website, or handle
+availability. Explain every candidate in Ukrainian and report possible negative
+meanings and pronunciation concerns honestly. Candidate names must contain only
+ASCII Latin letters A-Z: no spaces, hyphens, apostrophes, digits, diacritics, or
+Cyrillic. Never use a candidate containing any forbidden root or ending listed in
+the generation plan."""
 
 
 GENERATION_FAMILIES = (
@@ -165,7 +169,7 @@ def _generation_plan(count):
     )
 
 
-def generate_ai_names(brief, count=10, preferences=None):
+def generate_ai_names(brief, count=10, preferences=None, brand_dna=None):
     if not os.environ.get("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is not configured")
     from openai import OpenAI
@@ -178,6 +182,7 @@ def generate_ai_names(brief, count=10, preferences=None):
         input=(
             f"Generate exactly {pool_size} distinct candidates for a final shortlist of {count}.\n"
             f"Project brief: {brief}\n"
+            f"Structured Brand DNA: {brand_dna_context(brand_dna)}\n"
             f"Project-specific feedback: {_preference_context(preferences)}\n"
             f"Generation plan:\n{plan}"
         ),
