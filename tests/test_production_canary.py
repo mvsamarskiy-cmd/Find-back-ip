@@ -17,7 +17,7 @@ class ProductionCanaryTests(unittest.TestCase):
         self.payloads = {
             f"{self.base}/health": {"status": "ok"},
             f"{self.base}/api/version": {
-                "release": "v8.5.1-candidate-metadata",
+                "release": "v8.7.1-variant-durability",
                 "git_commit": "abc123def456",
             },
             f"{self.base}/api/verification/diagnostics": {
@@ -31,6 +31,21 @@ class ProductionCanaryTests(unittest.TestCase):
                     "pagination": True,
                 },
             },
+            f"{self.base}/api/variant-grammar": {
+                "supported": True,
+                "user_opt_in_required": True,
+                "clean_stem_searched_first": True,
+                "availability_checked_here": False,
+                "claimability_proved_here": False,
+                "verification_endpoint": "/api/variants/check",
+                "strict_free_status": "claimable",
+            },
+            f"{self.base}/api/variant-expansion-storage": {
+                "configured": True,
+                "enabled": True,
+                "separate_from_candidate_bundles": True,
+                "strict_free_status": "claimable",
+            },
             f"{self.base}/api/background-search": {
                 "configured": True,
                 "enabled": True,
@@ -43,10 +58,10 @@ class ProductionCanaryTests(unittest.TestCase):
     def fetch(self, url):
         return self.payloads[url]
 
-    def test_canary_checks_release_commit_truth_semantics_and_worker(self):
+    def test_canary_checks_release_commit_truth_variants_and_worker(self):
         report = CANARY.run_canary(
             self.base,
-            expected_release="v8.5.1-candidate-metadata",
+            expected_release="v8.7.1-variant-durability",
             expected_commit="abc123def456",
             require_worker=True,
             fetch_json=self.fetch,
@@ -55,6 +70,8 @@ class ProductionCanaryTests(unittest.TestCase):
         self.assertEqual(report["git_commit"], "abc123def456")
         self.assertEqual(report["strict_green_status"], "claimable")
         self.assertTrue(report["feed"]["pagination"])
+        self.assertTrue(report["variant_expansion"]["opt_in"])
+        self.assertTrue(report["variant_expansion"]["durable_storage"])
         self.assertTrue(report["background_search"]["ready"])
 
     def test_short_and_full_commit_forms_match(self):
@@ -67,6 +84,26 @@ class ProductionCanaryTests(unittest.TestCase):
             "not_found_is_green"
         ] = True
         with self.assertRaisesRegex(CANARY.CanaryError, "not_found"):
+            CANARY.run_canary(self.base, fetch_json=self.fetch)
+
+    def test_canary_rejects_variant_generator_claiming_availability(self):
+        self.payloads[f"{self.base}/api/variant-grammar"]["availability_checked_here"] = True
+        with self.assertRaisesRegex(CANARY.CanaryError, "must not claim availability"):
+            CANARY.run_canary(self.base, fetch_json=self.fetch)
+
+    def test_canary_rejects_variants_that_are_not_opt_in(self):
+        self.payloads[f"{self.base}/api/variant-grammar"]["user_opt_in_required"] = False
+        with self.assertRaisesRegex(CANARY.CanaryError, "not opt-in"):
+            CANARY.run_canary(self.base, fetch_json=self.fetch)
+
+    def test_canary_rejects_variant_storage_mixed_with_candidate_bundles(self):
+        self.payloads[f"{self.base}/api/variant-expansion-storage"]["separate_from_candidate_bundles"] = False
+        with self.assertRaisesRegex(CANARY.CanaryError, "not isolated"):
+            CANARY.run_canary(self.base, fetch_json=self.fetch)
+
+    def test_canary_rejects_unconfigured_variant_storage(self):
+        self.payloads[f"{self.base}/api/variant-expansion-storage"]["configured"] = False
+        with self.assertRaisesRegex(CANARY.CanaryError, "not configured"):
             CANARY.run_canary(self.base, fetch_json=self.fetch)
 
     def test_canary_rejects_release_mismatch(self):
