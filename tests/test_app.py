@@ -223,7 +223,7 @@ class AppTests(unittest.TestCase):
         self.assertIn("докази перевірки", body)
         self.assertIn("NOT FOUND означає лише", body)
         self.assertIn("AI brand discovery · v4.9", body)
-        self.assertIn("Name.com", body)
+        self.assertIn("safety cap 100", body)
         self.assertIn("offerEvidence", body)
         self.assertIn('name="resource" value="telegram"', body)
         self.assertIn('name="resource" value="youtube"', body)
