@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "repository": "mvsamarskiy-cmd/Find-back-ip",
+  "deploymentBranch": "main",
+  "workspace": {
+    "id": "0322601c-7680-4bdd-ae2c-c27dd77710df",
+    "name": "mvsamarskiy-cmd's Projects"
+  },
+  "project": {
+    "id": "ba6f4d56-5ad6-4ad2-be1d-816c3c7d7a88",
+    "name": "resourceful-stillness"
+  },
+  "environment": {
+    "id": "d08602f0-0919-41d0-97b7-8383278c70ee",
+    "name": "production"
+  },
+  "service": {
+    "id": "50ce503c-aa4d-4ecd-91e6-e80d940afe71",
+    "name": "web"
+  },
+  "productionUrl": "https://web-production-04fec.up.railway.app",
+  "healthPath": "/health"
+}
+
