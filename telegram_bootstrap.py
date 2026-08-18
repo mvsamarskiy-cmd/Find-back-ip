@@ -40,10 +40,10 @@ install_generic_naming_routes(app, app_module)
 install_brand_collision_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.5-ui-cleanup-pagination"
+RELEASE_MARKER = "v8.5.1-candidate-metadata"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
-SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=5"></script>'
+SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=6"></script>'
 BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
 HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=4"></script>'
 AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'

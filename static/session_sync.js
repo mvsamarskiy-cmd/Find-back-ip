@@ -55,6 +55,14 @@
         received_seq: row?.received_seq,
         received_at: row?.received_at,
         resource_progress: row?.resource_progress,
+        product_mode: row?.product_mode,
+        entry_mode: row?.entry_mode,
+        pronunciation: row?.pronunciation,
+        language_risks: row?.language_risks,
+        verification_state: row?.verification_state,
+        lifecycle_event_seq: row?.lifecycle_event_seq,
+        brand_collision: row?.brand_collision,
+        brand_collision_checked_at: row?.brand_collision_checked_at,
       });
     } catch (_) {
       return String(Date.now());
@@ -98,6 +106,30 @@
     return payload;
   }
 
+  function mergeDurableExtras(local, remote) {
+    let changed = false;
+    const simpleKeys = [
+      'product_mode', 'entry_mode', 'pronunciation', 'language_risks',
+      'verification_state', 'lifecycle_event_seq', 'brand_collision_checked_at',
+    ];
+    for (const key of simpleKeys) {
+      const localMissing = local?.[key] === undefined || local?.[key] === null || local?.[key] === '';
+      const remotePresent = remote?.[key] !== undefined && remote?.[key] !== null && remote?.[key] !== '';
+      if (localMissing && remotePresent) {
+        local[key] = remote[key];
+        changed = true;
+      }
+    }
+    const localCollisionAt = String(local?.brand_collision_checked_at || '');
+    const remoteCollisionAt = String(remote?.brand_collision_checked_at || '');
+    if (remote?.brand_collision && (!local?.brand_collision || remoteCollisionAt > localCollisionAt)) {
+      local.brand_collision = remote.brand_collision;
+      if (remoteCollisionAt) local.brand_collision_checked_at = remoteCollisionAt;
+      changed = true;
+    }
+    return changed;
+  }
+
   function mergeRemote(remote) {
     if (!remote || typeof remote !== 'object') return false;
     let changed = false;
@@ -137,6 +169,8 @@
         changed = true;
       } else if (local.checked === false && row?.checked === true) {
         Object.assign(local, row);
+        changed = true;
+      } else if (mergeDurableExtras(local, row)) {
         changed = true;
       }
     }
