@@ -103,16 +103,19 @@ No estimated monetary value is shown without comparable market sales.
   explicit unresolved state; each main column has an independent resource filter,
   and the opportunity column also filters confirmed vs promising evidence.
 - [x] Implement a bounded deterministic local lexical-family expander outside
-  OpenAI. It extracts literal roots from the brief/Brand DNA and creates semantic
-  compounds, substantial root blends, and midpoint phonetic blends without
-  one-letter typo mutation spam.
-- [ ] Feed the local lexical-family pool into the production shortlist before
-  external checks. The primitive is implemented and tested separately first so
-  the release remains behaviorally isolated.
+  OpenAI. It extracts literal roots from the brief/Brand DNA, transliterates
+  Cyrillic project vocabulary deterministically, and creates semantic compounds,
+  substantial root blends, and midpoint phonetic blends without one-letter typo
+  mutation spam.
+- [x] Feed the local lexical-family pool into the new-brand production shortlist
+  before external checks. Existing locked/adaptable brand modes remain model-led
+  so the local expander cannot accidentally invent a replacement brand.
 - [ ] Funnel: 20,000 -> 6,000 structural -> 1,500 linguistic -> 300 collision ->
-  100 external checks -> 20 final reports. A deterministic structural quality
-  prefilter now ranks the bounded AI pool before external checks; scaling the
-  upstream pool and adding later linguistic/collision stages remain pending.
+  100 external checks -> 20 final reports. The current hybrid pool combines up to
+  40 model candidates with a bounded local lexical expansion before deterministic
+  structural ranking, dedupe, family quotas, and the 100-check browser safety cap;
+  scaling the upstream pool and adding later linguistic/collision stages remain
+  pending.
 - [x] Apply family quotas to prevent suffix monoculture.
 - [x] Add conservative visual and edit-distance deduplication on top of exact,
   phonetic, and sequence-similarity filtering. Deeper semantic deduplication for
