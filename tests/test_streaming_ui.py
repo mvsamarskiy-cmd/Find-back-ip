@@ -5,20 +5,33 @@ from telegram_bootstrap import app
 
 
 class StreamingUiTests(unittest.TestCase):
-    def test_home_loads_streaming_client_after_inline_ui(self):
+    def test_home_loads_streaming_clients_after_inline_ui_in_order(self):
         response = app.test_client().get("/")
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn('<script src="/static/streaming.js"></script>', body)
-        self.assertLess(body.index("restoreSession();"), body.index('/static/streaming.js'))
+        self.assertIn('<script src="/static/resource_progress.js"></script>', body)
+        inline = body.index("restoreSession();")
+        streaming = body.index('/static/streaming.js')
+        progress = body.index('/static/resource_progress.js')
+        self.assertLess(inline, streaming)
+        self.assertLess(streaming, progress)
 
-    def test_client_consumes_ndjson_and_keeps_newest_feed_first(self):
+    def test_base_client_keeps_newest_first_feed(self):
         source = Path("static/streaming.js").read_text(encoding="utf-8")
-        self.assertIn("/api/ai-generate-stream", source)
-        self.assertIn("response.body.getReader", source)
         self.assertIn("received_seq", source)
         self.assertIn("newestFirst(current.results)", source)
-        self.assertIn("startSearch = async function startStreamingSearch", source)
+
+    def test_resource_progress_client_consumes_incremental_events(self):
+        source = Path("static/resource_progress.js").read_text(encoding="utf-8")
+        self.assertIn("/api/ai-generate-stream", source)
+        self.assertIn("response.body.getReader", source)
+        self.assertIn("event.type === 'candidate'", source)
+        self.assertIn("event.type === 'resource'", source)
+        self.assertIn("event.type === 'result'", source)
+        self.assertIn("status: 'checking'", source)
+        self.assertIn("markInterrupted", source)
+        self.assertIn("startSearch = async function resourceProgressSearch", source)
         self.assertIn("activeController.abort", Path("templates/index.html").read_text(encoding="utf-8"))
 
 
