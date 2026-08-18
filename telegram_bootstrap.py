@@ -28,10 +28,11 @@ install_session_routes(app, app_module)
 install_background_search_routes(app, app_module)
 
 
-RELEASE_MARKER = "v7.2-background-search-queue"
+RELEASE_MARKER = "v7.3-large-feed-navigation"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js"></script>'
+FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js"></script>'
 
 
 @app.after_request
@@ -46,6 +47,8 @@ def prevent_stale_html(response):
             tags.append(RESOURCE_PROGRESS_TAG)
         if SESSION_SYNC_TAG not in body:
             tags.append(SESSION_SYNC_TAG)
+        if FEED_NAVIGATION_TAG not in body:
+            tags.append(FEED_NAVIGATION_TAG)
         if tags and "</body>" in body:
             response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
@@ -123,6 +126,13 @@ def api_verification_diagnostics():
             "resource_progress_events": True,
             "pre_generation_phase_events": True,
             "operational_activity_only": True,
+        },
+        "large_feed_navigation": {
+            "enabled": True,
+            "newest_first": True,
+            "alphabetical_sort": False,
+            "render_page_size": 60,
+            "filters": ["all", "confirmed", "promising", "conflict", "unresolved"],
         },
         "session_storage": session_storage_diagnostics(),
         "background_search": background_search_diagnostics(),
