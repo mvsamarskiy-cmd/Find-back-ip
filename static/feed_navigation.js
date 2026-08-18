@@ -1,8 +1,9 @@
 /* Large-feed navigation layer.
  *
  * Loaded last. It keeps the working Feed newest-first, never alphabetizes it,
- * and renders a bounded window so hundreds/thousands of session candidates do
- * not force the browser to rebuild every card on every streaming update.
+ * and renders a bounded window. Turbo mode deliberately presents only strict
+ * claimable results from the active Turbo run; rejected rows remain durable in
+ * session storage for audit, learning, and client reports.
  */
 (() => {
   const PAGE_SIZE = 60;
@@ -20,8 +21,26 @@
       const aAt = String(a?.received_at || '');
       const bAt = String(b?.received_at || '');
       if (aAt !== bAt) return aAt < bAt ? 1 : -1;
-      return 0; // stable insertion order; deliberately never alphabetical
+      return 0;
     });
+  }
+
+  function turboContext() {
+    const bg = current?.backgroundSearch;
+    if (!bg || bg.search_strategy !== 'turbo' || !bg.run_id) return null;
+    return { runId: String(bg.run_id) };
+  }
+
+  function turboRunRows(rows) {
+    const turbo = turboContext();
+    if (!turbo) return [];
+    return (rows || []).filter(row => String(row?.run_id || '') === turbo.runId);
+  }
+
+  function primaryRows(rows) {
+    const turbo = turboContext();
+    if (!turbo) return rows || [];
+    return turboRunRows(rows).filter(allGreen);
   }
 
   function resourcesFor(row) {
@@ -73,6 +92,7 @@
       .feed-filter.active{border-color:var(--accent);color:var(--accent)}
       .feed-tools-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px}
       .feed-more{font-size:12px;padding:8px 10px}
+      .turbo-feed-note{color:var(--ok)}
       @media(max-width:640px){.feed-tools-top{display:grid;grid-template-columns:1fr 1fr}.feed-search{grid-column:1/-1;width:100%}.feed-tools-meta{align-items:flex-start}}
     `;
     document.head.appendChild(style);
@@ -125,15 +145,38 @@
     controlsReady = true;
   }
 
-  function renderFeedWindow(rows) {
+  function syncTurboFilters() {
+    const turbo = turboContext();
+    document.querySelectorAll('[data-feed-filter]').forEach(button => {
+      const key = button.dataset.feedFilter;
+      if (turbo && !['all', 'confirmed'].includes(key)) {
+        button.hidden = true;
+      } else {
+        button.hidden = false;
+      }
+    });
+    if (turbo && !['all', 'confirmed'].includes(feedFilter)) {
+      feedFilter = 'all';
+      document.querySelectorAll('[data-feed-filter]').forEach(button => {
+        button.classList.toggle('active', button.dataset.feedFilter === 'all');
+      });
+    }
+  }
+
+  function renderFeedWindow(allRows) {
     ensureControls();
+    syncTurboFilters();
+    const rows = primaryRows(allRows);
     const ordered = newestFirst(rows);
     const filtered = ordered.filter(matches);
     const shown = filtered.slice(0, visibleLimit);
     const grid = document.getElementById('feedGrid');
+    const turbo = turboContext();
     grid.innerHTML = shown.length
       ? shown.map(row => card(row, 'feed')).join('')
-      : '<div class="empty">За цим фільтром результатів немає.</div>';
+      : turbo
+        ? '<div class="empty">Turbo ще не знайшов жодного підтверджено вільного результату. Зайняті та непідтверджені кандидати перевіряються у фоні й не засмічують цю стрічку.</div>'
+        : '<div class="empty">За цим фільтром результатів немає.</div>';
 
     const totals = counts(rows);
     document.querySelectorAll('[data-filter-count]').forEach(node => {
@@ -142,9 +185,15 @@
     });
     const shownLabel = document.getElementById('feedShown');
     if (shownLabel) {
-      shownLabel.textContent = filtered.length
-        ? `Показано ${shown.length} з ${filtered.length} · найновіші зверху`
-        : 'Немає результатів для поточного фільтра.';
+      if (turbo) {
+        const checked = turboRunRows(allRows).length;
+        const rejected = Math.max(0, checked - rows.length);
+        shownLabel.innerHTML = `<span class="turbo-feed-note">Turbo · ${rows.length} вільних</span> · перевірено ${checked} · відсіяно ${rejected}`;
+      } else {
+        shownLabel.textContent = filtered.length
+          ? `Показано ${shown.length} з ${filtered.length} · найновіші зверху`
+          : 'Немає результатів для поточного фільтра.';
+      }
     }
     const more = document.getElementById('feedMore');
     if (more) {
@@ -156,20 +205,24 @@
   render = function renderLargeFeed() {
     if (!current) current = emptySession();
     const rows = Array.isArray(current.results) ? current.results : [];
-    const recommended = sortedResults(rows.filter(allGreen));
+    const turbo = turboContext();
+    const strictCurrent = turbo ? primaryRows(rows) : null;
+    const recommended = turbo ? sortedResults(strictCurrent) : sortedResults(rows.filter(allGreen));
     const shortlist = sortedResults(rows.filter(row => current.shortlist.includes(row.name)));
 
     document.getElementById('recommendedCount').textContent = recommended.length;
-    document.getElementById('feedCount').textContent = rows.length;
+    document.getElementById('feedCount').textContent = turbo ? strictCurrent.length : rows.length;
     document.getElementById('shortlistCount').textContent = shortlist.length;
 
     const recVisible = recommended.slice(0, RECOMMENDED_RENDER_LIMIT);
     document.getElementById('recommendedGrid').innerHTML = recVisible.length
       ? recVisible.map(row => card(row, 'recommended')).join('') +
         (recommended.length > recVisible.length
-          ? `<div class="empty">Показано перші ${recVisible.length} з ${recommended.length} підтверджених. Використай Стрічку для навігації по всіх.</div>`
+          ? `<div class="empty">Показано перші ${recVisible.length} з ${recommended.length} підтверджених.</div>`
           : '')
-      : '<div class="empty">Повністю зелених результатів ще немає.</div>';
+      : turbo
+        ? '<div class="empty">Turbo ще шукає перший підтверджено вільний результат.</div>'
+        : '<div class="empty">Повністю зелених результатів ще немає.</div>';
 
     renderFeedWindow(rows);
 
@@ -180,7 +233,6 @@
     switchTab(activeTab);
   };
 
-  // Replace stale copy left from the pre-durable-storage UI.
   const note = document.querySelector('.session-note');
   if (note) {
     note.textContent = 'Робоча сесія зберігається одразу в браузері. Якщо серверне сховище доступне, вона також синхронізується з ним. Stop ставить пошук на паузу; лайки, дизлайки, коментарі, кандидати й напрями не скидаються.';

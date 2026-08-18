@@ -8,22 +8,23 @@ class AvailabilityHunterUiTests(unittest.TestCase):
     def test_hunter_ui_loads_after_background_search_runtime(self):
         body = app.test_client().get('/').get_data(as_text=True)
         self.assertIn('/static/background_search.js', body)
-        self.assertIn('/static/availability_hunter_ui.js?v=2', body)
+        self.assertIn('/static/availability_hunter_ui.js?v=3', body)
         self.assertLess(
             body.index('/static/background_search.js'),
-            body.index('/static/availability_hunter_ui.js?v=2'),
+            body.index('/static/availability_hunter_ui.js?v=3'),
         )
 
-    def test_hunter_ui_sends_result_goal_budget_and_procedural_strategy(self):
+    def test_hunter_ui_exposes_procedural_and_turbo_strategies(self):
         source = Path('static/availability_hunter_ui.js').read_text(encoding='utf-8')
+        self.assertIn('hunterSearchStrategy', source)
+        self.assertIn('<option value="procedural" selected>Процедурно</option>', source)
+        self.assertIn('<option value="turbo">Turbo</option>', source)
+        self.assertIn('search_strategy: strategy', source)
         self.assertIn("target_matches: targetMatches", source)
         self.assertIn("max_checks: maxChecks", source)
-        self.assertIn("search_strategy: 'procedural'", source)
-        self.assertIn("Пошук вільних", source)
-        self.assertIn("підтверджено вільних", source)
         self.assertIn("availability_hunter_started", source)
 
-    def test_hunter_ui_reports_matches_and_real_procedural_position(self):
+    def test_hunter_ui_reports_matches_and_strategy_specific_progress(self):
         source = Path('static/availability_hunter_ui.js').read_text(encoding='utf-8')
         self.assertIn("runtime.matches", source)
         self.assertIn("runtime.checked", source)
@@ -31,6 +32,7 @@ class AvailabilityHunterUiTests(unittest.TestCase):
         self.assertIn("plan.current_root", source)
         self.assertIn("plan.current_strategy", source)
         self.assertIn("Шукаю корінь", source)
+        self.assertIn("Turbo · широке дослідження", source)
 
 
 if __name__ == '__main__':

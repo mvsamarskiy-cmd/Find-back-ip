@@ -1,8 +1,8 @@
-/* Availability Hunter + Procedural Search UI.
+/* Availability Hunter search-mode UI.
  *
- * The durable-search runtime remains the transport owner. This overlay gives the
- * user a result goal and shows the real semantic root/strategy currently being
- * explored by the worker.
+ * Procedural mode exposes the real root/strategy being explored. Turbo mode
+ * deliberately hides non-claimable mass from the primary feed while keeping all
+ * verifier rows durable for audit and learning.
  */
 (() => {
   const POLL_MS = 2200;
@@ -49,6 +49,20 @@
     return payload;
   }
 
+  function selectedStrategy(panel) {
+    const value = String(panel?.querySelector('#hunterSearchStrategy')?.value || 'procedural');
+    return value === 'turbo' ? 'turbo' : 'procedural';
+  }
+
+  function updateModeHint(panel) {
+    const mode = selectedStrategy(panel);
+    const focus = panel?.querySelector('#proceduralFocusStatus');
+    if (!focus || current?.backgroundSearch?.id) return;
+    focus.textContent = mode === 'turbo'
+      ? 'Turbo: показуватиму насамперед тільки підтверджено вільні результати.'
+      : 'Процедурно: один корінь за раз, доки його стратегії не вичерпано.';
+  }
+
   function ensureHunterControls() {
     const panel = document.getElementById('largeSearchPanel');
     if (!panel) return null;
@@ -57,6 +71,14 @@
 
     const heading = panel.querySelector('strong');
     if (heading) heading.textContent = 'Пошук вільних';
+
+    const strategy = document.createElement('select');
+    strategy.id = 'hunterSearchStrategy';
+    strategy.setAttribute('aria-label', 'Режим пошуку');
+    strategy.innerHTML = `
+      <option value="procedural" selected>Процедурно</option>
+      <option value="turbo">Turbo</option>`;
+    heading?.insertAdjacentElement('afterend', strategy);
 
     const budget = panel.querySelector('#largeSearchTarget');
     if (budget) {
@@ -88,7 +110,7 @@
     const focus = document.createElement('span');
     focus.id = 'proceduralFocusStatus';
     focus.className = 'procedural-focus-status';
-    focus.textContent = 'Процедурний пошук: очікую план.';
+    focus.textContent = 'Процедурно: один корінь за раз, доки його стратегії не вичерпано.';
     goal.insertAdjacentElement('afterend', focus);
 
     if (!document.getElementById('availabilityHunterStyle')) {
@@ -96,7 +118,7 @@
       style.id = 'availabilityHunterStyle';
       style.textContent = `
         .hunter-label{font-size:11px;color:var(--muted)}
-        #hunterTargetMatches{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 9px;font:inherit}
+        #hunterTargetMatches,#hunterSearchStrategy{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 9px;font:inherit}
         .hunter-goal-status,.procedural-focus-status{width:100%;font-size:12px;color:var(--muted)}
         .hunter-goal-status strong{color:var(--ok)}
         .procedural-focus-status b{color:var(--text)}
@@ -109,6 +131,7 @@
         goal.textContent = `Ціль: ${Number(target.value) || 3} підтверджено вільних.`;
       }
     });
+    strategy.addEventListener('change', () => updateModeHint(panel));
 
     start?.addEventListener('click', event => {
       event.preventDefault();
@@ -127,6 +150,7 @@
     const start = panel?.querySelector('#largeSearchStart');
     const goal = panel?.querySelector('#hunterGoalStatus');
     const focus = panel?.querySelector('#proceduralFocusStatus');
+    const strategy = selectedStrategy(panel);
     const targetMatches = Math.max(1, Number(panel?.querySelector('#hunterTargetMatches')?.value) || 3);
     const maxChecks = Math.max(targetMatches, Number(panel?.querySelector('#largeSearchTarget')?.value) || 500);
 
@@ -144,7 +168,11 @@
     startBusy = true;
     if (start) start.disabled = true;
     if (goal) goal.textContent = `Запускаю: знайти ${targetMatches} вільних, максимум ${maxChecks} перевірок…`;
-    if (focus) focus.textContent = 'Будую послідовний план коренів…';
+    if (focus) {
+      focus.textContent = strategy === 'turbo'
+        ? 'Turbo: запускаю широке паралельне дослідження naming-простору…'
+        : 'Будую послідовний план коренів…';
+    }
     try {
       const payload = await api('/api/sessions/' + encodeURIComponent(session.id) + '/search-jobs', {
         method: 'POST',
@@ -167,7 +195,7 @@
           target_count: maxChecks,
           target_matches: targetMatches,
           max_checks: maxChecks,
-          search_strategy: 'procedural',
+          search_strategy: strategy,
           batch_size: 20,
         }),
       });
@@ -178,7 +206,7 @@
         run_id: job.run_id,
         target_count: maxChecks,
         target_matches: targetMatches,
-        search_strategy: 'procedural',
+        search_strategy: strategy,
         started_at: new Date().toISOString(),
       };
       current.updated = new Date().toISOString();
@@ -186,12 +214,15 @@
       appendActivity('availability_hunter_started', {
         target_matches: targetMatches,
         max_checks: maxChecks,
-        search_strategy: 'procedural',
+        search_strategy: strategy,
         resources: [...resources],
         prompt,
       });
       if (goal) goal.textContent = `Ціль: ${targetMatches} вільних · бюджет ${maxChecks} перевірок.`;
-      document.getElementById('status').textContent = `Пошук запущено: ціль ${targetMatches} підтверджено вільних.`;
+      document.getElementById('status').textContent = strategy === 'turbo'
+        ? `Turbo запущено: шукаю ${targetMatches} підтверджено вільних.`
+        : `Процедурний пошук запущено: ціль ${targetMatches} підтверджено вільних.`;
+      try { render(); } catch (_) {}
       schedulePoll(250);
     } catch (error) {
       appendActivity('availability_hunter_start_error', { message: error.message || 'unknown' });
@@ -215,6 +246,7 @@
       const job = jobs.find(item => item?.id === jobId) || jobs.find(item => item?.search_context?.availability_hunter?.enabled);
       if (!job) return;
       const config = job.search_context?.availability_hunter || {};
+      const strategy = String(job.search_context?.search_strategy || (job.search_context?.procedural_search?.enabled ? 'procedural' : 'adaptive'));
       const runtime = job.preferences?._hunter_runtime || {};
       const plan = job.preferences?._procedural_runtime || {};
       const matches = Number(runtime.matches) || 0;
@@ -222,12 +254,31 @@
       const checked = Number(runtime.checked ?? job.delivered_count) || 0;
       const maxChecks = Number(runtime.max_checks || config.max_checks || job.target_count) || 0;
       const done = ['completed', 'cancelled', 'failed'].includes(job.state);
+
+      if (!current.backgroundSearch || current.backgroundSearch.id !== job.id || current.backgroundSearch.search_strategy !== strategy) {
+        current.backgroundSearch = {
+          ...(current.backgroundSearch || {}),
+          id: job.id,
+          run_id: job.run_id,
+          target_count: maxChecks,
+          target_matches: targetMatches,
+          search_strategy: strategy,
+          started_at: job.started_at || job.created_at || current?.backgroundSearch?.started_at || '',
+        };
+        try { write(SESSION_KEY, current); } catch (_) {}
+        try { render(); } catch (_) {}
+      }
+
+      const selector = panel.querySelector('#hunterSearchStrategy');
+      if (selector && ['procedural', 'turbo'].includes(strategy)) selector.value = strategy;
       if (goal) {
         goal.innerHTML = `<strong>${matches}/${targetMatches}</strong> вільних · перевірено ${checked}/${maxChecks}` +
           (done && job.stop_reason ? ` · ${job.stop_reason}` : '');
       }
       if (focus) {
-        if (plan.exhausted) {
+        if (strategy === 'turbo') {
+          focus.textContent = `Turbo · широке дослідження · ${matches} підтверджено вільних знайдено`;
+        } else if (plan.exhausted) {
           focus.textContent = 'Процедурний простір поточного плану вичерпано.';
         } else if (plan.current_root) {
           focus.innerHTML = `Шукаю корінь <b>${plan.current_root}</b> · ${plan.current_strategy || '—'} · ` +
