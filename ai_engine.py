@@ -62,14 +62,14 @@ create trivial one-letter/one-suffix mutations of true availability-conflict
 names. Availability conflicts describe saturated identity territory; dislikes
 describe taste and must not be treated as availability conflicts. Distribute
 candidates across the requested naming families instead of producing a suffix
-monoculture. Label every candidate with its actual naming family. When an existing
-brand is locked, generate resource-identifier stems tied to that brand instead of
-inventing a replacement brand. Brand DNA is bounded context produced from
-user-supplied sources, not an availability claim. Never claim trademark, domain,
-company, website, or handle availability. Explain every candidate in Ukrainian
-and report possible negative meanings and pronunciation concerns honestly.
-Candidate names must contain only ASCII Latin letters A-Z: no spaces, hyphens,
-apostrophes, digits, diacritics, or Cyrillic."""
+monoculture. Label every candidate with its actual naming family. When the existing brand is locked,
+generate resource-identifier stems tied to that brand instead of inventing a
+replacement brand. Brand DNA is bounded context produced from user-supplied
+sources, not an availability claim. Never claim trademark, domain, company,
+website, or handle availability. Explain every candidate in Ukrainian and report
+possible negative meanings and pronunciation concerns honestly. Candidate names
+must contain only ASCII Latin letters A-Z: no spaces, hyphens, apostrophes, digits,
+diacritics, or Cyrillic."""
 
 
 SCHEMA = {
@@ -181,7 +181,7 @@ def clean_generation_context(value):
     except (TypeError, ValueError):
         batch_number = 1
     return {
-        "batch_number": max(1, min(50, batch_number)),
+        "batch_number": max(1, min(5, batch_number)),
         "exclude_names": _bounded_names(value.get("exclude_names"), 100),
         "conflict_names": _bounded_names(value.get("conflict_names"), 40),
         "successful_names": _bounded_names(value.get("successful_names"), 20),
@@ -196,8 +196,9 @@ def generation_context_prompt(value):
         else (
             "This is an adaptive follow-up batch. Excluded names are forbidden. "
             "Conflict examples are names with actual availability conflicts, not "
-            "mere uncertainty or taste dislikes. Do not make spelling mutations of "
-            "them. Successful examples are directional evidence only; learn the "
+            "mere uncertainty or taste dislikes. For those actual conflicts, move into "
+            "different semantic roots and phonetic structures instead of making spelling "
+            "mutations. Successful examples are directional evidence only; learn the "
             "quality pattern without cloning them."
         )
     )
@@ -393,8 +394,12 @@ def select_diverse_names(
     model = taste_model if isinstance(taste_model, dict) else build_taste_model()
     confidence = float(model.get("confidence", 0.0) or 0.0)
     shares = family_allocation(count, model)
+    hard_family_cap = max(2, math.ceil(max(1, count) / 3))
     family_caps = {
-        family: max(2, math.ceil(shares.get(family, 0.2) * count) + 1)
+        family: min(
+            hard_family_cap,
+            max(2, math.ceil(shares.get(family, 0.2) * count) + 1),
+        )
         for family in GENERATION_FAMILY_KEYS
     }
     family_counts = {family: 0 for family in GENERATION_FAMILY_KEYS}
@@ -439,14 +444,7 @@ def select_diverse_names(
                 best_score = mmr_score
                 best_index = index
         if best_index is None:
-            for family in family_caps:
-                family_caps[family] += 1
-            if all(
-                any(_too_similar(row["name"], picked["name"]) for picked in selected)
-                for row in remaining
-            ):
-                break
-            continue
+            break
         picked = remaining.pop(best_index)
         family = str(picked.get("family", ""))
         if family in family_counts:
@@ -490,8 +488,9 @@ def _generation_plan(count, search_context=None, generation_context=None, taste_
     if adaptive["batch_number"] > 1:
         rules += (
             "\nAdaptive rule: this is a follow-up batch. Use taste evidence to move "
-            "toward preferred qualities, but move away only from actual availability "
-            "conflict examples. Keep at least some exploration across naming families."
+            "toward preferred qualities. For actual availability conflicts, deliberately "
+            "change lexical and phonetic neighborhoods rather than mutating failed roots. "
+            "Keep at least some exploration across naming families."
         )
     return pool_size, rules
 
