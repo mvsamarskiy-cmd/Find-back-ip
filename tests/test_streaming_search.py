@@ -76,13 +76,10 @@ class StreamingSearchTests(unittest.TestCase):
                     },
                     buffered=False,
                 )
-                # Flask has consumed the first streaming chunk to establish the
-                # response, but generation must not have run before that chunk.
-                generator.assert_not_called()
                 chunks = iter(response.response)
-                first = json.loads(next(chunks).decode() if isinstance(next_chunk := next(iter([b''])), bytes) else next_chunk)
-                # The first item may already be held by the test client's wrapper;
-                # verify the materialized stream order instead of relying on internals.
+                first_chunk = next(chunks)
+                first = json.loads(first_chunk.decode() if isinstance(first_chunk, bytes) else first_chunk)
+                generator.assert_not_called()
                 response.close()
 
         self.assertEqual(first["type"], "phase")
