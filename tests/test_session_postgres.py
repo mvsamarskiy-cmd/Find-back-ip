@@ -1,6 +1,7 @@
 import os
 import unittest
 
+from background_jobs import SearchJobStore, run_one_job
 from session_store import SessionStore
 
 
@@ -47,6 +48,56 @@ class PostgresSessionStoreTests(unittest.TestCase):
         self.assertEqual(len(snapshot["results"]), 1)
         self.assertEqual(snapshot["results"][0]["availability"]["x"]["status"], "taken")
         self.assertTrue(snapshot["results"][0]["checked"])
+
+    def test_real_postgres_background_queue_claim_checkpoint_and_complete(self):
+        jobs = SearchJobStore(self.store)
+        job = jobs.enqueue(self.created["id"], self.created["token"], {
+            "prompt": "warsaw cars",
+            "resources": ["com"],
+            "required_resources": ["com"],
+            "preferences": {},
+            "search_context": {"mode": "new_brand", "brand_name": "", "guidance": ""},
+            "generation_context": {},
+            "target_count": 2,
+            "batch_size": 2,
+            "max_batches": 2,
+        })
+        self.assertEqual(job["state"], "pending")
+
+        def generate(_job, _count, _context):
+            return [{"name": "MileWawa"}, {"name": "VarsoMoto"}]
+
+        def verify(_job, candidate):
+            return {
+                **candidate,
+                "availability": {
+                    "com": {
+                        "status": "not_found",
+                        "source": "verisign_rdap",
+                        "method": "rdap",
+                        "confidence": 0.8,
+                        "occupancy": "not_found",
+                        "claimability": "unconfirmed",
+                    }
+                },
+                "verification": {"com": {"verdict": "likely_available"}},
+                "bundle_state": "promising",
+                "bundle_score": 40,
+                "checked": True,
+            }
+
+        finished = run_one_job(jobs, "postgres-ci-worker", generate, verify)
+        self.assertEqual(finished["state"], "completed")
+        self.assertEqual(finished["stop_reason"], "target_reached")
+        self.assertEqual(finished["delivered_count"], 2)
+
+        snapshot = self.store.load_session(self.created["id"], self.created["token"])
+        names = {row["name"] for row in snapshot["results"]}
+        self.assertIn("MileWawa", names)
+        self.assertIn("VarsoMoto", names)
+        background_runs = [row for row in snapshot["runs"] if row.get("background_job_id") == job["id"]]
+        self.assertEqual(len(background_runs), 1)
+        self.assertEqual(background_runs[0]["status"], "completed")
 
 
 if __name__ == "__main__":

@@ -13,6 +13,10 @@ install()
 from app import app  # noqa: E402
 import app as app_module  # noqa: E402
 from availability_v2 import check_all as check_all_v2, check_many as check_many_v2  # noqa: E402
+from background_search_api import (  # noqa: E402
+    background_search_diagnostics,
+    install_background_search_routes,
+)
 from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
 from streaming_search import install_streaming_routes  # noqa: E402
 from verification.diagnostics import provider_diagnostics  # noqa: E402
@@ -21,9 +25,10 @@ app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 install_streaming_routes(app, app_module)
 install_session_routes(app, app_module)
+install_background_search_routes(app, app_module)
 
 
-RELEASE_MARKER = "v7.1-live-search-activity"
+RELEASE_MARKER = "v7.2-background-search-queue"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js"></script>'
@@ -120,6 +125,7 @@ def api_verification_diagnostics():
             "operational_activity_only": True,
         },
         "session_storage": session_storage_diagnostics(),
+        "background_search": background_search_diagnostics(),
         "providers": providers,
     })
 
