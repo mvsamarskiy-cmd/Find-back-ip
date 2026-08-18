@@ -25,3 +25,4 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - run: python verification/check_inline_js.py
       - run: node --check static/streaming.js
+      - run: node --check static/resource_progress.js
