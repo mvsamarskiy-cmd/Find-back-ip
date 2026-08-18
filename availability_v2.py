@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 
 import availability as legacy
-from verification.bridge import attach_verification_verdicts
+from verification.collector import collect_verification_verdicts
 from verification.instagram_live import enrich_instagram
 from verification.socialscan_live import enrich_x
 from verification.telegram_live import enrich_telegram
@@ -54,7 +54,8 @@ def _recount(result):
 
 def _augment(handle, payload):
     result = dict(payload or {})
-    availability = dict(result.get("availability") or {})
+    base_availability = dict(result.get("availability") or {})
+    availability = dict(base_availability)
     changed = False
     if "x" in availability:
         availability["x"] = enrich_x(handle, availability.get("x"))
@@ -71,7 +72,15 @@ def _augment(handle, payload):
     if changed:
         result["availability"] = availability
         _recount(result)
-    result["verification"] = attach_verification_verdicts(handle, availability)
+
+    # Verification v2 preserves the original legacy evidence and any stronger
+    # compatibility enrichment as separate rows. A later provider can no longer
+    # silently erase earlier evidence before fusion.
+    result["verification"] = collect_verification_verdicts(
+        handle,
+        base_availability,
+        availability,
+    )
     return result
 
 
