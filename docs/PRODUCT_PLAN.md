@@ -5,14 +5,17 @@ backward compatible, and covered by tests before the next phase begins.
 
 ## Product objective
 
-Find contextually strong names with the best evidence-backed composition across
-`.com`, Instagram, Telegram, TikTok, YouTube, Facebook, and X. The product must
-separate confirmed claimability from public-profile absence and unknown results.
+Find contextually strong names or brand-linked digital identity variants with the
+best evidence-backed composition across `.com`, Instagram, Telegram, TikTok,
+YouTube, Facebook, and X. The product must understand whether the user is creating
+a new brand or preserving an existing one, and it must separate confirmed
+claimability from public-profile absence and unknown results.
 
 ## Ranking model
 
-Candidates first pass hard gates for context, syntax, critical language risk,
-and high collision risk. Survivors are ranked as a Pareto set across:
+Candidates first pass hard gates for context, explicit user constraints, syntax,
+critical language risk, required-resource conflicts, and high collision risk.
+Survivors are ranked as a Pareto set across:
 
 - contextual fit;
 - brand quality and distinctiveness;
@@ -28,8 +31,11 @@ No estimated monetary value is shown without comparable market sales.
 
 - [x] Project-specific local profiles.
 - [x] Like and dislike controls.
-- [x] Structured reasons: sound, meaning, length, style, distinctiveness.
-- [x] Feed bounded liked/disliked examples and reason weights into OpenAI.
+- [x] Structured reasons for positive feedback: sound, meaning, length, style,
+  distinctiveness.
+- [x] Structured reasons for negative feedback, including genericness,
+  complexity, similarity, and disliked endings.
+- [x] Feed bounded liked/disliked examples and signed reason weights into OpenAI.
 - [x] Preserve existing browser history.
 - [x] Ukrainian interface and AI explanations.
 - [x] Unit tests without external-network dependence.
@@ -47,12 +53,20 @@ No estimated monetary value is shown without comparable market sales.
 - [ ] Configure production Name.com credentials and verify a live
   `claimable`/`purchasable` result.
 - [ ] Add Telegram MTProto and Fragment classification as a separate secured service.
+- [ ] Add trademark/collision evidence as a separate non-binary risk dimension;
+  never label a mark globally `free` only because an exact search returns no hit.
 
-## Phase 3 — mathematical generation funnel
+## Phase 3 — identity search and mathematical generation funnel
 
 - [x] Let every search select any non-empty subset of the seven resources.
 - [x] Persist the selection in browser history and use it as the exact `N/N`
   denominator in API and UI results.
+- [x] Define explicit search intent: new brand, existing locked brand, or existing
+  adaptable brand.
+- [x] Add bounded natural-language guidance such as exclusions, length/style
+  preferences, and other user instructions, with explicit instructions taking
+  precedence over learned taste.
+- [x] Persist search intent and guidance inside the local project/search history.
 - [x] Define bounded structured Brand DNA and a `/api/brand-dna` compiler from a
   user brief and optional public website extract.
 - [x] Add a conservative website-analysis boundary: HTTP(S) only, standard ports,
@@ -62,13 +76,24 @@ No estimated monetary value is shown without comparable market sales.
   legacy brief-only calls.
 - [ ] Add website URL and Brand DNA review/edit controls to the browser UI and
   persist the resulting DNA inside the local project profile.
-- Generate diversified local candidate families.
-- Funnel: 20,000 -> 6,000 structural -> 1,500 linguistic -> 300 collision ->
+- [ ] Split requirements into MUST HAVE and optional resources so a candidate is
+  rejected when a required identity resource conflicts but may survive an
+  optional conflict.
+- [ ] Generate in feedback-aware batches, learn which lexical neighborhoods are
+  saturated, and broaden the semantic search instead of producing one-letter
+  mutations.
+- [ ] Search until enough strong identity bundles are found or a configurable
+  safety cap is reached; initial UI target is at most 100 externally checked
+  candidates, not 100 forced `free` results.
+- [ ] Split results into `conflict` and `opportunity` columns while preserving an
+  explicit unresolved state; each column gets independent resource/status filters.
+- [ ] Generate diversified local candidate families.
+- [ ] Funnel: 20,000 -> 6,000 structural -> 1,500 linguistic -> 300 collision ->
   100 external checks -> 20 final reports.
-- Apply family quotas to prevent suffix monoculture.
-- Add phonetic, visual, semantic, and edit-distance deduplication.
-- Rank availability compositions across the selected resources; required-resource
-  filtering is complete, while full composition scoring remains pending.
+- [ ] Apply family quotas to prevent suffix monoculture.
+- [ ] Add phonetic, visual, semantic, and edit-distance deduplication.
+- [ ] Rank full Identity Bundles across the selected resources; current
+  evidence-aware sorting is only the first step.
 
 ## Phase 4 — durable server history
 
