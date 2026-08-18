@@ -1,9 +1,8 @@
-/* Availability Hunter R2 UI overlay.
+/* Availability Hunter + Procedural Search UI.
  *
- * The existing durable-search panel remains the transport/runtime owner. This
- * overlay changes the user-facing goal from "collect N candidates" to
- * "find N strict-free matches within a verification budget" while keeping the
- * legacy candidate-volume API backward compatible.
+ * The durable-search runtime remains the transport owner. This overlay gives the
+ * user a result goal and shows the real semantic root/strategy currently being
+ * explored by the worker.
  */
 (() => {
   const POLL_MS = 2200;
@@ -86,14 +85,21 @@
     const status = panel.querySelector('#largeSearchStatus');
     status?.insertAdjacentElement('afterend', goal);
 
+    const focus = document.createElement('span');
+    focus.id = 'proceduralFocusStatus';
+    focus.className = 'procedural-focus-status';
+    focus.textContent = 'Процедурний пошук: очікую план.';
+    goal.insertAdjacentElement('afterend', focus);
+
     if (!document.getElementById('availabilityHunterStyle')) {
       const style = document.createElement('style');
       style.id = 'availabilityHunterStyle';
       style.textContent = `
         .hunter-label{font-size:11px;color:var(--muted)}
         #hunterTargetMatches{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 9px;font:inherit}
-        .hunter-goal-status{width:100%;font-size:12px;color:var(--muted)}
+        .hunter-goal-status,.procedural-focus-status{width:100%;font-size:12px;color:var(--muted)}
         .hunter-goal-status strong{color:var(--ok)}
+        .procedural-focus-status b{color:var(--text)}
       `;
       document.head.appendChild(style);
     }
@@ -104,9 +110,6 @@
       }
     });
 
-    // Capture phase prevents the legacy click handler from starting a second,
-    // candidate-volume job. This overlay owns only the start action; the proven
-    // background_search.js runtime still discovers/polls/renders the job.
     start?.addEventListener('click', event => {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -123,6 +126,7 @@
     const resources = typeof selectedResources === 'function' ? selectedResources() : [];
     const start = panel?.querySelector('#largeSearchStart');
     const goal = panel?.querySelector('#hunterGoalStatus');
+    const focus = panel?.querySelector('#proceduralFocusStatus');
     const targetMatches = Math.max(1, Number(panel?.querySelector('#hunterTargetMatches')?.value) || 3);
     const maxChecks = Math.max(targetMatches, Number(panel?.querySelector('#largeSearchTarget')?.value) || 500);
 
@@ -140,6 +144,7 @@
     startBusy = true;
     if (start) start.disabled = true;
     if (goal) goal.textContent = `Запускаю: знайти ${targetMatches} вільних, максимум ${maxChecks} перевірок…`;
+    if (focus) focus.textContent = 'Будую послідовний план коренів…';
     try {
       const payload = await api('/api/sessions/' + encodeURIComponent(session.id) + '/search-jobs', {
         method: 'POST',
@@ -162,6 +167,7 @@
           target_count: maxChecks,
           target_matches: targetMatches,
           max_checks: maxChecks,
+          search_strategy: 'procedural',
           batch_size: 20,
         }),
       });
@@ -172,6 +178,7 @@
         run_id: job.run_id,
         target_count: maxChecks,
         target_matches: targetMatches,
+        search_strategy: 'procedural',
         started_at: new Date().toISOString(),
       };
       current.updated = new Date().toISOString();
@@ -179,6 +186,7 @@
       appendActivity('availability_hunter_started', {
         target_matches: targetMatches,
         max_checks: maxChecks,
+        search_strategy: 'procedural',
         resources: [...resources],
         prompt,
       });
@@ -198,6 +206,7 @@
     const panel = ensureHunterControls();
     const session = creds();
     const goal = panel?.querySelector('#hunterGoalStatus');
+    const focus = panel?.querySelector('#proceduralFocusStatus');
     if (!panel || !session?.id || !session?.token) return;
     try {
       const payload = await api('/api/sessions/' + encodeURIComponent(session.id) + '/search-jobs?limit=5');
@@ -207,6 +216,7 @@
       if (!job) return;
       const config = job.search_context?.availability_hunter || {};
       const runtime = job.preferences?._hunter_runtime || {};
+      const plan = job.preferences?._procedural_runtime || {};
       const matches = Number(runtime.matches) || 0;
       const targetMatches = Number(runtime.target_matches || config.target_matches) || 0;
       const checked = Number(runtime.checked ?? job.delivered_count) || 0;
@@ -215,6 +225,16 @@
       if (goal) {
         goal.innerHTML = `<strong>${matches}/${targetMatches}</strong> вільних · перевірено ${checked}/${maxChecks}` +
           (done && job.stop_reason ? ` · ${job.stop_reason}` : '');
+      }
+      if (focus) {
+        if (plan.exhausted) {
+          focus.textContent = 'Процедурний простір поточного плану вичерпано.';
+        } else if (plan.current_root) {
+          focus.innerHTML = `Шукаю корінь <b>${plan.current_root}</b> · ${plan.current_strategy || '—'} · ` +
+            `${Number(plan.strategy_checked) || 0} перевірок у цьому кроці`;
+        } else {
+          focus.textContent = 'Будую послідовний план коренів…';
+        }
       }
       const start = panel.querySelector('#largeSearchStart');
       if (start && done) start.disabled = false;
