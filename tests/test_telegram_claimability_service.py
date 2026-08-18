@@ -12,6 +12,7 @@ class TelegramClaimabilityServiceTests(unittest.TestCase):
             "TELEGRAM_API_HASH": "hash",
             "TELEGRAM_SESSION_STRING": "session",
             "TELEGRAM_EVIDENCE_TOKEN": "secret",
+            "TELEGRAM_PROBE_CHANNEL": "123456789",
         }
 
     @patch.dict("telegram_claimability_service.os.environ", {}, clear=True)
@@ -21,12 +22,28 @@ class TelegramClaimabilityServiceTests(unittest.TestCase):
         self.assertEqual(payload["status"], "configuration_required")
         self.assertFalse(payload["configured"])
         self.assertTrue(payload["strict_claimability"])
+        self.assertEqual(payload["method"], "channels.checkUsername")
+        self.assertEqual(payload["scope"], "channel")
+        self.assertFalse(payload["probe_channel_configured"])
 
     @patch.dict("telegram_claimability_service.os.environ", {
         "TELEGRAM_API_ID": "12345",
         "TELEGRAM_API_HASH": "hash",
         "TELEGRAM_SESSION_STRING": "session",
         "TELEGRAM_EVIDENCE_TOKEN": "secret",
+    }, clear=True)
+    def test_probe_channel_is_required_for_strict_service(self):
+        response = self.client.get("/health")
+        payload = response.get_json()
+        self.assertFalse(payload["configured"])
+        self.assertFalse(payload["probe_channel_configured"])
+
+    @patch.dict("telegram_claimability_service.os.environ", {
+        "TELEGRAM_API_ID": "12345",
+        "TELEGRAM_API_HASH": "hash",
+        "TELEGRAM_SESSION_STRING": "session",
+        "TELEGRAM_EVIDENCE_TOKEN": "secret",
+        "TELEGRAM_PROBE_CHANNEL": "123456789",
     }, clear=True)
     def test_bearer_token_is_required(self):
         response = self.client.get("/v1/username/example")
@@ -37,6 +54,7 @@ class TelegramClaimabilityServiceTests(unittest.TestCase):
         "TELEGRAM_API_HASH": "hash",
         "TELEGRAM_SESSION_STRING": "session",
         "TELEGRAM_EVIDENCE_TOKEN": "secret",
+        "TELEGRAM_PROBE_CHANNEL": "123456789",
     }, clear=True)
     def test_local_invalid_username_never_calls_telegram(self):
         response = self.client.get(
@@ -46,7 +64,14 @@ class TelegramClaimabilityServiceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["claimability"]["status"], "invalid")
-        self.assertEqual(payload["claimability"]["method"], "account.checkUsername")
+        self.assertEqual(payload["claimability"]["method"], "channels.checkUsername")
+        self.assertEqual(payload["claimability"]["scope"], "channel")
+
+    def test_probe_channel_id_accepts_bot_api_prefix(self):
+        self.assertEqual(
+            service._normalize_probe_channel("-100123456789"),
+            ("id", 123456789),
+        )
 
     def test_rpc_error_mapping(self):
         class RpcLike(Exception):
@@ -60,6 +85,10 @@ class TelegramClaimabilityServiceTests(unittest.TestCase):
         class InvalidLike(Exception):
             message = "USERNAME_INVALID"
         self.assertEqual(service._rpc_code(InvalidLike()), "invalid")
+
+        class PublicLimitLike(Exception):
+            message = "CHANNELS_ADMIN_PUBLIC_TOO_MUCH"
+        self.assertEqual(service._rpc_code(PublicLimitLike()), "scope_blocked")
 
 
 if __name__ == "__main__":
