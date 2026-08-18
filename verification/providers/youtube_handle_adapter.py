@@ -1,12 +1,13 @@
 """No-key YouTube handle existence probe using the public handle URL.
 
 YouTube documents handle URLs as unique channel URLs in the form
-``youtube.com/@handle``. This adapter treats only an exact handle marker in a
+``youtube.com/@handle``. This adapter treats only an exact handle identity on a
 successful public page as positive occupancy evidence. Missing, blocked,
 redirected, or otherwise ambiguous responses fail closed and never imply
 claimability.
 """
 from time import perf_counter
+from urllib.parse import unquote, urlparse
 
 import requests
 
@@ -33,6 +34,16 @@ def _evidence(handle, signal, detail, *, confidence=0.0, latency_ms=None, http_s
             "authoritative_claimability": False,
         },
     ).to_dict()
+
+
+def _final_url_matches(response_url, handle):
+    try:
+        parsed = urlparse(str(response_url))
+        host = parsed.netloc.lower().split(":", 1)[0]
+        path = unquote(parsed.path).rstrip("/").lower()
+    except (TypeError, ValueError):
+        return False
+    return host in {"youtube.com", "www.youtube.com", "m.youtube.com"} and path == f"/@{handle}"
 
 
 def check_username(handle, platform="youtube"):
@@ -67,6 +78,18 @@ def check_username(handle, platform="youtube"):
         return _evidence(handle, "unknown", "YouTube returned 404; claimability is not proven", latency_ms=latency, http_status=status)
     if status != 200:
         return _evidence(handle, "unknown", f"YouTube public handle HTTP {status}", latency_ms=latency, http_status=status)
+
+    # YouTube documents the @handle URL as the unique channel URL. If redirects
+    # settle on exactly that URL, that is direct positive occupancy evidence.
+    if _final_url_matches(getattr(response, "url", ""), handle):
+        return _evidence(
+            handle,
+            "exists",
+            "YouTube resolved to the exact documented handle URL",
+            confidence=0.92,
+            latency_ms=latency,
+            http_status=status,
+        )
 
     text = response.text.lower()
     exact_markers = (
