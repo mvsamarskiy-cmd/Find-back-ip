@@ -1,7 +1,7 @@
 # NameMachine implementation status
 
-Updated for the adaptive deep-search release prepared from GitHub `main` commit
-`6288daf943bdb833e9e017d88be06f185849bf8a` on 2026-08-18.
+Updated for the Brand DNA browser release prepared from GitHub `main` commit
+`d7d76981c7a917297cbe609a0412ccf32c7d37db` on 2026-08-18.
 
 This file records what exists now. `PRODUCT_PLAN.md` remains the implementation
 order for unfinished work.
@@ -27,10 +27,11 @@ order for unfinished work.
 | Clear UI handling of HTML/5xx responses | PR #13 | Included |
 | Railway timeout-safe Gunicorn configuration and health check | commits `3a31297` through `0437175` | Included |
 | Lightweight Git-based production rollback | PR #19 | Included; verified revert workflow preserves normal Git history and CI |
-| Structured Brand DNA and safe public-website analysis contract | PR #20 | Included for API and naming context; browser DNA review UI remains pending |
+| Structured Brand DNA and safe public-website analysis contract | PR #20 | Included for API and naming context |
 | Explicit search intent, natural-language guidance, and symmetric feedback reasons | PR #21 | Included in `main` |
 | MUST-HAVE Identity Bundle classification and split result columns | PR #22 | Included in `main` |
-| Adaptive multi-batch deep search with a 100-check safety cap | Current release | Implemented on release branch; requires green CI and merge before production |
+| Adaptive multi-batch deep search with a 100-check safety cap | PR #23 | Included in `main` |
+| Browser website analysis and editable Brand DNA project workflow | PR #24 | Implemented on release branch; requires final green CI and merge before production |
 
 ## Product-plan status
 
@@ -43,19 +44,20 @@ order for unfinished work.
   Telegram MTProto/Fragment and automated trademark collision evidence are not
   implemented.
 - Phase 3 is materially advanced: resource selection, search intent, natural-
-  language guidance, Brand DNA, safe website extraction, MUST-HAVE vs optional
-  resources, deterministic Identity Bundle classification, and split result columns
-  exist. Deep search now works in bounded batches: each checked batch feeds prior
-  excluded names, conflict examples, and successful examples into the next AI
-  generation; exact and conservative phonetic near-duplicates from prior batches
-  are blocked server-side. The browser stops when the requested number of
-  confirmed/promising Identity Bundles is reached or after at most 100 externally
-  checked candidates. Browser Brand DNA review, the full 20k funnel, family quotas,
-  stronger deduplication, and weighted Identity Bundle scoring remain pending.
+  language guidance, structured Brand DNA, safe website extraction, editable
+  browser DNA review, MUST-HAVE vs optional resources, deterministic Identity
+  Bundle classification, split result columns, and bounded adaptive deep search
+  all exist. Website-derived DNA can be reviewed/corrected, is persisted in the
+  local project/search history, and is sent to every adaptive batch. Deep search
+  blocks exact and conservative phonetic near-duplicates and stops at the target
+  or after at most 100 externally checked candidates. The full 20k funnel, family
+  quotas, stronger visual/semantic/edit-distance deduplication, automated
+  trademark collision evidence, and weighted Identity Bundle scoring remain
+  pending.
 - Phase 4 is not implemented. Projects, history, preferences, search intent,
   guidance, required-resource choices, adaptive search history, and Brand DNA are
-  not yet durable server-side data; PostgreSQL, migrations, accounts, idempotency,
-  export, and server-side deletion are pending.
+  still browser-local rather than durable server-side data; PostgreSQL, migrations,
+  accounts, idempotency, export, and server-side deletion are pending.
 - Phase 5 is partially complete only at the web-process/release level: timeouts,
   health, bounded concurrency, rate limits, controlled errors, CI, branch cleanup,
   Git-based rollback, and a per-launch external-check safety cap exist. The queue,
@@ -81,11 +83,12 @@ post-deploy smoke and commit match are confirmed.
 
 ## Next implementation order
 
-1. Wire website URL + Brand DNA review/edit into the browser project flow so the
-   compiled DNA is visible, reusable, and automatically sent with generation.
-2. Add stronger cross-batch family quotas and visual/semantic/edit-distance
-   deduplication before scaling toward the full 20,000-candidate funnel.
-3. Improve evidence adapters, starting with Telegram MTProto/Fragment and a
-   legally careful trademark collision layer.
+1. Add a legally careful trademark/collision evidence layer as a non-binary risk
+   dimension; do not call a mark globally free from a missing exact result.
+2. Improve Telegram evidence with MTProto/Fragment classification where a secure
+   credential/service boundary is available.
+3. Add stronger family quotas plus visual/semantic/edit-distance deduplication and
+   weighted Identity Bundle scoring before scaling toward the full 20,000-candidate
+   funnel.
 4. Add durable PostgreSQL history with idempotency before scaling the full funnel.
 5. Add queue/resumable jobs, metrics, alerts, and load tests.
