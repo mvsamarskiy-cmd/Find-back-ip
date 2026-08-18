@@ -18,6 +18,8 @@ class Fixture:
 
 KNOWN_FIXTURES = (
     Fixture("mazomoto", "youtube", "exists", "Known YouTube handle"),
+    Fixture("youtubecreators", "youtube", "exists", "YouTube official handle URL example"),
+    Fixture("googledevelopers", "youtube", "exists", "YouTube Data API forHandle documentation example"),
     Fixture("mazomoto", "tiktok", "exists", "Known TikTok handle"),
     Fixture("scout2015", "tiktok", "exists", "TikTok official creator-oEmbed documentation example"),
     Fixture("mazomoto", "telegram", "exists", "Known Telegram handle"),
