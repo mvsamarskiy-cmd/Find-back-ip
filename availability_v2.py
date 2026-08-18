@@ -13,6 +13,7 @@ import availability as legacy
 from verification.bridge import attach_verification_verdicts
 from verification.instagram_live import enrich_instagram
 from verification.socialscan_live import enrich_x
+from verification.telegram_live import enrich_telegram
 from verification.tiktok_live import enrich_tiktok
 
 
@@ -63,6 +64,9 @@ def _augment(handle, payload):
         changed = True
     if "tiktok" in availability:
         availability["tiktok"] = enrich_tiktok(handle, availability.get("tiktok"))
+        changed = True
+    if "telegram" in availability:
+        availability["telegram"] = enrich_telegram(handle, availability.get("telegram"))
         changed = True
     if changed:
         result["availability"] = availability
