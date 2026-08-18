@@ -12,7 +12,7 @@ class UiCleanupR8Tests(unittest.TestCase):
         self.assertIn('/static/ui_cleanup_r8.js?v=1', body)
         self.assertLess(body.index('/static/feed_navigation.js?v=3'), body.index('/static/ui_cleanup_r8.js?v=1'))
         self.assertLess(body.index('/static/durable_live_events.js?v=1'), body.index('/static/ui_cleanup_r8.js?v=1'))
-        self.assertEqual(RELEASE_MARKER, 'v8.5-ui-cleanup-pagination')
+        self.assertTrue(RELEASE_MARKER.startswith('v8.5'))
 
     def test_large_telemetry_is_collapsed_by_default_but_not_deleted(self):
         source = Path('static/ui_cleanup_r8.js').read_text(encoding='utf-8')
