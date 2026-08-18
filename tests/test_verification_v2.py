@@ -80,6 +80,86 @@ def test_exists_evidence_blocks_absence_only_evidence():
     assert verdict.verdict == "taken"
 
 
+def test_claimable_plus_exists_is_never_verified_available():
+    verdict = fuse_evidence(
+        "com",
+        "example.com",
+        [
+            Evidence(
+                platform="com",
+                handle="example.com",
+                source="namecom_core_api",
+                method="registrar_check_availability",
+                signal="claimable",
+                confidence=0.99,
+            ).to_dict(),
+            Evidence(
+                platform="com",
+                handle="example.com",
+                source="verisign_rdap",
+                method="rdap_exact_domain",
+                signal="exists",
+                confidence=0.98,
+            ).to_dict(),
+        ],
+    )
+    assert verdict.verdict == "unknown"
+    assert verdict.verdict != "available_verified"
+    assert "Contradictory" in verdict.reason
+
+
+def test_invalid_wins_over_claimable_signal():
+    verdict = fuse_evidence(
+        "x",
+        "bad handle",
+        [
+            Evidence(
+                platform="x",
+                handle="bad handle",
+                source="x_api",
+                method="lookup",
+                signal="invalid",
+                confidence=0.99,
+            ).to_dict(),
+            Evidence(
+                platform="x",
+                handle="bad handle",
+                source="public_web",
+                method="fallback",
+                signal="claimable",
+                confidence=0.5,
+            ).to_dict(),
+        ],
+    )
+    assert verdict.verdict == "invalid"
+
+
+def test_stronger_unresolved_source_blocks_weaker_absence_marketing():
+    verdict = fuse_evidence(
+        "facebook",
+        "example",
+        [
+            Evidence(
+                platform="facebook",
+                handle="example",
+                source="whatsmyname",
+                method="community_fingerprint",
+                signal="absent",
+                confidence=0.68,
+            ).to_dict(),
+            Evidence(
+                platform="facebook",
+                handle="example",
+                source="public_web",
+                method="public_profile",
+                signal="unknown",
+                confidence=0.0,
+            ).to_dict(),
+        ],
+    )
+    assert verdict.verdict == "unknown"
+
+
 def test_diagnostics_never_exposes_secret_values(monkeypatch):
     monkeypatch.setenv("NAMECOM_USERNAME", "secret-user")
     monkeypatch.setenv("NAMECOM_API_TOKEN", "secret-token")
