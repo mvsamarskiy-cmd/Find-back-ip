@@ -38,6 +38,7 @@ jobs:
       - run: node --check static/claimability_ui.js
       - run: node --check static/entry_modes.js
       - run: node --check static/brand_collision_ui.js
+      - run: node --check static/durable_live_events.js
 
   postgres-session-store:
     runs-on: ubuntu-latest
