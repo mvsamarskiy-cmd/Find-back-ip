@@ -1,0 +1,3 @@
+# Optional verifier dependencies. Not installed by production requirements.txt yet.
+# Socialscan uses undocumented registration-side endpoints; benchmark before enabling.
+socialscan==1.4.2
