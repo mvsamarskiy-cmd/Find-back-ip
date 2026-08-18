@@ -169,6 +169,9 @@ class ProviderRuntime:
         with self._cache_lock:
             self._cache.clear()
 
+    def shutdown(self, wait=True):
+        self._executor.shutdown(wait=wait, cancel_futures=True)
+
 
 RUNTIME = ProviderRuntime()
 
