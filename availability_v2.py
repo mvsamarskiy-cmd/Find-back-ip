@@ -11,6 +11,7 @@ import os
 
 import availability as legacy
 from verification.bridge import attach_verification_verdicts
+from verification.instagram_live import enrich_instagram
 from verification.socialscan_live import enrich_x
 
 
@@ -52,8 +53,14 @@ def _recount(result):
 def _augment(handle, payload):
     result = dict(payload or {})
     availability = dict(result.get("availability") or {})
+    changed = False
     if "x" in availability:
         availability["x"] = enrich_x(handle, availability.get("x"))
+        changed = True
+    if "instagram" in availability:
+        availability["instagram"] = enrich_instagram(handle, availability.get("instagram"))
+        changed = True
+    if changed:
         result["availability"] = availability
         _recount(result)
     result["verification"] = attach_verification_verdicts(handle, availability)

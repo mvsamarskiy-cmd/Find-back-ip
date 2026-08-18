@@ -19,7 +19,7 @@ app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 
 
-RELEASE_MARKER = "v6.4-socialscan-x"
+RELEASE_MARKER = "v6.5-instagram-meta-oembed"
 
 
 @app.after_request
@@ -53,6 +53,22 @@ def api_verification_diagnostics():
         "live_platforms": ["x"],
         "benchmark_only_platforms": ["instagram"],
         "claimable_promoted": False,
+    }
+    providers["instagram_web_profile_info"] = {
+        "configured": True,
+        "no_api_key": True,
+        "live": False,
+        "benchmark_only": True,
+        "authoritative_claimability": False,
+    }
+    providers["meta_instagram_oembed"] = {
+        "configured": True,
+        "no_api_key": True,
+        "official_meta_endpoint": True,
+        "live": True,
+        "positive_only": True,
+        "can_confirm_occupancy": True,
+        "authoritative_claimability": False,
     }
     return jsonify({
         "verification_engine": "v2",

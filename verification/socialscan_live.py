@@ -1,10 +1,8 @@
 """Conservative live promotion for benchmarked Socialscan evidence.
 
-Only X is promoted in this release. The first live benchmark proved occupied X
-handles reliably, but did not benchmark free handles. Therefore Socialscan can
-confirm TAKEN/INVALID, while an `available=True` response remains only
-NOT_FOUND/claimability-unconfirmed. Instagram stays benchmark-only until it has
-its own live fixtures.
+Only X is promoted in production. Socialscan's Instagram signal is intentionally
+benchmark-only because repeated live runs have been inconsistent. Therefore no
+Instagram evidence from this module can affect production availability.
 """
 
 import os
@@ -44,7 +42,7 @@ def _from_evidence(name, evidence):
         )
     if signal == "claimable":
         # Deliberately *not* `claimable`: free-handle precision has not been
-        # benchmarked yet, and Socialscan uses undocumented registration paths.
+        # benchmarked and Socialscan uses undocumented registration paths.
         return availability._result(
             "not_found",
             detail or "Socialscan reports availability; claimability remains unconfirmed",
@@ -67,8 +65,6 @@ def enrich_x(name, legacy_row):
     promoted = _from_evidence(name, evidence)
     if promoted is None:
         return legacy_row
-
-    # Existing positive occupancy evidence is never weakened by Socialscan.
     if isinstance(legacy_row, dict) and legacy_row.get("status") == "taken":
         return legacy_row
     return promoted

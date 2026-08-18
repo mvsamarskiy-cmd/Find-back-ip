@@ -37,12 +37,47 @@ class AvailabilityV2Tests(unittest.TestCase):
         }
 
         with patch.object(availability_v2.legacy, "check_all", return_value=legacy_payload):
-            result = availability_v2.check_all("Example", resources=["com", "instagram"])
+            with patch.object(availability_v2, "enrich_instagram", side_effect=lambda name, row: row):
+                result = availability_v2.check_all("Example", resources=["com", "instagram"])
 
         self.assertEqual(result["claimable_count"], 1)
         self.assertEqual(result["not_found_count"], 1)
         self.assertEqual(result["verification"]["com"]["verdict"], "available_verified")
         self.assertEqual(result["verification"]["instagram"]["verdict"], "likely_available")
+
+    def test_instagram_positive_enrichment_recounts_and_updates_verdict(self):
+        legacy_payload = {
+            "availability": {
+                "instagram": {
+                    "status": "unknown",
+                    "detail": "inconclusive",
+                    "url": "https://instagram.com/natgeo/",
+                    "source": "public_web",
+                    "method": "public_profile",
+                    "confidence": 0.0,
+                    "occupancy": "unknown",
+                    "claimability": "unconfirmed",
+                    "checked_at": "2026-08-18T00:00:00Z",
+                }
+            }
+        }
+        enriched = {
+            "status": "taken",
+            "detail": "exact profile",
+            "url": "https://instagram.com/natgeo/",
+            "source": "meta_instagram_oembed",
+            "method": "tokenless_oembed_profile",
+            "confidence": 0.95,
+            "occupancy": "occupied",
+            "claimability": "not_claimable",
+            "checked_at": "2026-08-18T00:00:00Z",
+        }
+        with patch.object(availability_v2.legacy, "check_all", return_value=legacy_payload):
+            with patch.object(availability_v2, "enrich_instagram", return_value=enriched):
+                result = availability_v2.check_all("natgeo", resources=["instagram"])
+        self.assertEqual(result["taken_count"], 1)
+        self.assertEqual(result["unknown_count"], 0)
+        self.assertEqual(result["verification"]["instagram"]["verdict"], "taken")
 
     def test_taken_remains_taken(self):
         legacy_payload = {
