@@ -33,11 +33,13 @@ class ClientReportV5Tests(unittest.TestCase):
         self.assertIn('“Не знайдено” не означає “вільне”', source)
         self.assertIn('root_blend', source)
 
-    def test_audit_sync_is_separate_from_client_report(self):
+    def test_audit_sync_is_separate_and_prunes_browser_copy(self):
         audit_source = Path('static/audit_sync.js').read_text(encoding='utf-8')
         client_source = Path('static/client_report.js').read_text(encoding='utf-8')
         self.assertIn('/audit-events/batch', audit_source)
         self.assertIn('seven-day TTL', audit_source)
+        self.assertIn('LOCAL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000', audit_source)
+        self.assertIn('pruneLocalAudit', audit_source)
         self.assertNotIn('/audit-events/batch', client_source)
 
     def test_worker_uses_retention_entrypoint(self):
