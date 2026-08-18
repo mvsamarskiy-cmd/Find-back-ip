@@ -1,17 +1,16 @@
 /* Large-feed navigation layer.
  *
- * Loaded last. It keeps the working Feed newest-first, never alphabetizes it,
- * and renders a bounded window. Turbo mode deliberately presents only strict
- * claimable results from the active Turbo run; rejected rows remain durable in
- * session storage for audit, learning, and client reports.
+ * Keeps the working Feed newest-first and uses real bounded pages instead of an
+ * ever-growing "show more" window. Turbo still presents only strict claimable
+ * results from the active Turbo run; rejected rows remain durable for audit,
+ * learning, and reports.
  */
 (() => {
-  const PAGE_SIZE = 60;
-  const RECOMMENDED_RENDER_LIMIT = 200;
+  const PAGE_SIZE = 25;
   let feedFilter = 'all';
   let feedQuery = '';
-  let visibleLimit = PAGE_SIZE;
   let controlsReady = false;
+  const pages = { feed: 1, recommended: 1, shortlist: 1 };
 
   function newestFirst(rows) {
     return [...(rows || [])].sort((a, b) => {
@@ -56,10 +55,6 @@
     return !allGreen(row) && !hasConflict(row) && !isChecking(row) && row?.bundle_state === 'promising';
   }
 
-  function isUnresolved(row) {
-    return !allGreen(row) && !hasConflict(row) && !isPromising(row);
-  }
-
   function category(row) {
     if (allGreen(row)) return 'confirmed';
     if (hasConflict(row)) return 'conflict';
@@ -80,6 +75,54 @@
     return result;
   }
 
+  function totalPages(total) {
+    return Math.max(1, Math.ceil(Math.max(0, Number(total) || 0) / PAGE_SIZE));
+  }
+
+  function clampPage(kind, total) {
+    const max = totalPages(total);
+    const requested = Math.max(1, Number(pages[kind]) || 1);
+    pages[kind] = Math.min(requested, max);
+    return pages[kind];
+  }
+
+  function slicePage(rows, kind) {
+    const list = rows || [];
+    const page = clampPage(kind, list.length);
+    const start = (page - 1) * PAGE_SIZE;
+    return list.slice(start, start + PAGE_SIZE);
+  }
+
+  function pageNumbers(page, max) {
+    if (max <= 7) return Array.from({ length: max }, (_, index) => index + 1);
+    const set = new Set([1, max, page - 1, page, page + 1]);
+    const ordered = [...set].filter(value => value >= 1 && value <= max).sort((a, b) => a - b);
+    const output = [];
+    let previous = 0;
+    for (const value of ordered) {
+      if (previous && value - previous > 1) output.push('…');
+      output.push(value);
+      previous = value;
+    }
+    return output;
+  }
+
+  function paginationMarkup(kind, total) {
+    const max = totalPages(total);
+    const page = clampPage(kind, total);
+    if (total <= PAGE_SIZE) return '';
+    const numbers = pageNumbers(page, max).map(value => {
+      if (value === '…') return '<span class="page-gap">…</span>';
+      return `<button type="button" class="page-button${value === page ? ' active' : ''}" data-page-kind="${kind}" data-page="${value}" aria-label="Сторінка ${value}"${value === page ? ' aria-current="page"' : ''}>${value}</button>`;
+    }).join('');
+    return `<nav class="pagination" aria-label="Навігація сторінками">
+      <button type="button" class="page-button" data-page-kind="${kind}" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''} aria-label="Попередня сторінка">←</button>
+      ${numbers}
+      <button type="button" class="page-button" data-page-kind="${kind}" data-page="${page + 1}" ${page >= max ? 'disabled' : ''} aria-label="Наступна сторінка">→</button>
+      <span class="page-summary">${page}/${max}</span>
+    </nav>`;
+  }
+
   function injectStyle() {
     if (document.getElementById('feedNavigationStyle')) return;
     const style = document.createElement('style');
@@ -88,12 +131,13 @@
       .feed-tools{display:grid;gap:10px;margin-bottom:12px;padding:12px;border:1px solid var(--line);border-radius:15px;background:var(--panel)}
       .feed-tools-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
       .feed-search{flex:1;min-width:180px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:10px 12px;font:inherit}
-      .feed-filter{font-size:12px;padding:8px 10px}
-      .feed-filter.active{border-color:var(--accent);color:var(--accent)}
+      .feed-filter{font-size:12px;padding:8px 10px}.feed-filter.active{border-color:var(--accent);color:var(--accent)}
       .feed-tools-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px}
-      .feed-more{font-size:12px;padding:8px 10px}
       .turbo-feed-note{color:var(--ok)}
-      @media(max-width:640px){.feed-tools-top{display:grid;grid-template-columns:1fr 1fr}.feed-search{grid-column:1/-1;width:100%}.feed-tools-meta{align-items:flex-start}}
+      .pagination{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:16px 0 4px;grid-column:1/-1}
+      .page-button{min-width:36px;padding:8px 10px;font-size:12px}.page-button.active{background:var(--text);border-color:var(--text);color:#111;font-weight:800}.page-button:disabled{opacity:.35}
+      .page-gap{color:var(--muted);padding:0 2px}.page-summary{color:var(--muted);font-size:11px;margin-left:4px}
+      @media(max-width:640px){.feed-tools-top{display:grid;grid-template-columns:1fr 1fr}.feed-search{grid-column:1/-1;width:100%}.feed-tools-meta{align-items:flex-start}.pagination{gap:4px}.page-button{min-width:33px;padding:7px 8px}}
     `;
     document.head.appendChild(style);
   }
@@ -116,30 +160,21 @@
         <button type="button" class="feed-filter" data-feed-filter="conflict">Конфлікти <span data-filter-count="conflict">0</span></button>
         <button type="button" class="feed-filter" data-feed-filter="unresolved">Невідомі <span data-filter-count="unresolved">0</span></button>
       </div>
-      <div class="feed-tools-meta">
-        <span id="feedShown">Найновіші результати зверху.</span>
-        <button id="feedMore" class="feed-more" type="button" hidden>Показати ще</button>
-      </div>`;
+      <div class="feed-tools-meta"><span id="feedShown">Найновіші результати зверху.</span></div>`;
     view.insertBefore(tools, grid);
 
     tools.querySelectorAll('[data-feed-filter]').forEach(button => {
       button.addEventListener('click', () => {
         feedFilter = button.dataset.feedFilter || 'all';
-        visibleLimit = PAGE_SIZE;
-        tools.querySelectorAll('[data-feed-filter]').forEach(item => {
-          item.classList.toggle('active', item === button);
-        });
+        pages.feed = 1;
+        tools.querySelectorAll('[data-feed-filter]').forEach(item => item.classList.toggle('active', item === button));
         render();
       });
     });
     const search = tools.querySelector('#feedSearch');
     search.addEventListener('input', () => {
       feedQuery = search.value || '';
-      visibleLimit = PAGE_SIZE;
-      render();
-    });
-    tools.querySelector('#feedMore').addEventListener('click', () => {
-      visibleLimit += PAGE_SIZE;
+      pages.feed = 1;
       render();
     });
     controlsReady = true;
@@ -149,18 +184,22 @@
     const turbo = turboContext();
     document.querySelectorAll('[data-feed-filter]').forEach(button => {
       const key = button.dataset.feedFilter;
-      if (turbo && !['all', 'confirmed'].includes(key)) {
-        button.hidden = true;
-      } else {
-        button.hidden = false;
-      }
+      button.hidden = Boolean(turbo && !['all', 'confirmed'].includes(key));
     });
     if (turbo && !['all', 'confirmed'].includes(feedFilter)) {
       feedFilter = 'all';
-      document.querySelectorAll('[data-feed-filter]').forEach(button => {
-        button.classList.toggle('active', button.dataset.feedFilter === 'all');
-      });
+      pages.feed = 1;
+      document.querySelectorAll('[data-feed-filter]').forEach(button => button.classList.toggle('active', button.dataset.feedFilter === 'all'));
     }
+  }
+
+  function pageGrid(gridId, rows, source, kind, emptyHtml) {
+    const grid = document.getElementById(gridId);
+    const visible = slicePage(rows, kind);
+    grid.innerHTML = visible.length
+      ? visible.map(row => card(row, source)).join('') + paginationMarkup(kind, rows.length)
+      : emptyHtml;
+    return visible.length;
   }
 
   function renderFeedWindow(allRows) {
@@ -169,14 +208,16 @@
     const rows = primaryRows(allRows);
     const ordered = newestFirst(rows);
     const filtered = ordered.filter(matches);
-    const shown = filtered.slice(0, visibleLimit);
-    const grid = document.getElementById('feedGrid');
     const turbo = turboContext();
-    grid.innerHTML = shown.length
-      ? shown.map(row => card(row, 'feed')).join('')
-      : turbo
+    const shown = pageGrid(
+      'feedGrid',
+      filtered,
+      'feed',
+      'feed',
+      turbo
         ? '<div class="empty">Turbo ще не знайшов жодного підтверджено вільного результату. Зайняті та непідтверджені кандидати перевіряються у фоні й не засмічують цю стрічку.</div>'
-        : '<div class="empty">За цим фільтром результатів немає.</div>';
+        : '<div class="empty">За цим фільтром результатів немає.</div>',
+    );
 
     const totals = counts(rows);
     document.querySelectorAll('[data-filter-count]').forEach(node => {
@@ -185,50 +226,65 @@
     });
     const shownLabel = document.getElementById('feedShown');
     if (shownLabel) {
+      const page = clampPage('feed', filtered.length);
+      const start = filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+      const end = filtered.length ? Math.min(start + shown - 1, filtered.length) : 0;
       if (turbo) {
         const checked = turboRunRows(allRows).length;
         const rejected = Math.max(0, checked - rows.length);
-        shownLabel.innerHTML = `<span class="turbo-feed-note">Turbo · ${rows.length} вільних</span> · перевірено ${checked} · відсіяно ${rejected}`;
+        shownLabel.innerHTML = `<span class="turbo-feed-note">Turbo · ${rows.length} вільних</span> · перевірено ${checked} · відсіяно ${rejected}${filtered.length ? ` · ${start}–${end}` : ''}`;
       } else {
         shownLabel.textContent = filtered.length
-          ? `Показано ${shown.length} з ${filtered.length} · найновіші зверху`
+          ? `Показано ${start}–${end} з ${filtered.length} · найновіші зверху`
           : 'Немає результатів для поточного фільтра.';
       }
     }
-    const more = document.getElementById('feedMore');
-    if (more) {
-      more.hidden = shown.length >= filtered.length;
-      more.textContent = `Показати ще ${Math.min(PAGE_SIZE, Math.max(0, filtered.length - shown.length))}`;
-    }
   }
 
-  render = function renderLargeFeed() {
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-page-kind][data-page]');
+    if (!button || button.disabled) return;
+    const kind = button.dataset.pageKind;
+    if (!Object.prototype.hasOwnProperty.call(pages, kind)) return;
+    const next = Number(button.dataset.page);
+    if (!Number.isFinite(next)) return;
+    pages[kind] = Math.max(1, next);
+    render();
+    const target = kind === 'feed' ? document.getElementById('feedTools') : document.getElementById(kind + 'View');
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  render = function renderPagedFeed() {
     if (!current) current = emptySession();
     const rows = Array.isArray(current.results) ? current.results : [];
     const turbo = turboContext();
     const strictCurrent = turbo ? primaryRows(rows) : null;
-    const recommended = turbo ? sortedResults(strictCurrent) : sortedResults(rows.filter(allGreen));
-    const shortlist = sortedResults(rows.filter(row => current.shortlist.includes(row.name)));
+    const recommended = turbo ? newestFirst(strictCurrent) : newestFirst(rows.filter(allGreen));
+    const shortlist = newestFirst(rows.filter(row => current.shortlist.includes(row.name)));
 
     document.getElementById('recommendedCount').textContent = recommended.length;
     document.getElementById('feedCount').textContent = turbo ? strictCurrent.length : rows.length;
     document.getElementById('shortlistCount').textContent = shortlist.length;
 
-    const recVisible = recommended.slice(0, RECOMMENDED_RENDER_LIMIT);
-    document.getElementById('recommendedGrid').innerHTML = recVisible.length
-      ? recVisible.map(row => card(row, 'recommended')).join('') +
-        (recommended.length > recVisible.length
-          ? `<div class="empty">Показано перші ${recVisible.length} з ${recommended.length} підтверджених.</div>`
-          : '')
-      : turbo
+    pageGrid(
+      'recommendedGrid',
+      recommended,
+      'recommended',
+      'recommended',
+      turbo
         ? '<div class="empty">Turbo ще шукає перший підтверджено вільний результат.</div>'
-        : '<div class="empty">Повністю зелених результатів ще немає.</div>';
+        : '<div class="empty">Повністю зелених результатів ще немає.</div>',
+    );
 
     renderFeedWindow(rows);
 
-    document.getElementById('shortlistGrid').innerHTML = shortlist.length
-      ? shortlist.map(row => card(row, 'shortlist')).join('')
-      : '<div class="empty">Додай сюди назви, до яких хочеш повернутися пізніше.</div>';
+    pageGrid(
+      'shortlistGrid',
+      shortlist,
+      'shortlist',
+      'shortlist',
+      '<div class="empty">Додай сюди назви, до яких хочеш повернутися пізніше.</div>',
+    );
     document.getElementById('sessionTitle').textContent = current.title || 'Нова сесія';
     switchTab(activeTab);
   };
@@ -238,6 +294,7 @@
     note.textContent = 'Робоча сесія зберігається одразу в браузері. Якщо серверне сховище доступне, вона також синхронізується з ним. Stop ставить пошук на паузу; лайки, дизлайки, коментарі, кандидати й напрями не скидаються.';
   }
 
+  window.nameMachineFeedPagination = { pageSize: PAGE_SIZE, pages };
   ensureControls();
   render();
 })();
