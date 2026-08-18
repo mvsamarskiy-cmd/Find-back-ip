@@ -54,6 +54,10 @@ class BackgroundSearchApiTests(unittest.TestCase):
         self.assertTrue(data["durable"])
         self.assertEqual(data["max_target"], 20000)
         self.assertNotIn("database_url", data)
+        self.assertTrue(data["availability_hunter"]["supported"])
+        self.assertEqual(data["availability_hunter"]["strict_match_policy"], "claimable")
+        self.assertFalse(data["availability_hunter"]["purchasable_counts_as_free_match"])
+        self.assertFalse(data["availability_hunter"]["not_found_counts_as_free_match"])
 
     def test_create_list_read_and_cancel_job(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
@@ -74,6 +78,43 @@ class BackgroundSearchApiTests(unittest.TestCase):
         cancelled = self.client.post(path + "/" + job["id"] + "/cancel", headers=self.headers)
         self.assertEqual(cancelled.status_code, 200)
         self.assertEqual(cancelled.get_json()["job"]["state"], "cancelled")
+
+    def test_create_availability_hunter_uses_result_goal_and_check_budget(self):
+        path = f"/api/sessions/{self.session['session_id']}/search-jobs"
+        created = self.client.post(
+            path,
+            json=self.payload(target_matches=3, max_checks=800),
+            headers=self.headers,
+        )
+        self.assertEqual(created.status_code, 202)
+        job = created.get_json()["job"]
+        self.assertEqual(job["target_count"], 800)
+        hunter = job["search_context"]["availability_hunter"]
+        self.assertTrue(hunter["enabled"])
+        self.assertEqual(hunter["target_matches"], 3)
+        self.assertEqual(hunter["max_checks"], 800)
+        self.assertEqual(hunter["match_policy"], "claimable")
+
+    def test_availability_hunter_bounds_are_enforced(self):
+        path = f"/api/sessions/{self.session['session_id']}/search-jobs"
+        bad_goal = self.client.post(
+            path,
+            json=self.payload(target_matches=0, max_checks=500),
+            headers=self.headers,
+        )
+        self.assertEqual(bad_goal.status_code, 400)
+        impossible = self.client.post(
+            path,
+            json=self.payload(target_matches=10, max_checks=5),
+            headers=self.headers,
+        )
+        self.assertEqual(impossible.status_code, 400)
+        too_large_budget = self.client.post(
+            path,
+            json=self.payload(target_matches=1, max_checks=20001),
+            headers=self.headers,
+        )
+        self.assertEqual(too_large_budget.status_code, 400)
 
     def test_job_requires_capability_token(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
