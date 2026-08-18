@@ -197,7 +197,9 @@
     }
     if (!current) current = emptySession();
     current.entryMode = 'generic_name';
-    current.resources = [];
+    // Generic naming intentionally does not touch current.resources. Historical
+    // verified rows must keep the same resource semantics if the user switches
+    // back to a verified workflow later in the same session.
     const previousPrompt = current.promptHistory.at(-1)?.text || '';
     if (prompt !== previousPrompt) {
       current.promptHistory.push({ text: prompt, at: new Date().toISOString(), feedback: feedbackSummary(), entry_mode: 'generic_name' });
