@@ -30,17 +30,17 @@ install_audit_routes(app, app_module)
 install_background_search_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.0-procedural-search"
+RELEASE_MARKER = "v8.1-turbo-search"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=5"></script>'
 BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
-HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=2"></script>'
+HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=3"></script>'
 AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'
 AUDIT_REPORT_TAG = '<script src="/static/audit_report.js?v=4"></script>'
 CLIENT_REPORT_TAG = '<script src="/static/client_report.js?v=5"></script>'
 REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=5"></script>'
-FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js"></script>'
+FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=2"></script>'
 CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
 
 
@@ -161,6 +161,7 @@ def api_verification_diagnostics():
             "alphabetical_sort": False,
             "render_page_size": 60,
             "filters": ["all", "confirmed", "promising", "conflict", "unresolved"],
+            "turbo_primary_feed_strict_free_only": True,
         },
         "background_search_ui": {
             "enabled_when_worker_ready": True,
@@ -171,6 +172,7 @@ def api_verification_diagnostics():
             "result_goal_field": "target_matches",
             "budget_field": "max_checks",
             "default_search_strategy": "procedural",
+            "search_strategies": ["procedural", "turbo"],
             "procedural_focus_visible": True,
         },
         "session_storage": session_storage_diagnostics(),
