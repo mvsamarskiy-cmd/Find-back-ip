@@ -36,14 +36,14 @@ No estimated monetary value is shown without comparable market sales.
 
 ## Phase 2 — evidence-correct availability
 
-- Replace `available/taken/unknown` with `claimable`, `purchasable`, `taken`,
+- [x] Replace `available/taken/unknown` with `claimable`, `purchasable`, `taken`,
   `not_found`, `invalid`, `reserved`, `rate_limited`, and `unknown`.
-- Add source, check time, method, and confidence to every result.
-- Stop counting public 404 responses as confirmed free.
-- Add deterministic fixtures for known occupied and synthetic handles.
-- Add official YouTube and X lookup adapters where credentials permit.
-- Add registrar availability confirmation after RDAP screening.
-- Add Telegram MTProto and Fragment classification as a separate secured service.
+- [x] Add source, check time, method, and confidence to every result.
+- [x] Stop counting public 404 responses as confirmed free.
+- [x] Add deterministic fixtures for known occupied and synthetic handles.
+- [x] Add official YouTube and X lookup adapters where credentials permit.
+- [ ] Add registrar availability confirmation after RDAP screening.
+- [ ] Add Telegram MTProto and Fragment classification as a separate secured service.
 
 ## Phase 3 — mathematical generation funnel
 

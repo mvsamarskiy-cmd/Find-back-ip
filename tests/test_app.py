@@ -113,6 +113,20 @@ class AppTests(unittest.TestCase):
         self.assertEqual(result["disliked"], ["badname"])
         self.assertEqual(result["reasons"], {"sound": 20, "badkey": -20})
 
+    def test_availability_sort_prefers_actions_then_absence_evidence(self):
+        rows = [
+            {"name": "Unknown", "unknown_count": 7, "unresolved_count": 7},
+            {"name": "Taken", "taken_count": 7},
+            {"name": "Absent", "not_found_count": 5, "unknown_count": 2},
+            {"name": "Buyable", "purchasable_count": 1},
+            {"name": "Claimable", "claimable_count": 1},
+        ]
+        ordered = sorted(rows, key=app.availability_sort_key)
+        self.assertEqual(
+            [row["name"] for row in ordered],
+            ["Claimable", "Buyable", "Absent", "Unknown", "Taken"],
+        )
+
     @patch("app.trademark_links", return_value={})
     @patch("app.generate_ai_names", return_value=[{
         "name": "Veya", "reason": "Причина", "pronunciation": "VEY-a",
@@ -139,5 +153,9 @@ class AppTests(unittest.TestCase):
         self.assertIn("window.confirm", body)
         self.assertIn("Помилка перевірки", body)
         self.assertIn("Сервер тимчасово недоступний", body)
-        self.assertIn("підтверджено вільних", body)
+        self.assertIn("МОЖНА ЗАРЕЄСТРУВАТИ", body)
+        self.assertIn("НЕ ЗНАЙДЕНО", body)
+        self.assertIn("докази перевірки", body)
+        self.assertIn("NOT FOUND означає лише", body)
+        self.assertNotIn("підтверджено вільних", body)
         self.assertIn("jsonResponse", body)

@@ -1,4 +1,4 @@
-# NameMachine v4.3
+# NameMachine v4.4
 
 Deploy-ready Flask application for generating and screening international brand-name candidates.
 
@@ -13,7 +13,10 @@ Deploy-ready Flask application for generating and screening international brand-
 - manual EUIPO, WIPO, and UPRP trademark-search links
 - health endpoint and automated tests
 
-Availability statuses are evidence-limited: UNKNOWN never counts as available. Social checks are best-effort. Trademark links are research aids, not legal clearance.
+Availability uses an evidence-limited status model: `not_found` records a source
+miss but never counts as claimable. Only direct registration or purchase evidence
+may produce `claimable` or `purchasable`. Social checks are best-effort, and
+trademark links are research aids rather than legal clearance.
 
 The staged implementation and reliability requirements are documented in
 [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md).

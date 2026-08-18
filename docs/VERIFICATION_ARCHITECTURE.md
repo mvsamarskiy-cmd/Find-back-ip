@@ -43,14 +43,24 @@ for occupancy or claimability.
 
 ## Status model
 
-- `occupied_confirmed`: exact official or strong canonical evidence.
-- `not_found`: the queried source did not find the exact handle.
-- `claimable_confirmed`: verified in the platform's registration flow.
-- `reserved`, `invalid`, `rate_limited`, `blocked`, `unknown`, `conflict`.
+- `claimable`: the platform or registrar directly confirmed registration.
+- `purchasable`: an authoritative registration or marketplace flow confirmed a
+  purchase path.
+- `taken`: exact official or strong canonical evidence of an occupied handle or
+  registered domain.
+- `not_found`: the queried source did not find the exact handle or domain; this
+  is not proof of claimability.
+- `invalid`: the requested spelling violates the resource's verified rules.
+- `reserved`: the resource explicitly reports that the name is held back.
+- `rate_limited`: the authoritative or public source refused the check because
+  of a request limit.
+- `unknown`: the response was blocked, malformed, contradictory, or otherwise
+  insufficient.
 
-The existing `available/taken/unknown` field remains temporarily for UI
-compatibility. Every result additionally includes `occupancy`, `claimability`,
-`source`, `method`, `confidence`, and `checked_at`.
+Every result includes `occupancy`, `claimability`, `source`, `method`,
+`confidence`, and `checked_at`. The API retains `available_count` only as a
+compatibility alias for `claimable_count + purchasable_count`; `not_found` is
+never included in it.
 
 ## Search and OpenAI research
 
