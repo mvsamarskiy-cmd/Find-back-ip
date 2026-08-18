@@ -25,7 +25,7 @@ BANNED_SUFFIXES = {
 SEARCH_MODES = (
     "new_brand",
     "existing_brand_fixed",
-    "existing_brand_adable",
+    "existing_brand_adaptable",
 )
 DEFAULT_SEARCH_CONTEXT = {
     "mode": "new_brand",
@@ -234,8 +234,6 @@ def _taste_model_from_preferences(preferences):
                 "name": name,
                 "family": row.get("family", "unknown"),
             })
-    # Backward compatibility: likes/dislikes still work even when the UI has not
-    # supplied structured feedback rows yet.
     for name in preferences.get("liked", []) if isinstance(preferences.get("liked"), list) else []:
         feedback.setdefault(str(name), {"vote": 1, "comment": ""})
     for name in preferences.get("disliked", []) if isinstance(preferences.get("disliked"), list) else []:
@@ -413,8 +411,6 @@ def select_diverse_names(
         clean["name"] = name
         clean["user_fit_score"] = candidate_preference_score(clean, model)
         quality = float(clean.get("local_quality_score", 0) or 0)
-        # Before feedback, preserve the old structural ranking. As confidence grows,
-        # user fit can account for up to 45% of relevance.
         user_weight = 0.45 * confidence
         clean["adaptive_relevance_score"] = round(
             quality * (1.0 - user_weight) + clean["user_fit_score"] * user_weight,
@@ -438,13 +434,11 @@ def select_diverse_names(
                 (_candidate_similarity(candidate, row) for row in selected),
                 default=0.0,
             )
-            # MMR pattern: favor relevance while explicitly penalizing redundancy.
             mmr_score = 0.72 * relevance - 0.28 * redundancy
             if mmr_score > best_score:
                 best_score = mmr_score
                 best_index = index
         if best_index is None:
-            # Relax learned family caps rather than returning too few candidates.
             for family in family_caps:
                 family_caps[family] += 1
             if all(
