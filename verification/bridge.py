@@ -17,10 +17,12 @@ STATUS_TO_SIGNAL = {
 def legacy_result_to_evidence(platform, handle, result):
     """Convert one current availability.py result into Verification v2 evidence.
 
-    This adapter is deliberately lossless for the fields that matter to the
-    verifier and does not reinterpret `not_found` as claimable.
+    `not_found` is never reinterpreted as claimable. A paid marketplace path is
+    actionable for a domain, but not for NameMachine's normal free social-handle
+    search, so non-domain `purchasable` rows are normalized to `reserved` evidence.
     """
     row = result if isinstance(result, dict) else {}
+    platform_key = str(platform).strip().lower()
     status = str(row.get("status", "unknown"))
     signal = STATUS_TO_SIGNAL.get(status, "unknown")
     metadata = {}
@@ -28,8 +30,13 @@ def legacy_result_to_evidence(platform, handle, result):
         if key in row:
             metadata[key] = row[key]
 
+    if status == "purchasable" and platform_key != "com":
+        signal = "reserved"
+        metadata["raw_status"] = "purchasable"
+        metadata["paid_marketplace"] = True
+
     return Evidence(
-        platform=str(platform),
+        platform=platform_key,
         handle=str(handle).lower(),
         source=str(row.get("source", "legacy_availability")),
         method=str(row.get("method", "legacy_result")),
