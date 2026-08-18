@@ -1,12 +1,13 @@
-"""Incremental AI generation + verification delivery for the NameMachine feed.
+"""Incremental AI generation + resource-level verification delivery.
 
-The existing JSON endpoint remains intact for compatibility. This module installs
-an NDJSON endpoint that generates one candidate batch, verifies candidates in a
-bounded pool, and yields each completed candidate immediately instead of waiting
-for the entire batch to finish.
+The historical JSON endpoint remains intact for compatibility. This module adds
+an NDJSON endpoint where generated candidates are emitted immediately, selected
+resources are checked in one bounded pool, and every completed resource is sent
+to the browser before the candidate's final bundle verdict is assembled.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 import json
 import os
 
@@ -21,14 +22,43 @@ def _bounded_int(name, default, minimum, maximum):
     return max(minimum, min(maximum, value))
 
 
-STREAM_VERIFY_WORKERS = _bounded_int("STREAM_VERIFY_WORKERS", 5, 1, 10)
+STREAM_RESOURCE_WORKERS = _bounded_int("STREAM_RESOURCE_WORKERS", 12, 2, 24)
+STATUS_VALUES = (
+    "claimable",
+    "purchasable",
+    "taken",
+    "not_found",
+    "invalid",
+    "reserved",
+    "rate_limited",
+    "unknown",
+)
+ACTIONABLE_STATUSES = frozenset({"claimable", "purchasable"})
+UNRESOLVED_STATUSES = frozenset({"rate_limited", "unknown"})
 
 
 def _event(event_type, **payload):
-    return json.dumps({"type": event_type, **payload}, ensure_ascii=False, separators=(",", ":")) + "\n"
+    return json.dumps(
+        {"type": event_type, **payload},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ) + "\n"
 
 
-def _generate_candidates(app_module, brief, count, data, brand_dna, search_context, generation_context, resources):
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _generate_candidates(
+    app_module,
+    brief,
+    count,
+    data,
+    brand_dna,
+    search_context,
+    generation_context,
+    resources,
+):
     if os.environ.get("OPENAI_API_KEY"):
         brief, search_context, _intelligence = app_module.apply_prompt_intelligence(
             brief,
@@ -57,16 +87,110 @@ def _generate_candidates(app_module, brief, count, data, brand_dna, search_conte
     raise last_error
 
 
-def _verify_candidate(app_module, row, resources, required_resources):
-    result = dict(row or {})
+def _unknown_verdict(resource, name, reason="Resource verification failed closed."):
+    return {
+        "platform": resource,
+        "handle": str(name).strip().lower(),
+        "verdict": "unknown",
+        "confidence": 0.0,
+        "evidence": [],
+        "reason": reason,
+    }
+
+
+def _failed_resource_part(name, resource):
+    return {
+        "availability": {
+            "status": "unknown",
+            "detail": "Resource verification failed closed; retry is allowed.",
+            "url": "",
+            "source": "streaming_runtime",
+            "method": "single_resource_check",
+            "confidence": 0.0,
+            "occupancy": "unknown",
+            "claimability": "unconfirmed",
+            "checked_at": _now(),
+        },
+        "verification": _unknown_verdict(resource, name),
+        "error": True,
+    }
+
+
+def _check_resource(app_module, name, resource):
+    """Check exactly one selected resource and return its normalized v2 part."""
+    payload = app_module.check_all(name, resources=[resource])
+    if not isinstance(payload, dict):
+        raise TypeError("Resource checker returned a non-object payload")
+
+    availability = payload.get("availability") or {}
+    row = availability.get(resource) if isinstance(availability, dict) else None
+    if not isinstance(row, dict):
+        raise ValueError("Resource checker omitted its availability row")
+
+    verification_map = payload.get("verification") or {}
+    verdict = verification_map.get(resource) if isinstance(verification_map, dict) else None
+    if not isinstance(verdict, dict):
+        verdict = _unknown_verdict(
+            resource,
+            name,
+            "Availability row exists but no Verification v2 verdict was returned.",
+        )
+
+    return {
+        "availability": dict(row),
+        "verification": dict(verdict),
+        "error": False,
+    }
+
+
+def _aggregate_counts(availability):
+    statuses = []
+    for row in availability.values():
+        status = str((row or {}).get("status") or "unknown") if isinstance(row, dict) else "unknown"
+        statuses.append(status if status in STATUS_VALUES else "unknown")
+
+    status_counts = {status: statuses.count(status) for status in STATUS_VALUES}
+    total = len(statuses)
+    claimable_count = status_counts["claimable"]
+    purchasable_count = status_counts["purchasable"]
+    actionable_count = sum(status_counts[status] for status in ACTIONABLE_STATUSES)
+    unresolved_count = sum(status_counts[status] for status in UNRESOLVED_STATUSES)
+    return {
+        "status_counts": status_counts,
+        "claimable_count": claimable_count,
+        "purchasable_count": purchasable_count,
+        "actionable_count": actionable_count,
+        "not_found_count": status_counts["not_found"],
+        "taken_count": status_counts["taken"],
+        "invalid_count": status_counts["invalid"],
+        "reserved_count": status_counts["reserved"],
+        "rate_limited_count": status_counts["rate_limited"],
+        "unknown_count": status_counts["unknown"],
+        "unresolved_count": unresolved_count,
+        "total_resources": total,
+        "all_claimable": bool(total) and claimable_count == total,
+        "all_verified": bool(total) and unresolved_count == 0,
+        "available_count": actionable_count,
+        "all_available": bool(total) and actionable_count == total,
+    }
+
+
+def _finalize_candidate(app_module, source_row, resources, required_resources, parts):
+    result = dict(source_row or {})
     name = str(result.get("name") or "").strip()
-    if not name:
-        raise ValueError("Candidate has no name")
-    availability = app_module.check_all(name, resources=resources)
-    result.update(availability)
+    availability = {}
+    verification = {}
+    for resource in resources:
+        part = parts.get(resource) or _failed_resource_part(name, resource)
+        availability[resource] = dict(part["availability"])
+        verification[resource] = dict(part["verification"])
+
+    result["availability"] = availability
+    result["verification"] = verification
+    result.update(_aggregate_counts(availability))
     result.update(
         app_module.classify_identity_bundle(
-            result.get("availability"),
+            availability,
             required_resources,
         )
     )
@@ -136,61 +260,131 @@ def install_streaming_routes(app, app_module):
 
         @stream_with_context
         def generate_stream():
-            total = len(rows)
-            yield _event("phase", phase="verifying", total=total)
+            total_candidates = len(rows)
+            total_checks = total_candidates * len(resources)
+            yield _event(
+                "phase",
+                phase="generated",
+                total=total_candidates,
+                total_resource_checks=total_checks,
+            )
             if not rows:
-                yield _event("done", total=0, completed=0, delivered=0, errors=0)
+                yield _event(
+                    "done",
+                    total=0,
+                    completed=0,
+                    delivered=0,
+                    errors=0,
+                    completed_resource_checks=0,
+                    total_resource_checks=0,
+                )
                 return
 
-            workers = max(1, min(STREAM_VERIFY_WORKERS, total))
-            executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="stream-verify")
-            futures = {
-                executor.submit(
-                    _verify_candidate,
-                    app_module,
-                    row,
-                    resources,
-                    required_resources,
-                ): row
-                for row in rows
-            }
-            completed = 0
+            prepared = []
+            for index, row in enumerate(rows):
+                source_row = dict(row)
+                name = str(source_row.get("name") or "").strip()
+                candidate_id = f"{index}:{name.lower()}"
+                source_row["trademark"] = app_module.trademark_links(name)
+                prepared.append((candidate_id, source_row))
+                yield _event(
+                    "candidate",
+                    candidate_id=candidate_id,
+                    row=source_row,
+                    resources=list(resources),
+                    index=index,
+                    total=total_candidates,
+                )
+
+            yield _event(
+                "phase",
+                phase="verifying",
+                total=total_candidates,
+                total_resource_checks=total_checks,
+            )
+
+            workers = max(2, min(STREAM_RESOURCE_WORKERS, total_checks))
+            executor = ThreadPoolExecutor(
+                max_workers=workers,
+                thread_name_prefix="stream-resource",
+            )
+            futures = {}
+            parts_by_candidate = {candidate_id: {} for candidate_id, _row in prepared}
+            source_by_candidate = {candidate_id: row for candidate_id, row in prepared}
+            completed_candidates = set()
+
+            for candidate_id, row in prepared:
+                name = str(row.get("name") or "").strip()
+                for resource in resources:
+                    future = executor.submit(
+                        _check_resource,
+                        app_module,
+                        name,
+                        resource,
+                    )
+                    futures[future] = (candidate_id, name, resource)
+
+            completed_checks = 0
             delivered = 0
             errors = 0
             try:
                 for future in as_completed(futures):
-                    completed += 1
-                    source_row = futures[future]
+                    candidate_id, name, resource = futures[future]
+                    completed_checks += 1
                     try:
-                        verified = future.result()
+                        part = future.result()
                     except Exception as error:
                         errors += 1
                         app_module.app.logger.warning(
-                            "Streaming candidate verification failed for %s: %s",
-                            str(source_row.get("name") or "")[:40],
+                            "Streaming resource verification failed for %s/%s: %s",
+                            name[:40],
+                            resource,
                             type(error).__name__,
                         )
-                        yield _event(
-                            "candidate_error",
-                            name=str(source_row.get("name") or ""),
-                            completed=completed,
-                            total=total,
-                        )
-                        continue
+                        part = _failed_resource_part(name, resource)
 
-                    delivered += 1
+                    parts = parts_by_candidate[candidate_id]
+                    parts[resource] = part
                     yield _event(
-                        "result",
-                        row=verified,
-                        completed=completed,
-                        total=total,
+                        "resource",
+                        candidate_id=candidate_id,
+                        name=name,
+                        resource=resource,
+                        availability=part["availability"],
+                        verification=part["verification"],
+                        error=bool(part.get("error")),
+                        completed_resources=len(parts),
+                        total_resources=len(resources),
+                        completed_resource_checks=completed_checks,
+                        total_resource_checks=total_checks,
                     )
+
+                    if len(parts) == len(resources) and candidate_id not in completed_candidates:
+                        completed_candidates.add(candidate_id)
+                        delivered += 1
+                        final_row = _finalize_candidate(
+                            app_module,
+                            source_by_candidate[candidate_id],
+                            resources,
+                            required_resources,
+                            parts,
+                        )
+                        yield _event(
+                            "result",
+                            candidate_id=candidate_id,
+                            row=final_row,
+                            completed=delivered,
+                            total=total_candidates,
+                        )
+
                 yield _event(
                     "done",
-                    total=total,
-                    completed=completed,
+                    total=total_candidates,
+                    completed=len(completed_candidates),
                     delivered=delivered,
                     errors=errors,
+                    completed_resource_checks=completed_checks,
+                    total_resource_checks=total_checks,
                 )
             except GeneratorExit:
                 return
@@ -199,7 +393,10 @@ def install_streaming_routes(app, app_module):
                     future.cancel()
                 executor.shutdown(wait=False, cancel_futures=True)
 
-        response = Response(generate_stream(), content_type="application/x-ndjson; charset=utf-8")
+        response = Response(
+            generate_stream(),
+            content_type="application/x-ndjson; charset=utf-8",
+        )
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["X-Accel-Buffering"] = "no"
         return response
