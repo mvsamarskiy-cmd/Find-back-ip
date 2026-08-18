@@ -18,6 +18,8 @@ from background_search_api import (  # noqa: E402
     background_search_diagnostics,
     install_background_search_routes,
 )
+from brand_collision import brand_collision_diagnostics  # noqa: E402
+from brand_collision_api import install_brand_collision_routes  # noqa: E402
 from entry_mode_backend import install_entry_mode_intelligence  # noqa: E402
 from generic_naming_api import install_generic_naming_routes  # noqa: E402
 from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
@@ -32,9 +34,10 @@ install_session_routes(app, app_module)
 install_audit_routes(app, app_module)
 install_background_search_routes(app, app_module)
 install_generic_naming_routes(app, app_module)
+install_brand_collision_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.2-entry-modes"
+RELEASE_MARKER = "v8.3-brand-collision-v1"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=5"></script>'
@@ -48,6 +51,7 @@ REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=5"></script>'
 FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=2"></script>'
 CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
 ENTRY_MODES_TAG = '<script src="/static/entry_modes.js?v=1"></script>'
+BRAND_COLLISION_UI_TAG = '<script src="/static/brand_collision_ui.js?v=1"></script>'
 
 
 @app.after_request
@@ -80,10 +84,12 @@ def prevent_stale_html(response):
             tags.append(FEED_NAVIGATION_TAG)
         if CLAIMABILITY_UI_TAG not in body:
             tags.append(CLAIMABILITY_UI_TAG)
-        # Entry modes load last because they intentionally adapt the existing
-        # streaming/feed behavior according to the user's selected workflow.
+        # Entry modes adapt the existing streaming/feed behavior; collision UI
+        # loads immediately after so it can attach only to explicit brand cards.
         if ENTRY_MODES_TAG not in body:
             tags.append(ENTRY_MODES_TAG)
+        if BRAND_COLLISION_UI_TAG not in body:
+            tags.append(BRAND_COLLISION_UI_TAG)
         if tags and "</body>" in body:
             response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
@@ -158,6 +164,7 @@ def api_verification_diagnostics():
             "generic_name_verification": False,
             "explicit_mode_overrides_ai_inference": True,
         },
+        "brand_collision": brand_collision_diagnostics(),
         "strict_free_semantics": {
             "green_status": "claimable",
             "purchasable_is_green": False,
