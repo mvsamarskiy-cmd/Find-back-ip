@@ -41,9 +41,23 @@ and job creation/candidate-feed reads require the session capability token. The 
 stores or needs that plaintext token. Worker diagnostics expose heartbeat time/count only, not
 worker identifiers or database credentials.
 
+## Railway deployment
+
+The repository's default `/railway.json` is intentionally the canonical web-service config and
+pins the Gunicorn start command. Railway Config-as-Code overrides dashboard start-command
+settings, so a second service pointed at the same repository must not use that default config.
+
+For the background worker service, set its Railway Config File path to
+`/railway.worker.json`. That service-specific config starts `python search_worker.py` and does
+not define an HTTP healthcheck. Keep the web service on the default `/railway.json`.
+
+The worker service must reference the same PostgreSQL `DATABASE_URL` as `web`. Provider secrets
+such as `OPENAI_API_KEY` should be added only as Railway references/shared variables, never
+copied into repository files.
+
 ## Deployment status
 
 Merging this code does not by itself mean background search is active in production. Production
-requires PostgreSQL to be configured in the canonical Railway project and a separate worker
-service/process to be started there. Until both exist, the large-search controls stay hidden and
-normal foreground streaming search remains the working path.
+requires PostgreSQL to be configured in the canonical Railway project, the worker service to use
+`/railway.worker.json`, and that worker to be online. Until all are true, the large-search
+controls stay hidden and normal foreground streaming search remains the working path.
