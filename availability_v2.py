@@ -11,21 +11,57 @@ import os
 
 import availability as legacy
 from verification.bridge import attach_verification_verdicts
+from verification.socialscan_live import enrich_x
 
 
 RESOURCE_KEYS = legacy.RESOURCE_KEYS
 normalize_resources = legacy.normalize_resources
 
 
+def _recount(result):
+    availability = result.get("availability") or {}
+    statuses = [row.get("status", "unknown") for row in availability.values() if isinstance(row, dict)]
+    status_counts = {status: statuses.count(status) for status in legacy.STATUS_VALUES}
+    total = len(availability)
+    claimable_count = status_counts["claimable"]
+    purchasable_count = status_counts["purchasable"]
+    actionable_count = sum(status_counts[status] for status in legacy.ACTIONABLE_STATUSES)
+    unresolved_count = sum(status_counts[status] for status in legacy.UNRESOLVED_STATUSES)
+
+    result.update({
+        "status_counts": status_counts,
+        "claimable_count": claimable_count,
+        "purchasable_count": purchasable_count,
+        "actionable_count": actionable_count,
+        "not_found_count": status_counts["not_found"],
+        "taken_count": status_counts["taken"],
+        "invalid_count": status_counts["invalid"],
+        "reserved_count": status_counts["reserved"],
+        "rate_limited_count": status_counts["rate_limited"],
+        "unknown_count": status_counts["unknown"],
+        "unresolved_count": unresolved_count,
+        "total_resources": total,
+        "all_claimable": claimable_count == total,
+        "all_verified": unresolved_count == 0,
+        "available_count": actionable_count,
+        "all_available": actionable_count == total,
+    })
+    return result
+
+
 def _augment(handle, payload):
     result = dict(payload or {})
-    availability = result.get("availability")
+    availability = dict(result.get("availability") or {})
+    if "x" in availability:
+        availability["x"] = enrich_x(handle, availability.get("x"))
+        result["availability"] = availability
+        _recount(result)
     result["verification"] = attach_verification_verdicts(handle, availability)
     return result
 
 
 def check_all(name, resources=None):
-    """Run the legacy checks and attach conservative v2 verdicts."""
+    """Run legacy checks, enrich benchmarked no-key evidence, and attach v2 verdicts."""
     return _augment(name, legacy.check_all(name, resources=resources))
 
 

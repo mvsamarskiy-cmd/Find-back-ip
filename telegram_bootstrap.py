@@ -19,7 +19,7 @@ app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 
 
-RELEASE_MARKER = "v6.3-verification-v2"
+RELEASE_MARKER = "v6.4-socialscan-x"
 
 
 @app.after_request
@@ -46,9 +46,17 @@ def api_version():
 @app.get("/api/verification/diagnostics")
 def api_verification_diagnostics():
     """Expose only non-secret provider capability/configuration state."""
+    providers = provider_diagnostics()
+    providers["socialscan"] = {
+        "configured": True,
+        "no_api_key": True,
+        "live_platforms": ["x"],
+        "benchmark_only_platforms": ["instagram"],
+        "claimable_promoted": False,
+    }
     return jsonify({
         "verification_engine": "v2",
-        "providers": provider_diagnostics(),
+        "providers": providers,
     })
 
 
