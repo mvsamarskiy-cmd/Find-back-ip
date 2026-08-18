@@ -13,32 +13,44 @@ class StreamingSearchTests(unittest.TestCase):
         self.client = app.test_client()
 
     @staticmethod
-    def _availability(status="claimable"):
+    def _payload(resource, status="claimable"):
+        verdict = "available_verified" if status == "claimable" else "taken"
+        signal = "claimable" if status == "claimable" else "exists"
+        row = {
+            "status": status,
+            "detail": "fixture",
+            "url": "https://example.test/" + resource,
+            "source": "fixture_provider",
+            "method": "fixture",
+            "confidence": 0.99,
+            "occupancy": "not_found" if status == "claimable" else "occupied",
+            "claimability": "confirmed" if status == "claimable" else "not_claimable",
+        }
         return {
-            "availability": {
-                "com": {
-                    "status": status,
-                    "detail": "fixture",
-                    "url": "https://example.test",
-                    "source": "namecom_core_api" if status == "claimable" else "verisign_rdap",
-                    "method": "fixture",
+            "availability": {resource: row},
+            "verification": {
+                resource: {
+                    "platform": resource,
+                    "handle": "fixture",
+                    "verdict": verdict,
                     "confidence": 0.99,
-                    "occupancy": "not_found" if status == "claimable" else "occupied",
-                    "claimability": "confirmed" if status == "claimable" else "not_claimable",
+                    "evidence": [{"signal": signal, "source": "fixture_provider"}],
+                    "reason": "fixture",
                 }
-            }
+            },
         }
 
-    def _post(self, count=2):
-        # buffered=True consumes the lazy streaming iterator before unittest.mock
-        # patches leave scope, while production remains genuinely streamed.
+    def _post(self, resources=None, count=1):
+        resources = resources or ["com"]
+        # buffered=True consumes the lazy iterator while unittest.mock patches
+        # are still active. Production responses remain genuinely streamed.
         return self.client.post(
             "/api/ai-generate-stream",
             json={
                 "brief": "car marketplace",
                 "count": count,
-                "resources": ["com"],
-                "required_resources": ["com"],
+                "resources": resources,
+                "required_resources": resources,
                 "preferences": {},
             },
             buffered=True,
@@ -49,54 +61,83 @@ class StreamingSearchTests(unittest.TestCase):
         return [json.loads(line) for line in response.get_data(as_text=True).splitlines() if line.strip()]
 
     @patch.dict(os.environ, {}, clear=True)
-    def test_stream_yields_fast_candidate_before_slow_candidate(self):
-        generated = [
-            {"name": "Slow", "reason": "slow fixture"},
-            {"name": "Fast", "reason": "fast fixture"},
-        ]
+    def test_candidate_is_emitted_before_resources_and_fast_resource_arrives_first(self):
+        generated = [{"name": "Alpha", "reason": "fixture"}]
 
         def fake_check(name, resources=None):
-            if str(name).lower() == "slow":
+            resource = list(resources)[0]
+            if resource == "com":
                 time.sleep(0.08)
-            return self._availability("claimable")
+            return self._payload(resource, "claimable")
 
         with patch.object(app_module, "generate_ai_with_context", return_value=generated):
             with patch.object(app_module, "check_all", side_effect=fake_check):
-                response = self._post(count=2)
+                response = self._post(resources=["com", "x"])
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.content_type.startswith("application/x-ndjson"))
         self.assertEqual(response.headers.get("X-Accel-Buffering"), "no")
         events = self._events(response)
         self.assertEqual(events[0]["type"], "phase")
-        result_events = [event for event in events if event["type"] == "result"]
-        self.assertEqual([event["row"]["name"] for event in result_events], ["Fast", "Slow"])
-        self.assertTrue(all(event["row"]["bundle_state"] == "confirmed" for event in result_events))
+        self.assertEqual(events[0]["phase"], "generated")
+        self.assertEqual(events[1]["type"], "candidate")
+        self.assertEqual(events[1]["row"]["name"], "Alpha")
+        resource_events = [event for event in events if event["type"] == "resource"]
+        self.assertEqual([event["resource"] for event in resource_events], ["x", "com"])
+        result = [event for event in events if event["type"] == "result"][0]["row"]
+        self.assertEqual(result["bundle_state"], "confirmed")
+        self.assertEqual(set(result["availability"]), {"com", "x"})
         self.assertEqual(events[-1]["type"], "done")
-        self.assertEqual(events[-1]["delivered"], 2)
-        self.assertEqual(events[-1]["errors"], 0)
+        self.assertEqual(events[-1]["completed_resource_checks"], 2)
 
     @patch.dict(os.environ, {}, clear=True)
-    def test_one_candidate_failure_does_not_destroy_partial_stream(self):
-        generated = [{"name": "Broken"}, {"name": "Good"}]
+    def test_resource_failure_is_unknown_but_candidate_is_still_delivered(self):
+        generated = [{"name": "Partial", "reason": "fixture"}]
 
         def fake_check(name, resources=None):
-            if str(name).lower() == "broken":
+            resource = list(resources)[0]
+            if resource == "x":
                 raise RuntimeError("fixture failure")
-            return self._availability("claimable")
+            return self._payload(resource, "claimable")
 
         with patch.object(app_module, "generate_ai_with_context", return_value=generated):
             with patch.object(app_module, "check_all", side_effect=fake_check):
-                response = self._post(count=2)
+                response = self._post(resources=["com", "x"])
 
         events = self._events(response)
-        types = [event["type"] for event in events]
-        self.assertIn("candidate_error", types)
-        self.assertIn("result", types)
+        failed = [event for event in events if event["type"] == "resource" and event.get("error")]
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(failed[0]["resource"], "x")
+        self.assertEqual(failed[0]["availability"]["status"], "unknown")
+        result = [event for event in events if event["type"] == "result"][0]["row"]
+        self.assertEqual(result["availability"]["x"]["status"], "unknown")
+        self.assertNotEqual(result["bundle_state"], "confirmed")
         done = events[-1]
-        self.assertEqual(done["type"], "done")
         self.assertEqual(done["delivered"], 1)
         self.assertEqual(done["errors"], 1)
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_each_resource_is_checked_exactly_once(self):
+        generated = [{"name": "Alpha"}, {"name": "Beta"}]
+        calls = []
+
+        def fake_check(name, resources=None):
+            resource = list(resources)[0]
+            calls.append((str(name).lower(), resource))
+            return self._payload(resource, "claimable")
+
+        with patch.object(app_module, "generate_ai_with_context", return_value=generated):
+            with patch.object(app_module, "check_all", side_effect=fake_check):
+                response = self._post(resources=["com", "telegram"], count=2)
+
+        events = self._events(response)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(set(calls), {
+            ("alpha", "com"), ("alpha", "telegram"),
+            ("beta", "com"), ("beta", "telegram"),
+        })
+        self.assertEqual(events[-1]["total_resource_checks"], 4)
+        self.assertEqual(events[-1]["completed_resource_checks"], 4)
 
     def test_empty_resource_selection_is_rejected_before_generation(self):
         with patch.object(app_module, "generate_ai_with_context") as generator:
