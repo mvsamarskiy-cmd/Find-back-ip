@@ -118,7 +118,7 @@ class CandidateMetadataDurabilityTests(unittest.TestCase):
         self.assertIn("mergeDurableExtras", source)
         body = app.test_client().get("/").get_data(as_text=True)
         self.assertIn('/static/session_sync.js?v=6', body)
-        self.assertEqual(RELEASE_MARKER, "v8.5.1-candidate-metadata")
+        self.assertEqual(RELEASE_MARKER, "v8.5.2-provenance-persistence")
 
 
 if __name__ == "__main__":
