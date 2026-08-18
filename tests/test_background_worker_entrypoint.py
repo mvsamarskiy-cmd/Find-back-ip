@@ -8,7 +8,7 @@ class BackgroundWorkerEntrypointTests(unittest.TestCase):
         worker = Path("search_worker.py").read_text(encoding="utf-8")
         self.assertEqual(procfile, "web: gunicorn telegram_bootstrap:app")
         self.assertIn("def main():", worker)
-        self.assertIn("run_one_job", worker)
+        self.assertIn("run_availability_hunter_job", worker)
         self.assertIn("BACKGROUND_WORKER_IDLE_SECONDS", worker)
 
     def test_worker_refreshes_feedback_and_verification_lessons_each_batch(self):
