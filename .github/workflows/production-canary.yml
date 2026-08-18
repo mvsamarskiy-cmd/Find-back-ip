@@ -1,6 +1,8 @@
 name: Production Canary
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       expected_release:
@@ -16,27 +18,56 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: production-canary-main
+  cancel-in-progress: true
+
 jobs:
   canary:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Run canonical production canary
+      - name: Wait for Railway deploy and run canonical production canary
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           EXPECTED_RELEASE: ${{ inputs.expected_release }}
-          REQUIRE_WORKER: ${{ inputs.require_worker }}
+          REQUIRE_WORKER_INPUT: ${{ inputs.require_worker }}
+          EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
           args=()
-          if [[ -n "$EXPECTED_RELEASE" ]]; then
+          if [[ -n "${EXPECTED_RELEASE:-}" ]]; then
             args+=(--expected-release "$EXPECTED_RELEASE")
           fi
-          if [[ "$REQUIRE_WORKER" == "true" ]]; then
+
+          require_worker="true"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            require_worker="${REQUIRE_WORKER_INPUT:-true}"
+          fi
+          if [[ "$require_worker" == "true" ]]; then
             args+=(--require-worker)
           fi
-          python verification/production_canary.py "${args[@]}"
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            args+=(--expected-commit "$EXPECTED_COMMIT")
+          fi
+
+          # Railway autodeploy is asynchronous. Give it a bounded convergence
+          # window instead of declaring a stale deployment healthy.
+          for attempt in 1 2 3 4 5 6; do
+            echo "Production canary attempt $attempt/6"
+            if python verification/production_canary.py "${args[@]}"; then
+              exit 0
+            fi
+            if [[ "$attempt" == "6" ]]; then
+              break
+            fi
+            sleep 30
+          done
+          echo "Production did not converge to the expected healthy deployment." >&2
+          exit 1
