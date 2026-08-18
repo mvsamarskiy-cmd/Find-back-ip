@@ -111,29 +111,34 @@ class DurableCandidateEventStore:
             "durable_live_events": True,
             "event_types": ["candidate_generated", "candidate_completed"],
             "retention_days": EVENT_RETENTION_DAYS,
+            "event_sequence": "monotonic_session_revision",
             "final_candidate_rows_durable": True,
             "events_are_transient": True,
         }
 
-    def _next_event_seq(self, conn, session_id):
-        # Serialize event sequence allocation per session on PostgreSQL. SQLite
-        # writes are already serialized and the worker emits DB mutations from
-        # one coordinator thread, so the same max+1 contract remains deterministic.
+    def _next_event_seq(self, conn, session_id, now):
+        """Allocate a cursor that never resets when old event rows are pruned.
+
+        Event-table MAX(event_seq)+1 is unsafe with a TTL: after all old events are
+        deleted, a browser holding the previous cursor would never see a reset
+        sequence. The durable session revision is already monotonic. We serialize
+        it per session on PostgreSQL, advance it for each event, and use that value
+        as the event cursor. Other session mutations may create harmless gaps.
+        """
+        stmt = select(sessions.c.revision).where(sessions.c.id == session_id)
         if self.session_store.backend == "postgresql":
-            conn.execute(
-                select(sessions.c.id)
-                .where(sessions.c.id == session_id)
-                .with_for_update()
-            ).scalar_one()
-        current = conn.execute(
-            select(func.coalesce(func.max(candidate_events.c.event_seq), 0)).where(
-                candidate_events.c.session_id == session_id
-            )
-        ).scalar_one()
-        return int(current or 0) + 1
+            stmt = stmt.with_for_update()
+        current = conn.execute(stmt).scalar_one()
+        seq = int(current or 0) + 1
+        conn.execute(
+            update(sessions)
+            .where(sessions.c.id == session_id)
+            .values(revision=seq, server_updated_at=now)
+        )
+        return seq
 
     def _emit(self, conn, job, name_key, event_type, payload, now):
-        seq = self._next_event_seq(conn, job["session_id"])
+        seq = self._next_event_seq(conn, job["session_id"], now)
         conn.execute(
             insert(candidate_events).values(
                 session_id=job["session_id"],
@@ -221,13 +226,6 @@ class DurableCandidateEventStore:
                 )
                 row["lifecycle_event_seq"] = event_seq
                 staged.append(row)
-
-            if staged:
-                conn.execute(
-                    update(sessions)
-                    .where(sessions.c.id == job["session_id"])
-                    .values(server_updated_at=now, revision=sessions.c.revision + 1)
-                )
         return staged
 
     def finalize_candidate(self, job, final_row, batch_number):
@@ -310,11 +308,6 @@ class DurableCandidateEventStore:
                 {"row": row},
                 now,
             )
-            conn.execute(
-                update(sessions)
-                .where(sessions.c.id == job["session_id"])
-                .values(server_updated_at=now, revision=sessions.c.revision + 1)
-            )
         result = dict(row)
         result["lifecycle_event_seq"] = event_seq
         return result
@@ -338,6 +331,15 @@ class DurableCandidateEventStore:
             if row.get("checked") is False and str(row.get("verification_state") or "") == "checking":
                 pending.append(row)
         return pending
+
+    def prune_expired(self, now=None):
+        engine = self._engine()
+        cutoff = now or _utcnow()
+        with engine.begin() as conn:
+            result = conn.execute(
+                delete(candidate_events).where(candidate_events.c.expires_at <= cutoff)
+            )
+        return max(0, int(result.rowcount or 0))
 
     def since(self, session_id, token, after_seq=0, limit=100):
         engine = self._engine()
