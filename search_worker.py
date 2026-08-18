@@ -21,6 +21,7 @@ import app as app_module  # noqa: E402
 from availability_v2 import check_all as check_all_v2  # noqa: E402
 from background_jobs import JOB_STORE, run_one_job  # noqa: E402
 from streaming_search import _generate_candidates  # noqa: E402
+from worker_heartbeat import beat, remove  # noqa: E402
 
 
 STOP = threading.Event()
@@ -85,6 +86,16 @@ def _request_stop(*_args):
     STOP.set()
 
 
+def _heartbeat_loop(worker_id):
+    interval = _bounded_float("BACKGROUND_WORKER_HEARTBEAT_SECONDS", 20.0, 5.0, 60.0)
+    while not STOP.is_set():
+        try:
+            beat(JOB_STORE.session_store, worker_id)
+        except Exception as error:
+            print(f"NameMachine worker heartbeat failed: {type(error).__name__}", flush=True)
+        STOP.wait(interval)
+
+
 def main():
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
@@ -98,27 +109,42 @@ def main():
 
     worker_id = _worker_id()
     idle_seconds = _bounded_float("BACKGROUND_WORKER_IDLE_SECONDS", 2.0, 0.25, 30.0)
+    heartbeat_thread = threading.Thread(
+        target=_heartbeat_loop,
+        args=(worker_id,),
+        name="namemachine-worker-heartbeat",
+        daemon=True,
+    )
+    heartbeat_thread.start()
     print(f"NameMachine background worker started: {worker_id}", flush=True)
 
-    while not STOP.is_set():
-        result = run_one_job(
-            JOB_STORE,
-            worker_id,
-            generate_batch,
-            verify_candidate,
-            should_stop=STOP.is_set,
-        )
-        if result is None:
-            STOP.wait(idle_seconds)
-        else:
-            print(
-                "background job",
-                result.get("id"),
-                result.get("state"),
-                f"{result.get('delivered_count', 0)}/{result.get('target_count', 0)}",
-                result.get("stop_reason") or "",
-                flush=True,
+    try:
+        while not STOP.is_set():
+            result = run_one_job(
+                JOB_STORE,
+                worker_id,
+                generate_batch,
+                verify_candidate,
+                should_stop=STOP.is_set,
             )
+            if result is None:
+                STOP.wait(idle_seconds)
+            else:
+                print(
+                    "background job",
+                    result.get("id"),
+                    result.get("state"),
+                    f"{result.get('delivered_count', 0)}/{result.get('target_count', 0)}",
+                    result.get("stop_reason") or "",
+                    flush=True,
+                )
+    finally:
+        STOP.set()
+        heartbeat_thread.join(timeout=2.0)
+        try:
+            remove(JOB_STORE.session_store, worker_id)
+        except Exception:
+            pass
 
     print("NameMachine background worker stopped.", flush=True)
     return 0
