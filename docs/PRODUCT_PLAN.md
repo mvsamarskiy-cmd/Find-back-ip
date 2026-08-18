@@ -79,20 +79,23 @@ No estimated monetary value is shown without comparable market sales.
 - [x] Split requirements into MUST HAVE and optional resources so a candidate is
   rejected when a required identity resource conflicts but may survive an
   optional conflict.
-- [ ] Generate in feedback-aware batches, learn which lexical neighborhoods are
-  saturated, and broaden the semantic search instead of producing one-letter
-  mutations.
-- [ ] Search until enough strong identity bundles are found or a configurable
-  safety cap is reached; initial UI target is at most 100 externally checked
-  candidates, not 100 forced `free` results.
+- [x] Generate in feedback-aware batches and use prior conflict/success examples
+  as bounded adaptive context; follow-up batches are explicitly instructed to
+  leave saturated lexical and phonetic neighborhoods instead of producing trivial
+  spelling or suffix mutations.
+- [x] Search until enough strong identity bundles are found or a safety cap is
+  reached. The browser performs up to five batches of at most 20 candidates, with
+  an absolute cap of 100 externally checked candidates per launch.
 - [x] Split results into `conflict` and `opportunity` columns while preserving an
   explicit unresolved state; each main column has an independent resource filter,
   and the opportunity column also filters confirmed vs promising evidence.
-- [ ] Generate diversified local candidate families.
+- [ ] Generate diversified local candidate families outside OpenAI.
 - [ ] Funnel: 20,000 -> 6,000 structural -> 1,500 linguistic -> 300 collision ->
   100 external checks -> 20 final reports.
 - [ ] Apply family quotas to prevent suffix monoculture.
-- [ ] Add phonetic, visual, semantic, and edit-distance deduplication.
+- [ ] Add stronger visual, semantic, and edit-distance deduplication across the
+  full funnel; current cross-batch filtering already rejects exact and conservative
+  phonetic near-duplicates.
 - [ ] Rank full Identity Bundles across the selected resources; deterministic
   MUST-HAVE classification now exists, while full weighted composition scoring
   remains pending.

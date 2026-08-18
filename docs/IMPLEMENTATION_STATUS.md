@@ -1,7 +1,7 @@
 # NameMachine implementation status
 
-Updated for the Identity Bundle classification release prepared from GitHub `main`
-commit `44f7533865642585180cb2be532e28ef12451816` on 2026-08-18.
+Updated for the adaptive deep-search release prepared from GitHub `main` commit
+`6288daf943bdb833e9e017d88be06f185849bf8a` on 2026-08-18.
 
 This file records what exists now. `PRODUCT_PLAN.md` remains the implementation
 order for unfinished work.
@@ -29,7 +29,8 @@ order for unfinished work.
 | Lightweight Git-based production rollback | PR #19 | Included; verified revert workflow preserves normal Git history and CI |
 | Structured Brand DNA and safe public-website analysis contract | PR #20 | Included for API and naming context; browser DNA review UI remains pending |
 | Explicit search intent, natural-language guidance, and symmetric feedback reasons | PR #21 | Included in `main` |
-| MUST-HAVE Identity Bundle classification and split result columns | Current release | Implemented on release branch; requires green CI and merge before production |
+| MUST-HAVE Identity Bundle classification and split result columns | PR #22 | Included in `main` |
+| Adaptive multi-batch deep search with a 100-check safety cap | Current release | Implemented on release branch; requires green CI and merge before production |
 
 ## Product-plan status
 
@@ -41,23 +42,25 @@ order for unfinished work.
   Production Name.com credentials and a live actionable proof are pending;
   Telegram MTProto/Fragment and automated trademark collision evidence are not
   implemented.
-- Phase 3 is partially complete: resource selection, search intent, project-level
-  guidance, Brand DNA, safe website extraction, MUST-HAVE vs optional resources,
-  and deterministic Identity Bundle classification exist. Checked candidates are
-  separated into conflict, confirmed/promising opportunity, and unresolved states;
-  conflict and opportunity columns have independent resource filters, and the
-  opportunity column separates confirmed evidence from `not_found`-based promising
-  evidence. Progressive adaptive batches up to the external-check cap, browser DNA
-  review, the full generation funnel, and weighted Identity Bundle scoring remain
-  pending.
+- Phase 3 is materially advanced: resource selection, search intent, natural-
+  language guidance, Brand DNA, safe website extraction, MUST-HAVE vs optional
+  resources, deterministic Identity Bundle classification, and split result columns
+  exist. Deep search now works in bounded batches: each checked batch feeds prior
+  excluded names, conflict examples, and successful examples into the next AI
+  generation; exact and conservative phonetic near-duplicates from prior batches
+  are blocked server-side. The browser stops when the requested number of
+  confirmed/promising Identity Bundles is reached or after at most 100 externally
+  checked candidates. Browser Brand DNA review, the full 20k funnel, family quotas,
+  stronger deduplication, and weighted Identity Bundle scoring remain pending.
 - Phase 4 is not implemented. Projects, history, preferences, search intent,
-  guidance, required-resource choices, and Brand DNA are not yet durable
-  server-side data; PostgreSQL, migrations, accounts, idempotency, export, and
-  server-side deletion are pending.
+  guidance, required-resource choices, adaptive search history, and Brand DNA are
+  not yet durable server-side data; PostgreSQL, migrations, accounts, idempotency,
+  export, and server-side deletion are pending.
 - Phase 5 is partially complete only at the web-process/release level: timeouts,
   health, bounded concurrency, rate limits, controlled errors, CI, branch cleanup,
-  and Git-based rollback exist. The queue, resumable jobs, metrics, alerts, load
-  tests, and atomic staging promotion are pending.
+  Git-based rollback, and a per-launch external-check safety cap exist. The queue,
+  resumable server jobs, metrics, alerts, load tests, and atomic staging promotion
+  are pending.
 
 ## Last confirmed production verification
 
@@ -78,14 +81,11 @@ post-deploy smoke and commit match are confirmed.
 
 ## Next implementation order
 
-1. Replace one-shot generation with feedback-aware batches that keep searching
-   until enough strong Identity Bundles are found or the 100-external-check safety
-   cap is reached; broaden semantic neighborhoods when repeated conflicts show a
-   naming family is saturated.
-2. Wire website URL + Brand DNA review/edit into the browser project flow so the
+1. Wire website URL + Brand DNA review/edit into the browser project flow so the
    compiled DNA is visible, reusable, and automatically sent with generation.
+2. Add stronger cross-batch family quotas and visual/semantic/edit-distance
+   deduplication before scaling toward the full 20,000-candidate funnel.
 3. Improve evidence adapters, starting with Telegram MTProto/Fragment and a
    legally careful trademark collision layer.
-4. Add durable PostgreSQL history with idempotency before scaling the full
-   20,000-candidate funnel.
-5. Add queue/progressive jobs, metrics, alerts, and load tests.
+4. Add durable PostgreSQL history with idempotency before scaling the full funnel.
+5. Add queue/resumable jobs, metrics, alerts, and load tests.

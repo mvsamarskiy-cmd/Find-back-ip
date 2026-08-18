@@ -28,6 +28,12 @@ DEFAULT_SEARCH_CONTEXT = {
     "brand_name": "",
     "guidance": "",
 }
+DEFAULT_GENERATION_CONTEXT = {
+    "batch_number": 1,
+    "exclude_names": [],
+    "conflict_names": [],
+    "successful_names": [],
+}
 
 
 SYSTEM_PROMPT = """You are a rigorous international naming and digital-identity strategist.
@@ -37,6 +43,10 @@ memorable, pronounceable candidates over random letter strings or generic
 mutations. Treat explicit user prohibitions and requirements as hard constraints.
 Treat project likes, dislikes, and reason weights as softer evidence of taste:
 learn patterns from them, but do not merely mutate or copy previous candidates.
+When prior batches are supplied, never recycle excluded names or create trivial
+one-letter/one-suffix mutations of conflict names. If conflicts dominate a prior
+batch, deliberately move into different semantic roots, metaphors, phonetic
+structures, and naming families rather than staying in the saturated neighborhood.
 When an existing brand is locked, generate resource-identifier stems tied to that
 brand instead of inventing a replacement brand. Brand DNA is bounded context
 produced from user-supplied sources, not an availability claim. Never claim
@@ -138,6 +148,70 @@ def search_context_prompt(value):
     )
 
 
+def _bounded_names(value, limit):
+    if not isinstance(value, list):
+        return []
+    output = []
+    seen = set()
+    for raw in value[:limit]:
+        name = "".join(ch for ch in str(raw).strip() if ch.isascii() and ch.isalpha())[:30]
+        key = name.lower()
+        if len(name) >= 3 and key not in seen:
+            output.append(name)
+            seen.add(key)
+    return output
+
+
+def clean_generation_context(value):
+    """Bound cross-batch memory so repeated search stays predictable and cheap."""
+    if value is None:
+        return {
+            "batch_number": 1,
+            "exclude_names": [],
+            "conflict_names": [],
+            "successful_names": [],
+        }
+    if not isinstance(value, dict):
+        raise ValueError("generation_context must be an object")
+    try:
+        batch_number = int(value.get("batch_number", 1))
+    except (TypeError, ValueError):
+        batch_number = 1
+    return {
+        "batch_number": max(1, min(5, batch_number)),
+        "exclude_names": _bounded_names(value.get("exclude_names"), 100),
+        "conflict_names": _bounded_names(value.get("conflict_names"), 40),
+        "successful_names": _bounded_names(value.get("successful_names"), 20),
+    }
+
+
+def generation_context_prompt(value):
+    context = clean_generation_context(value)
+    conflicts = context["conflict_names"]
+    successes = context["successful_names"]
+    rule = (
+        "This is the first batch. Explore broadly across the available naming families."
+        if context["batch_number"] == 1
+        else (
+            "This is an adaptive follow-up batch. Excluded names are forbidden. "
+            "Conflict examples indicate saturated exact/nearby identity territory; "
+            "do not make spelling mutations of them. Shift to different semantic "
+            "roots and phonetic structures. Successful examples are directional "
+            "evidence only; learn the quality pattern without cloning them."
+        )
+    )
+    return json.dumps(
+        {
+            "batch_number": context["batch_number"],
+            "excluded_names": context["exclude_names"],
+            "conflict_examples": conflicts,
+            "successful_examples": successes,
+            "adaptation_rule": rule,
+        },
+        ensure_ascii=False,
+    )
+
+
 def _preference_context(preferences):
     if not isinstance(preferences, dict):
         return "No project-specific feedback yet."
@@ -212,14 +286,17 @@ def _is_allowed_name(value, search_context=None):
     return True
 
 
-def select_diverse_names(candidates, count, search_context=None):
-    """Keep valid candidates while removing exact and near duplicates."""
+def select_diverse_names(candidates, count, search_context=None, exclude_names=None):
+    """Keep valid candidates while removing exact/near duplicates across batches."""
     selected = []
+    blocked = _bounded_names(exclude_names, 100)
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
         name = str(candidate.get("name", "")).strip()
         if not _is_allowed_name(name, search_context):
+            continue
+        if any(_too_similar(name, old) for old in blocked):
             continue
         if any(_too_similar(name, row["name"]) for row in selected):
             continue
@@ -231,8 +308,9 @@ def select_diverse_names(candidates, count, search_context=None):
     return selected
 
 
-def _generation_plan(count, search_context=None):
+def _generation_plan(count, search_context=None, generation_context=None):
     context = clean_search_context(search_context)
+    adaptive = clean_generation_context(generation_context)
     pool_size = min(40, max(count + 8, count * 2))
     if context["mode"] == "new_brand":
         families = "\n".join(f"- {family}" for family in GENERATION_FAMILIES)
@@ -252,6 +330,12 @@ def _generation_plan(count, search_context=None):
             "blacklist to words already present in an established brand. Avoid "
             "repeated suffixes and near-duplicate spellings."
         )
+    if adaptive["batch_number"] > 1:
+        rules += (
+            "\nAdaptive rule: this is a follow-up batch. Deliberately change lexical "
+            "and phonetic neighborhoods from prior conflict examples; do not merely "
+            "attach a new suffix to a failed root."
+        )
     return pool_size, rules
 
 
@@ -261,14 +345,16 @@ def generate_ai_names(
     preferences=None,
     brand_dna=None,
     search_context=None,
+    generation_context=None,
 ):
     if not os.environ.get("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is not configured")
     from openai import OpenAI
 
     context = clean_search_context(search_context)
+    adaptive = clean_generation_context(generation_context)
     client = OpenAI()
-    pool_size, plan = _generation_plan(count, context)
+    pool_size, plan = _generation_plan(count, context, adaptive)
     response = client.responses.create(
         model=os.environ.get("OPENAI_MODEL", "gpt-5.6-luna"),
         instructions=SYSTEM_PROMPT,
@@ -278,13 +364,19 @@ def generate_ai_names(
             f"Search task: {search_context_prompt(context)}\n"
             f"Structured Brand DNA: {brand_dna_context(brand_dna)}\n"
             f"Project-specific feedback: {_preference_context(preferences)}\n"
+            f"Adaptive batch context: {generation_context_prompt(adaptive)}\n"
             f"Generation plan:\n{plan}"
         ),
         text={"format": {"type": "json_schema", "name": "brand_names", "strict": True, "schema": SCHEMA}},
         store=False,
     )
     data = json.loads(response.output_text)
-    selected = select_diverse_names(data["names"], count, context)
+    selected = select_diverse_names(
+        data["names"],
+        count,
+        context,
+        exclude_names=adaptive["exclude_names"],
+    )
     if len(selected) < count:
         raise ValueError(
             f"AI returned only {len(selected)} valid candidates; expected {count}"

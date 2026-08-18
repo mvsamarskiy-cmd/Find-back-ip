@@ -33,11 +33,12 @@ class ResultColumnsUiTests(unittest.TestCase):
         self.assertIn("не підтверджує можливість реєстрації", body)
         self.assertNotIn("NOT FOUND = ВІЛЬНИЙ", body)
 
-    def test_check_requests_send_required_resources(self):
+    def test_batched_requests_send_required_resources(self):
         body = self.client.get("/").get_data(as_text=True)
-        self.assertIn("&required=", body)
-        self.assertIn("requiredResources:required", body)
+        self.assertIn("fetch('/api/ai-generate'", body)
+        self.assertIn("required_resources:required", body)
         self.assertIn("bundle_state", body)
+        self.assertNotIn("&required=", body)
 
 
 if __name__ == "__main__":
