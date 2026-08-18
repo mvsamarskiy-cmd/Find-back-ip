@@ -28,6 +28,7 @@ import session_api as session_api_module  # noqa: E402
 from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
 from session_provenance import install_session_provenance  # noqa: E402
 from streaming_search import install_streaming_routes  # noqa: E402
+from variant_api import install_variant_routes, variant_diagnostics  # noqa: E402
 from verification.diagnostics import provider_diagnostics  # noqa: E402
 
 app_module.check_all = check_all_v2
@@ -41,9 +42,10 @@ install_background_search_routes(app, app_module)
 install_candidate_event_routes(app, app_module)
 install_generic_naming_routes(app, app_module)
 install_brand_collision_routes(app, app_module)
+install_variant_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.5.2-provenance-persistence"
+RELEASE_MARKER = "v8.6-variant-api"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=6"></script>'
@@ -177,6 +179,7 @@ def api_verification_diagnostics():
             "explicit_mode_overrides_ai_inference": True,
         },
         "brand_collision": brand_collision_diagnostics(),
+        "variant_grammar": variant_diagnostics(),
         "strict_free_semantics": {
             "green_status": "claimable",
             "purchasable_is_green": False,
