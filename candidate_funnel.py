@@ -3,6 +3,10 @@ import re
 
 VOWELS = frozenset("aeiouy")
 LOCAL_SOURCE = "local_lexical_expansion"
+DEFAULT_LOCAL_RAW_LIMIT = 4000
+DEFAULT_STRUCTURAL_LIMIT = 1200
+DEFAULT_LINGUISTIC_LIMIT = 420
+DEFAULT_COLLISION_LIMIT = 160
 
 # Deliberately small stoplist: the local expander should use project-specific
 # nouns/adjectives, not prose glue from a brief. It is not a semantic model.
@@ -46,12 +50,7 @@ def _seed_tokens(value):
 
 
 def lexical_seeds(brief="", brand_dna=None, limit=18):
-    """Extract a bounded set of literal lexical seeds from user-controlled context.
-
-    Latin roots are preserved and Cyrillic roots are deterministically
-    transliterated. The function does not invent synonyms: every root still comes
-    from the brief or structured Brand DNA, keeping the local stage auditable.
-    """
+    """Extract bounded literal roots from the brief and structured Brand DNA."""
     values = [brief]
     if isinstance(brand_dna, dict):
         for key in (
@@ -96,16 +95,17 @@ def _candidate(name, family, roots, pattern):
     }
 
 
-def expand_local_families(brief="", brand_dna=None, limit=180):
-    """Create a bounded deterministic candidate pool without another AI request.
+def expand_local_families(brief="", brand_dna=None, limit=DEFAULT_LOCAL_RAW_LIMIT):
+    """Create a large deterministic local pool without another AI request.
 
-    The expander uses literal project roots and multiple composition strategies.
-    It intentionally avoids one-letter typo mutations. Downstream structural,
-    blacklist, near-duplicate, family-quota, and external-availability gates still
-    decide which candidates survive.
+    The generator intentionally uses substantial root pieces and multi-root
+    composition rather than one-letter spelling mutations. The result is still a
+    raw pool: later stages rank readability, collapse internal collisions, and
+    finally apply the stricter product-level dedupe and family quotas.
     """
+    limit = max(0, min(10000, int(limit)))
     seeds = lexical_seeds(brief, brand_dna)
-    if len(seeds) < 2:
+    if len(seeds) < 2 or limit == 0:
         return []
 
     output = []
@@ -113,55 +113,99 @@ def expand_local_families(brief="", brand_dna=None, limit=180):
 
     def add(name, family, roots, pattern):
         if len(output) >= limit:
-            return
+            return False
         row = _candidate(name, family, roots, pattern)
         if not row:
-            return
+            return True
         key = row["name"].lower()
         if key in seen or key in seeds:
-            return
+            return True
         seen.add(key)
         output.append(row)
+        return len(output) < limit
 
-    # Direct semantic compounds remain closest to the user's own vocabulary.
+    # Ordered direct compounds preserve literal semantic anchors.
     for left in seeds:
         for right in seeds:
             if left == right:
                 continue
-            add(left + right, "semantic_compound", (left, right), "compound")
-            if len(output) >= limit:
+            if not add(left + right, "semantic_compound", (left, right), "compound"):
                 return output
 
-    # Root blends use substantial pieces from both roots, rather than adding a
-    # generic suffix to one saturated word.
+    # Pairwise blends use substantial pieces from both roots.
     for index, left in enumerate(seeds):
         for right in seeds[index + 1:]:
-            left_cut = max(3, min(5, (len(left) + 1) // 2))
-            right_cut = max(2, min(5, len(right) // 2))
-            add(left[:left_cut] + right[-right_cut:], "root_blend", (left, right), "front/back blend")
-            add(right[:left_cut] + left[-right_cut:], "root_blend", (right, left), "front/back blend")
-            if len(output) >= limit:
+            left_front = max(2, min(5, (len(left) + 1) // 2))
+            right_back = max(2, min(5, len(right) // 2))
+            if not add(
+                left[:left_front] + right[-right_back:],
+                "root_blend",
+                (left, right),
+                "front/back blend",
+            ):
+                return output
+            if not add(
+                right[:left_front] + left[-right_back:],
+                "root_blend",
+                (right, left),
+                "front/back blend",
+            ):
                 return output
 
-    # A second blend geometry provides phonetic diversity without typo spam.
-    for index, left in enumerate(seeds):
-        for right in seeds[index + 1:]:
-            left_part = left[: max(2, len(left) // 2)]
-            right_part = right[max(1, len(right) // 2):]
-            add(left_part + right_part, "invented_phonetic", (left, right), "midpoint blend")
-            if len(output) >= limit:
+            left_mid = left[: max(2, len(left) // 2)]
+            right_mid = right[max(1, len(right) // 2):]
+            if not add(
+                left_mid + right_mid,
+                "invented_phonetic",
+                (left, right),
+                "midpoint blend",
+            ):
                 return output
+            if not add(
+                right[: max(2, len(right) // 2)] + left[max(1, len(left) // 2):],
+                "invented_phonetic",
+                (right, left),
+                "reverse midpoint blend",
+            ):
+                return output
+
+    # Three-root compositions increase breadth cheaply without inventing unrelated
+    # vocabulary. Only compact slices are kept so candidates do not become phrases.
+    seed_count = len(seeds)
+    for i in range(seed_count - 2):
+        for j in range(i + 1, seed_count - 1):
+            for k in range(j + 1, seed_count):
+                first, second, third = seeds[i], seeds[j], seeds[k]
+                compact = (
+                    first[: max(2, min(4, len(first) // 2))]
+                    + second[:2]
+                    + third[-max(2, min(4, len(third) // 2)):]
+                )
+                if not add(
+                    compact,
+                    "root_blend",
+                    (first, second, third),
+                    "three-root blend",
+                ):
+                    return output
+                rotated = (
+                    second[: max(2, min(4, len(second) // 2))]
+                    + third[:2]
+                    + first[-max(2, min(4, len(first) // 2)):]
+                )
+                if not add(
+                    rotated,
+                    "invented_phonetic",
+                    (second, third, first),
+                    "rotated three-root blend",
+                ):
+                    return output
 
     return output
 
 
 def structural_quality(name):
-    """Return a deterministic 0-100 pre-external-check name quality score.
-
-    This is deliberately language-light: it measures useful structural signals
-    such as concise length, vowel balance, pronounceability proxies, and repeated
-    character/consonant-run penalties. It does not claim semantic or legal quality.
-    """
+    """Return a deterministic 0-100 structural pre-check quality score."""
     value = _letters(name)
     if not value:
         return 0
@@ -218,14 +262,45 @@ def structural_quality(name):
     return max(0, min(100, round(score)))
 
 
-def rank_candidate_pool(candidates):
-    """Annotate and rank candidates before expensive external checks.
+def linguistic_quality(name):
+    """Return a conservative readability/pronounceability proxy, not semantics.
 
-    Stable original order breaks ties so model preference is preserved when the
-    deterministic quality score cannot distinguish candidates. Locally expanded
-    rows receive a small prior penalty: they are useful breadth, not a claim that
-    simple morphology is better than a model-authored concept.
+    This stage is intentionally language-light. It does not claim that a word is
+    good in a particular language; it only removes mechanically awkward strings
+    before expensive external checks.
     """
+    value = _letters(name)
+    if not value:
+        return 0
+    score = 100.0
+    syllable_proxy = len(re.findall(r"[aeiouy]+", value))
+    if syllable_proxy == 0:
+        score -= 60
+    elif syllable_proxy == 1 and len(value) > 7:
+        score -= 18
+    elif syllable_proxy > 4:
+        score -= 14
+
+    if re.search(r"[bcdfghjklmnpqrstvwxz]{4,}", value):
+        score -= 35
+    if re.search(r"[aeiouy]{4,}", value):
+        score -= 25
+    if re.search(r"(q[^u]|q$)", value):
+        score -= 12
+    if any(pair in value for pair in ("qx", "xq", "qj", "jq", "wq", "qz", "zq")):
+        score -= 18
+    if value[0] in "xq" and len(value) > 7:
+        score -= 6
+    if len(value) > 12:
+        score -= 18
+    if 5 <= len(value) <= 9 and 2 <= syllable_proxy <= 3:
+        score += 5
+
+    return max(0, min(100, round(score)))
+
+
+def rank_candidate_pool(candidates):
+    """Annotate and rank candidates before expensive external checks."""
     ranked = []
     for index, candidate in enumerate(candidates):
         if not isinstance(candidate, dict):
@@ -238,3 +313,97 @@ def rank_candidate_pool(candidates):
         ranked.append((index, row))
     ranked.sort(key=lambda item: (-item[1]["local_quality_score"], item[0]))
     return [row for _, row in ranked]
+
+
+def _collision_signature(name):
+    """Coarse internal-cluster key used only to prevent morphology monoculture."""
+    value = _letters(name)
+    if not value:
+        return ""
+    collapsed = re.sub(r"(.)\1+", r"\1", value)
+    consonants = re.sub(r"[aeiouy]", "", collapsed)
+    vowel_groups = len(re.findall(r"[aeiouy]+", collapsed))
+    return f"{consonants[:7]}:{vowel_groups}:{len(collapsed)//2}"
+
+
+def _dedupe_exact(candidates):
+    output = []
+    seen = set()
+    for row in candidates:
+        if not isinstance(row, dict):
+            continue
+        key = _letters(row.get("name", ""))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output.append(dict(row))
+    return output
+
+
+def staged_candidate_pool(
+    model_candidates,
+    brief="",
+    brand_dna=None,
+    local_limit=DEFAULT_LOCAL_RAW_LIMIT,
+    structural_limit=DEFAULT_STRUCTURAL_LIMIT,
+    linguistic_limit=DEFAULT_LINGUISTIC_LIMIT,
+    collision_limit=DEFAULT_COLLISION_LIMIT,
+):
+    """Run cheap deterministic stages before product-level shortlist selection.
+
+    Returns `(rows, metrics)`. The `collision` stage here means collisions inside
+    the generated candidate pool, not trademark/domain/social collision evidence.
+    External identity checks still happen later and remain capped by the caller.
+    """
+    local_limit = max(0, min(10000, int(local_limit)))
+    structural_limit = max(1, min(5000, int(structural_limit)))
+    linguistic_limit = max(1, min(structural_limit, int(linguistic_limit)))
+    collision_limit = max(1, min(linguistic_limit, int(collision_limit)))
+
+    model_rows = [dict(row) for row in model_candidates if isinstance(row, dict)]
+    local_rows = expand_local_families(brief, brand_dna, limit=local_limit)
+    raw = _dedupe_exact(model_rows + local_rows)
+
+    structural = rank_candidate_pool(raw)[:structural_limit]
+
+    linguistic = []
+    for index, row in enumerate(structural):
+        clean = dict(row)
+        clean["linguistic_quality_score"] = linguistic_quality(clean.get("name", ""))
+        clean["funnel_score"] = round(
+            0.58 * clean.get("local_quality_score", 0)
+            + 0.42 * clean["linguistic_quality_score"],
+            1,
+        )
+        linguistic.append((index, clean))
+    linguistic.sort(key=lambda item: (-item[1]["funnel_score"], item[0]))
+    linguistic_rows = [row for _, row in linguistic[:linguistic_limit]]
+
+    collision_rows = []
+    signature_counts = {}
+    family_counts = {}
+    for row in linguistic_rows:
+        signature = _collision_signature(row.get("name", ""))
+        family = str(row.get("family", "unknown"))
+        # Keep several representatives from a broad family, but at most two from
+        # the same coarse sound/morphology shape.
+        if signature and signature_counts.get(signature, 0) >= 2:
+            continue
+        family_cap = max(8, collision_limit // 3)
+        if family_counts.get(family, 0) >= family_cap:
+            continue
+        signature_counts[signature] = signature_counts.get(signature, 0) + 1
+        family_counts[family] = family_counts.get(family, 0) + 1
+        collision_rows.append(row)
+        if len(collision_rows) >= collision_limit:
+            break
+
+    metrics = {
+        "model_candidates": len(model_rows),
+        "local_candidates": len(local_rows),
+        "raw_unique": len(raw),
+        "structural_survivors": len(structural),
+        "linguistic_survivors": len(linguistic_rows),
+        "collision_survivors": len(collision_rows),
+    }
+    return collision_rows, metrics
