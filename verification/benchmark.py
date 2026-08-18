@@ -31,6 +31,9 @@ KNOWN_FIXTURES = (
     Fixture("instagram", "instagram", "exists", "Known Instagram platform account"),
     Fixture("nike", "instagram", "exists", "Known Nike Instagram account"),
     Fixture("natgeo", "instagram", "exists", "Known National Geographic Instagram account"),
+    Fixture("facebook", "facebook", "exists", "Facebook platform public page"),
+    Fixture("NASA", "facebook", "exists", "NASA public Facebook page"),
+    Fixture("CocaCola", "facebook", "exists", "Coca-Cola public Facebook page"),
 )
 
 
