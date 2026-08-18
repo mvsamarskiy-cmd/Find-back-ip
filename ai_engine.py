@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 
 from brand_dna import brand_dna_context
 from candidate_funnel import expand_local_families, rank_candidate_pool
+from preference_engine import build_taste_model, candidate_preference_score, family_allocation
 from trademark_risk import trademark_search_plan
 
 
@@ -24,7 +25,7 @@ BANNED_SUFFIXES = {
 SEARCH_MODES = (
     "new_brand",
     "existing_brand_fixed",
-    "existing_brand_adaptable",
+    "existing_brand_adable",
 )
 DEFAULT_SEARCH_CONTEXT = {
     "mode": "new_brand",
@@ -53,21 +54,22 @@ Generate candidates for the exact entity, audience, market, language, purpose,
 search task, and structured Brand DNA supplied by the user. Prefer distinctive,
 memorable, pronounceable candidates over random letter strings or generic
 mutations. Treat explicit user prohibitions and requirements as hard constraints.
-Treat project likes, dislikes, and reason weights as softer evidence of taste:
-learn patterns from them, but do not merely mutate or copy previous candidates.
-When prior batches are supplied, never recycle excluded names or create trivial
-one-letter/one-suffix mutations of conflict names. If conflicts dominate a prior
-batch, deliberately move into different semantic roots, metaphors, phonetic
-structures, and naming families rather than staying in the saturated neighborhood.
-Distribute candidates across the requested naming families instead of producing a
-suffix monoculture. Label every candidate with its actual naming family. When an
-existing brand is locked, generate resource-identifier stems tied to that brand
-instead of inventing a replacement brand. Brand DNA is bounded context produced
-from user-supplied sources, not an availability claim. Never claim trademark,
-domain, company, website, or handle availability. Explain every candidate in
-Ukrainian and report possible negative meanings and pronunciation concerns
-honestly. Candidate names must contain only ASCII Latin letters A-Z: no spaces,
-hyphens, apostrophes, digits, diacritics, or Cyrillic."""
+Treat project likes, dislikes, comments, direction anchors, and inferred taste
+weights as softer evidence: learn the contrastive pattern without pretending to
+know a user's motive from a bare dislike. Do not merely mutate or copy previous
+candidates. When prior batches are supplied, never recycle excluded names or
+create trivial one-letter/one-suffix mutations of true availability-conflict
+names. Availability conflicts describe saturated identity territory; dislikes
+describe taste and must not be treated as availability conflicts. Distribute
+candidates across the requested naming families instead of producing a suffix
+monoculture. Label every candidate with its actual naming family. When an existing
+brand is locked, generate resource-identifier stems tied to that brand instead of
+inventing a replacement brand. Brand DNA is bounded context produced from
+user-supplied sources, not an availability claim. Never claim trademark, domain,
+company, website, or handle availability. Explain every candidate in Ukrainian
+and report possible negative meanings and pronunciation concerns honestly.
+Candidate names must contain only ASCII Latin letters A-Z: no spaces, hyphens,
+apostrophes, digits, diacritics, or Cyrillic."""
 
 
 SCHEMA = {
@@ -179,7 +181,7 @@ def clean_generation_context(value):
     except (TypeError, ValueError):
         batch_number = 1
     return {
-        "batch_number": max(1, min(5, batch_number)),
+        "batch_number": max(1, min(50, batch_number)),
         "exclude_names": _bounded_names(value.get("exclude_names"), 100),
         "conflict_names": _bounded_names(value.get("conflict_names"), 40),
         "successful_names": _bounded_names(value.get("successful_names"), 20),
@@ -193,10 +195,10 @@ def generation_context_prompt(value):
         if context["batch_number"] == 1
         else (
             "This is an adaptive follow-up batch. Excluded names are forbidden. "
-            "Conflict examples indicate saturated exact/nearby identity territory; "
-            "do not make spelling mutations of them. Shift to different semantic "
-            "roots and phonetic structures. Successful examples are directional "
-            "evidence only; learn the quality pattern without cloning them."
+            "Conflict examples are names with actual availability conflicts, not "
+            "mere uncertainty or taste dislikes. Do not make spelling mutations of "
+            "them. Successful examples are directional evidence only; learn the "
+            "quality pattern without cloning them."
         )
     )
     return json.dumps(
@@ -211,7 +213,42 @@ def generation_context_prompt(value):
     )
 
 
-def _preference_context(preferences):
+def _taste_model_from_preferences(preferences):
+    if not isinstance(preferences, dict):
+        return build_taste_model()
+    feedback_rows = preferences.get("feedback", [])
+    candidate_rows = []
+    feedback = {}
+    if isinstance(feedback_rows, list):
+        for row in feedback_rows[:80]:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            feedback[name] = {
+                "vote": row.get("vote", 0),
+                "comment": str(row.get("comment", ""))[:300],
+            }
+            candidate_rows.append({
+                "name": name,
+                "family": row.get("family", "unknown"),
+            })
+    # Backward compatibility: likes/dislikes still work even when the UI has not
+    # supplied structured feedback rows yet.
+    for name in preferences.get("liked", []) if isinstance(preferences.get("liked"), list) else []:
+        feedback.setdefault(str(name), {"vote": 1, "comment": ""})
+    for name in preferences.get("disliked", []) if isinstance(preferences.get("disliked"), list) else []:
+        feedback.setdefault(str(name), {"vote": -1, "comment": ""})
+    return build_taste_model(
+        feedback,
+        candidate_rows,
+        preferences.get("direction_anchors", []),
+        preferences.get("shortlist", []),
+    )
+
+
+def _preference_context(preferences, taste_model=None):
     if not isinstance(preferences, dict):
         return "No project-specific feedback yet."
 
@@ -231,8 +268,14 @@ def _preference_context(preferences):
         for key, value in list(reasons.items())[:20]
         if isinstance(value, (int, float))
     }
+    model = taste_model if isinstance(taste_model, dict) else _taste_model_from_preferences(preferences)
     return json.dumps(
-        {"liked_examples": liked, "disliked_examples": disliked, "reason_weights": safe_reasons},
+        {
+            "liked_examples": liked,
+            "disliked_examples": disliked,
+            "reason_weights": safe_reasons,
+            "taste_model": model,
+        },
         ensure_ascii=False,
     )
 
@@ -310,6 +353,20 @@ def _too_similar(left, right):
     )
 
 
+def _candidate_similarity(left, right):
+    """Cheap 0-1 redundancy proxy used for MMR-style selection."""
+    a = _normalized_name(left.get("name", ""))
+    b = _normalized_name(right.get("name", ""))
+    if not a or not b:
+        return 0.0
+    score = SequenceMatcher(None, a, b).ratio()
+    if left.get("family") == right.get("family"):
+        score = min(1.0, score + 0.08)
+    if _phonetic_signature(a) == _phonetic_signature(b):
+        score = min(1.0, score + 0.12)
+    return score
+
+
 def _is_allowed_name(value, search_context=None):
     """Enforce the candidate alphabet and new-brand blacklist."""
     name = str(value).strip()
@@ -326,13 +383,25 @@ def _is_allowed_name(value, search_context=None):
     return True
 
 
-def select_diverse_names(candidates, count, search_context=None, exclude_names=None):
-    """Rank locally, then enforce cross-batch and naming-family diversity."""
-    selected = []
+def select_diverse_names(
+    candidates,
+    count,
+    search_context=None,
+    exclude_names=None,
+    taste_model=None,
+):
+    """Preference-aware MMR-style shortlist with cross-batch diversity."""
     blocked = _bounded_names(exclude_names, 100)
+    model = taste_model if isinstance(taste_model, dict) else build_taste_model()
+    confidence = float(model.get("confidence", 0.0) or 0.0)
+    shares = family_allocation(count, model)
+    family_caps = {
+        family: max(2, math.ceil(shares.get(family, 0.2) * count) + 1)
+        for family in GENERATION_FAMILY_KEYS
+    }
     family_counts = {family: 0 for family in GENERATION_FAMILY_KEYS}
-    family_cap = max(2, math.ceil(max(1, count) / 3))
 
+    eligible = []
     for candidate in rank_candidate_pool(candidates):
         name = str(candidate.get("name", "")).strip()
         family = str(candidate.get("family", "")).strip()
@@ -340,36 +409,77 @@ def select_diverse_names(candidates, count, search_context=None, exclude_names=N
             continue
         if any(_too_similar(name, old) for old in blocked):
             continue
-        if any(_too_similar(name, row["name"]) for row in selected):
-            continue
-        if family in family_counts and family_counts[family] >= family_cap:
-            continue
         clean = dict(candidate)
         clean["name"] = name
+        clean["user_fit_score"] = candidate_preference_score(clean, model)
+        quality = float(clean.get("local_quality_score", 0) or 0)
+        # Before feedback, preserve the old structural ranking. As confidence grows,
+        # user fit can account for up to 45% of relevance.
+        user_weight = 0.45 * confidence
+        clean["adaptive_relevance_score"] = round(
+            quality * (1.0 - user_weight) + clean["user_fit_score"] * user_weight,
+            1,
+        )
+        eligible.append(clean)
+
+    selected = []
+    remaining = eligible[:]
+    while remaining and len(selected) < count:
+        best_index = None
+        best_score = -10.0
+        for index, candidate in enumerate(remaining):
+            family = str(candidate.get("family", ""))
+            if family in family_counts and family_counts[family] >= family_caps[family]:
+                continue
+            if any(_too_similar(candidate["name"], row["name"]) for row in selected):
+                continue
+            relevance = float(candidate.get("adaptive_relevance_score", 0.0)) / 100.0
+            redundancy = max(
+                (_candidate_similarity(candidate, row) for row in selected),
+                default=0.0,
+            )
+            # MMR pattern: favor relevance while explicitly penalizing redundancy.
+            mmr_score = 0.72 * relevance - 0.28 * redundancy
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_index = index
+        if best_index is None:
+            # Relax learned family caps rather than returning too few candidates.
+            for family in family_caps:
+                family_caps[family] += 1
+            if all(
+                any(_too_similar(row["name"], picked["name"]) for picked in selected)
+                for row in remaining
+            ):
+                break
+            continue
+        picked = remaining.pop(best_index)
+        family = str(picked.get("family", ""))
         if family in family_counts:
-            clean["family"] = family
             family_counts[family] += 1
-        selected.append(clean)
-        if len(selected) >= count:
-            break
+        selected.append(picked)
     return selected
 
 
-def _generation_plan(count, search_context=None, generation_context=None):
+def _generation_plan(count, search_context=None, generation_context=None, taste_model=None):
     context = clean_search_context(search_context)
     adaptive = clean_generation_context(generation_context)
+    model = taste_model if isinstance(taste_model, dict) else build_taste_model()
     pool_size = min(40, max(count + 8, count * 2))
+    shares = family_allocation(pool_size, model)
     families = "\n".join(
-        f"- {key}: {description}" for key, description in GENERATION_FAMILIES.items()
+        f"- {key}: {description}; target_share={shares.get(key, 0.2):.2f}"
+        for key, description in GENERATION_FAMILIES.items()
     )
     if context["mode"] == "new_brand":
         rules = (
             "Diversify the pool across these naming families and label each candidate "
-            "with the matching family key:\n"
+            "with the matching family key. Target shares are soft: retain exploration "
+            "and do not clone liked examples.\n"
             f"{families}\n"
-            "Do not let one family dominate the pool. Avoid repeated suffixes, "
-            "one-letter variants, visually confusable variants, and names with the "
-            "same consonant skeleton. Do not repeat a candidate in another spelling.\n"
+            "Avoid repeated suffixes, one-letter variants, visually confusable variants, "
+            "and names with the same consonant skeleton. Do not repeat a candidate in "
+            "another spelling.\n"
             f"Forbidden roots anywhere in a name: {', '.join(sorted(BANNED_ROOTS))}.\n"
             f"Forbidden endings: {', '.join(sorted(BANNED_SUFFIXES))}."
         )
@@ -385,9 +495,9 @@ def _generation_plan(count, search_context=None, generation_context=None):
         )
     if adaptive["batch_number"] > 1:
         rules += (
-            "\nAdaptive rule: this is a follow-up batch. Deliberately change lexical "
-            "and phonetic neighborhoods from prior conflict examples; do not merely "
-            "attach a new suffix to a failed root."
+            "\nAdaptive rule: this is a follow-up batch. Use taste evidence to move "
+            "toward preferred qualities, but move away only from actual availability "
+            "conflict examples. Keep at least some exploration across naming families."
         )
     return pool_size, rules
 
@@ -406,8 +516,9 @@ def generate_ai_names(
 
     context = clean_search_context(search_context)
     adaptive = clean_generation_context(generation_context)
+    taste_model = _taste_model_from_preferences(preferences)
     client = OpenAI()
-    pool_size, plan = _generation_plan(count, context, adaptive)
+    pool_size, plan = _generation_plan(count, context, adaptive, taste_model)
     response = client.responses.create(
         model=os.environ.get("OPENAI_MODEL", "gpt-5.6-luna"),
         instructions=SYSTEM_PROMPT,
@@ -416,7 +527,7 @@ def generate_ai_names(
             f"Project brief: {brief}\n"
             f"Search task: {search_context_prompt(context)}\n"
             f"Structured Brand DNA: {brand_dna_context(brand_dna)}\n"
-            f"Project-specific feedback: {_preference_context(preferences)}\n"
+            f"Project-specific feedback: {_preference_context(preferences, taste_model)}\n"
             f"Adaptive batch context: {generation_context_prompt(adaptive)}\n"
             f"Generation plan:\n{plan}"
         ),
@@ -435,6 +546,7 @@ def generate_ai_names(
         count,
         context,
         exclude_names=adaptive["exclude_names"],
+        taste_model=taste_model,
     )
     if len(selected) < count:
         raise ValueError(
