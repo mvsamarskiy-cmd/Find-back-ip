@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "ops" / "railway-production.json"
-USER_AGENT = "NameMachine-production-canary/1.1"
+USER_AGENT = "NameMachine-production-canary/1.2"
 
 
 class CanaryError(RuntimeError):
@@ -96,6 +96,24 @@ def run_canary(
     _require(feed.get("newest_first") is True, "Production feed is not newest-first")
     _require(feed.get("pagination") is True, "Production feed pagination is not enabled")
 
+    variant = fetch_json(f"{base}/api/variant-grammar")
+    _require(variant.get("supported") is True, "Variant grammar is not enabled")
+    _require(variant.get("user_opt_in_required") is True, "Variant mutations are not opt-in")
+    _require(variant.get("clean_stem_searched_first") is True, "Clean stem is not searched first")
+    _require(variant.get("availability_checked_here") is False, "Variant generator must not claim availability")
+    _require(variant.get("claimability_proved_here") is False, "Variant generator must not prove claimability")
+    _require(variant.get("verification_endpoint") == "/api/variants/check", "Variant verification endpoint is missing")
+    _require(variant.get("strict_free_status") == "claimable", "Variant strict-free status is not claimable")
+
+    variant_storage = fetch_json(f"{base}/api/variant-expansion-storage")
+    _require(variant_storage.get("configured") is True, "Variant durable storage is not configured")
+    _require(variant_storage.get("enabled") is True, "Variant durable storage is not enabled")
+    _require(
+        variant_storage.get("separate_from_candidate_bundles") is True,
+        "Variant expansions are not isolated from candidate bundles",
+    )
+    _require(variant_storage.get("strict_free_status") == "claimable", "Variant storage strict-free status is not claimable")
+
     background = fetch_json(f"{base}/api/background-search")
     _require(background.get("configured") is True, "Durable background storage is not configured")
     _require(background.get("enabled") is True, "Background search is not enabled")
@@ -112,9 +130,13 @@ def run_canary(
         "release": release,
         "git_commit": commit,
         "strict_green_status": strict.get("green_status"),
-        "feed": {
-            "newest_first": True,
-            "pagination": True,
+        "feed": {"newest_first": True, "pagination": True},
+        "variant_expansion": {
+            "opt_in": True,
+            "clean_stem_first": True,
+            "verification_endpoint": variant.get("verification_endpoint"),
+            "durable_storage": True,
+            "isolated_storage": True,
         },
         "background_search": {
             "configured": True,
@@ -130,26 +152,10 @@ def run_canary(
 def main(argv=None):
     manifest = load_manifest()
     parser = argparse.ArgumentParser(description="Run NameMachine production canary checks")
-    parser.add_argument(
-        "--url",
-        default=manifest["productionUrl"],
-        help="HTTPS deployment base URL; defaults to the committed canonical Railway target",
-    )
-    parser.add_argument(
-        "--expected-release",
-        default=None,
-        help="Fail unless /api/version reports this exact release marker",
-    )
-    parser.add_argument(
-        "--expected-commit",
-        default=None,
-        help="Fail unless /api/version reports this Git commit (full or short SHA)",
-    )
-    parser.add_argument(
-        "--require-worker",
-        action="store_true",
-        help="Also require at least one live background worker and ready=true",
-    )
+    parser.add_argument("--url", default=manifest["productionUrl"], help="HTTPS deployment base URL; defaults to the committed canonical Railway target")
+    parser.add_argument("--expected-release", default=None, help="Fail unless /api/version reports this exact release marker")
+    parser.add_argument("--expected-commit", default=None, help="Fail unless /api/version reports this Git commit (full or short SHA)")
+    parser.add_argument("--require-worker", action="store_true", help="Also require at least one live background worker and ready=true")
     args = parser.parse_args(argv)
     try:
         report = run_canary(
