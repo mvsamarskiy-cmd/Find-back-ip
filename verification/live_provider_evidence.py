@@ -2,15 +2,15 @@
 
 This is the migration layer between legacy availability rows and the central
 Verification v2 collector. Provider adapters are called at most once per
-platform for one `check_all` pass. Their raw evidence is preserved, while unsafe
-negative/ambiguous signals are tagged as non-blocking so they remain observable
-without changing availability semantics.
+platform for one `check_all` pass. Independent secondary providers run through a
+bounded shared runtime so slow hosts no longer serialize the whole candidate.
 """
 
 import os
 
 import availability
 from verification.fusion import SOURCE_AUTHORITY
+from verification.provider_runtime import ProviderTask, run_provider_checks
 from verification.providers import (
     fragment_username_adapter,
     meta_instagram_oembed_adapter,
@@ -100,45 +100,92 @@ def _needs_secondary(row):
 def collect_live_provider_evidence(handle, legacy_availability):
     """Return independent provider evidence keyed by platform.
 
-    Only currently production-approved provider paths are called. Strong legacy
-    terminal states skip secondary calls for latency. Telegram unresolved states
-    collect both Fragment and WhatsMyName so one provider can no longer hide the
-    other's evidence through early return.
+    Only production-approved secondary paths are scheduled. Strong legacy
+    terminal states skip them entirely. Eligible X, Instagram, TikTok, Fragment,
+    and WhatsMyName probes run concurrently on the shared bounded runtime; this
+    removes the old per-candidate sequential latency while retaining every row.
     """
     rows = legacy_availability if isinstance(legacy_availability, dict) else {}
-    result = {}
+    tasks = []
 
     x_row = rows.get("x")
     if "x" in rows and _needs_secondary(x_row) and not os.environ.get("X_BEARER_TOKEN", "").strip():
-        evidence = _normalize_socialscan(socialscan_adapter.check_username(handle, "x"))
-        if evidence:
-            result["x"] = [evidence]
+        tasks.append(ProviderTask(
+            key="x_socialscan",
+            provider="socialscan",
+            handle=handle,
+            platform="x",
+            checker=socialscan_adapter.check_username,
+        ))
 
     instagram_row = rows.get("instagram")
     if "instagram" in rows and _needs_secondary(instagram_row):
-        evidence = _normalize_positive_only(
-            meta_instagram_oembed_adapter.check_username(handle, "instagram")
-        )
-        if evidence:
-            result["instagram"] = [evidence]
+        tasks.append(ProviderTask(
+            key="instagram_meta_oembed",
+            provider="meta_instagram_oembed",
+            handle=handle,
+            platform="instagram",
+            checker=meta_instagram_oembed_adapter.check_username,
+        ))
 
     tiktok_row = rows.get("tiktok")
     if "tiktok" in rows and _needs_secondary(tiktok_row):
-        evidence = _normalize_positive_only(
-            tiktok_oembed_adapter.check_username(handle, "tiktok")
-        )
-        if evidence:
-            result["tiktok"] = [evidence]
+        tasks.append(ProviderTask(
+            key="tiktok_oembed",
+            provider="tiktok_oembed",
+            handle=handle,
+            platform="tiktok",
+            checker=tiktok_oembed_adapter.check_username,
+        ))
 
     telegram_row = rows.get("telegram")
     if "telegram" in rows and _needs_secondary(telegram_row):
-        fragment = _normalize_fragment(
-            fragment_username_adapter.check_username(handle, "telegram")
-        )
-        wmn = _normalize_whatsmyname(
-            whatsmyname_adapter.check_username(handle, "telegram")
-        )
-        result["telegram"] = [row for row in (fragment, wmn) if row]
+        tasks.extend((
+            ProviderTask(
+                key="telegram_fragment",
+                provider="fragment_public_web",
+                handle=handle,
+                platform="telegram",
+                checker=fragment_username_adapter.check_username,
+            ),
+            ProviderTask(
+                key="telegram_whatsmyname",
+                provider="whatsmyname",
+                handle=handle,
+                platform="telegram",
+                checker=whatsmyname_adapter.check_username,
+            ),
+        ))
+
+    raw = run_provider_checks(tasks)
+    result = {}
+
+    if "x_socialscan" in raw:
+        evidence = _normalize_socialscan(raw["x_socialscan"])
+        if evidence:
+            result["x"] = [evidence]
+
+    if "instagram_meta_oembed" in raw:
+        evidence = _normalize_positive_only(raw["instagram_meta_oembed"])
+        if evidence:
+            result["instagram"] = [evidence]
+
+    if "tiktok_oembed" in raw:
+        evidence = _normalize_positive_only(raw["tiktok_oembed"])
+        if evidence:
+            result["tiktok"] = [evidence]
+
+    telegram_rows = []
+    if "telegram_fragment" in raw:
+        evidence = _normalize_fragment(raw["telegram_fragment"])
+        if evidence:
+            telegram_rows.append(evidence)
+    if "telegram_whatsmyname" in raw:
+        evidence = _normalize_whatsmyname(raw["telegram_whatsmyname"])
+        if evidence:
+            telegram_rows.append(evidence)
+    if telegram_rows:
+        result["telegram"] = telegram_rows
 
     return result
 
