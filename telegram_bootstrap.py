@@ -40,7 +40,7 @@ install_generic_naming_routes(app, app_module)
 install_brand_collision_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.4-live-durable-events"
+RELEASE_MARKER = "v8.5-ui-cleanup-pagination"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=5"></script>'
@@ -51,11 +51,12 @@ AUDIT_REPORT_TAG = '<script src="/static/audit_report.js?v=4"></script>'
 CLIENT_REPORT_TAG = '<script src="/static/client_report.js?v=6"></script>'
 CLIENT_REPORT_MODES_TAG = '<script src="/static/client_report_modes.js?v=1"></script>'
 REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=5"></script>'
-FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=2"></script>'
+FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=3"></script>'
 CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
 ENTRY_MODES_TAG = '<script src="/static/entry_modes.js?v=1"></script>'
 BRAND_COLLISION_UI_TAG = '<script src="/static/brand_collision_ui.js?v=1"></script>'
 DURABLE_LIVE_EVENTS_TAG = '<script src="/static/durable_live_events.js?v=1"></script>'
+UI_CLEANUP_TAG = '<script src="/static/ui_cleanup_r8.js?v=1"></script>'
 
 
 @app.after_request
@@ -88,14 +89,16 @@ def prevent_stale_html(response):
             tags.append(FEED_NAVIGATION_TAG)
         if CLAIMABILITY_UI_TAG not in body:
             tags.append(CLAIMABILITY_UI_TAG)
-        # Entry modes adapt the existing streaming/feed behavior; collision UI
-        # and durable lifecycle rendering load after those card wrappers.
+        # Entry modes adapt the existing streaming/feed behavior; collision UI,
+        # durable lifecycle rendering and final UX cleanup load after those wrappers.
         if ENTRY_MODES_TAG not in body:
             tags.append(ENTRY_MODES_TAG)
         if BRAND_COLLISION_UI_TAG not in body:
             tags.append(BRAND_COLLISION_UI_TAG)
         if DURABLE_LIVE_EVENTS_TAG not in body:
             tags.append(DURABLE_LIVE_EVENTS_TAG)
+        if UI_CLEANUP_TAG not in body:
+            tags.append(UI_CLEANUP_TAG)
         if tags and "</body>" in body:
             response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
@@ -191,7 +194,9 @@ def api_verification_diagnostics():
             "enabled": True,
             "newest_first": True,
             "alphabetical_sort": False,
-            "render_page_size": 60,
+            "pagination": True,
+            "render_page_size": 25,
+            "views_paginated": ["feed", "recommended", "shortlist"],
             "filters": ["all", "confirmed", "promising", "conflict", "unresolved"],
             "turbo_primary_feed_strict_free_only": True,
         },
@@ -208,6 +213,9 @@ def api_verification_diagnostics():
             "default_search_strategy": "procedural",
             "search_strategies": ["procedural", "turbo"],
             "procedural_focus_visible": True,
+            "telemetry_default": "compact",
+            "technical_details_toggle": True,
+            "report_preview_closable": True,
         },
         "session_storage": session_storage_diagnostics(),
         "background_search": background_search_diagnostics(),
