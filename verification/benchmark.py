@@ -22,6 +22,9 @@ KNOWN_FIXTURES = (
     Fixture("mazomoto", "telegram", "exists", "Known Telegram handle"),
     Fixture("drity", "x", "exists", "Known X handle"),
     Fixture("warsawcity", "x", "exists", "Known X handle"),
+    Fixture("instagram", "instagram", "exists", "Known Instagram platform account"),
+    Fixture("nike", "instagram", "exists", "Known Nike Instagram account"),
+    Fixture("natgeo", "instagram", "exists", "Known National Geographic Instagram account"),
 )
 
 
