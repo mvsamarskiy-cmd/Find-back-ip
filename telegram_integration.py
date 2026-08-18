@@ -35,13 +35,19 @@ def _service_result(
 
 
 def _claimability_result(handle, evidence):
-    """Return a strict Telegram verdict only from an authoritative checkUsername call."""
+    """Return a Telegram verdict from a direct checkUsername observation.
+
+    Strict green is reserved for ``channels.checkUsername`` with channel scope.
+    ``account.checkUsername`` success remains useful absence evidence, but it does
+    not prove that the handle can be assigned to a channel/supergroup.
+    """
     claim = evidence.get("claimability") if isinstance(evidence, dict) else None
     if not isinstance(claim, dict):
         return None
 
     status = str(claim.get("status") or "unknown")
     method = str(claim.get("method") or "")
+    scope = str(claim.get("scope") or "")
     detail = str(claim.get("detail") or "")[:300]
     fragment = evidence.get("fragment") if isinstance(evidence.get("fragment"), dict) else {}
     mtproto = evidence.get("mtproto") if isinstance(evidence.get("mtproto"), dict) else {}
@@ -67,15 +73,26 @@ def _claimability_result(handle, evidence):
         )
 
     if status == "claimable":
+        if method == "channels.checkUsername" and scope == "channel":
+            return _service_result(
+                "claimable",
+                detail or "Telegram directly confirmed that this username can be assigned to a channel",
+                telegram_url,
+                confidence=0.995,
+                occupancy="not_found",
+                claimability="confirmed",
+                evidence=evidence,
+                method=method,
+            )
         return _service_result(
-            "claimable",
-            detail or "Telegram directly confirmed that this username can be claimed",
+            "not_found",
+            "Telegram found no current account-level conflict, but channel assignment is not yet confirmed",
             telegram_url,
-            confidence=0.995,
+            confidence=0.97,
             occupancy="not_found",
-            claimability="confirmed",
+            claimability="unconfirmed",
             evidence=evidence,
-            method=method,
+            method=method or "account.checkUsername",
         )
 
     if status == "purchasable":
@@ -209,7 +226,7 @@ def classify_telegram_evidence(name, envelope):
     if mt_status == "not_found" and fragment_status == "not_found":
         return _service_result(
             "not_found",
-            "MTProto and Fragment found no current username record; final claimability is still unconfirmed",
+            "MTProto and Fragment found no current username record; channel assignment is still unconfirmed",
             telegram_url,
             confidence=0.94,
             occupancy="not_found",
