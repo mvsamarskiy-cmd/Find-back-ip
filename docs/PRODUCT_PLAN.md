@@ -50,13 +50,17 @@ No estimated monetary value is shown without comparable market sales.
 
 ## Phase 3 — mathematical generation funnel
 
+- [x] Let every search select any non-empty subset of the seven resources.
+- [x] Persist the selection in browser history and use it as the exact `N/N`
+  denominator in API and UI results.
 - Convert the brief to structured Brand DNA.
 - Generate diversified local candidate families.
 - Funnel: 20,000 -> 6,000 structural -> 1,500 linguistic -> 300 collision ->
   100 external checks -> 20 final reports.
 - Apply family quotas to prevent suffix monoculture.
 - Add phonetic, visual, semantic, and edit-distance deduplication.
-- Rank availability compositions from 2/7 through 7/7 with required-resource filters.
+- Rank availability compositions across the selected resources; required-resource
+  filtering is complete, while full composition scoring remains pending.
 
 ## Phase 4 — durable server history
 

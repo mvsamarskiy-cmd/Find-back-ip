@@ -1,7 +1,7 @@
 # NameMachine implementation status
 
-Updated for the registrar-confirmation release prepared from GitHub `main`
-commit `ba11e8f90a5c2143a3fad7dd43240e7be41dee9c` on 2026-08-18.
+Updated for the selectable-resource release prepared from GitHub `main`
+commit `477d2f4dab16732b271bdc352c3047d54c6c604a` on 2026-08-18.
 
 This file records what exists now. `PRODUCT_PLAN.md` remains the implementation
 order for unfinished work.
@@ -21,6 +21,7 @@ order for unfinished work.
 | Evidence-correct status vocabulary and ranking | Phase 2.1 release | Included |
 | Single UI source of truth | Phase 2.1 release | Obsolete embedded v4.2 UI removed; `templates/index.html` is canonical |
 | Name.com confirmation after `.com` RDAP screening | Current registrar release | Implemented and tested; production credentials and live actionable proof remain pending |
+| Per-search resource selection and dynamic `N/N` results | Current selectable-resource release | Implemented for API, mobile UI, local persistence, and historical searches |
 | API, browser-history, dependency, and security stabilization | PR #10 | Included |
 | AI/check rate limits and bounded AI concurrency | PR #11 | Included |
 | Clear UI handling of HTML/5xx responses | PR #13 | Included |
@@ -34,9 +35,10 @@ order for unfinished work.
   YouTube/X adapters, and the optional Name.com registration adapter exist.
   Production Name.com credentials and a live actionable proof are pending;
   Telegram MTProto and Fragment classification are not implemented.
-- Phase 3 is partially complete: bounded multi-family generation and basic
-  deduplication exist. Brand DNA, the 20,000-candidate funnel, full component
-  scoring, and required-resource ranking are not implemented.
+- Phase 3 is partially complete: bounded multi-family generation, basic
+  deduplication, and exact required-resource selection exist. Brand DNA, the
+  20,000-candidate funnel, and full availability-composition scoring are not
+  implemented.
 - Phase 4 is not implemented. Projects, history, and preferences remain in the
   current browser; PostgreSQL, migrations, accounts, idempotency, export, and
   server-side deletion are pending.
@@ -60,8 +62,9 @@ order for unfinished work.
 
 ## Next implementation order
 
-1. Activate Name.com in production and capture a live registrar-confirmed result.
-2. Design the isolated Telegram MTProto/Fragment service.
+1. Define structured Brand DNA input and a safe website-analysis contract.
+2. Improve the evidence operator and external adapters for the selected social
+   platforms, starting with Telegram classification.
 3. Add durable PostgreSQL history with idempotency before scaling generation.
 4. Implement the mathematical generation funnel in small, independently tested
    releases.

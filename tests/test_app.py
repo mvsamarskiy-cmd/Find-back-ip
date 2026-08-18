@@ -38,6 +38,25 @@ class AppTests(unittest.TestCase):
     def test_check_rejects_invalid_name(self):
         self.assertEqual(self.client.get("/api/check/12").status_code, 400)
 
+    @patch("app.check_all", return_value={"availability": {}})
+    def test_check_accepts_selected_resources(self, check_all):
+        response = self.client.get(
+            "/api/check/example?resources=youtube,telegram,youtube"
+        )
+        self.assertEqual(response.status_code, 200)
+        check_all.assert_called_once_with("example", ("telegram", "youtube"))
+
+    @patch("app.check_all")
+    def test_check_rejects_empty_or_unknown_resources(self, check_all):
+        empty = self.client.get("/api/check/example?resources=")
+        unknown = self.client.get("/api/check/example?resources=linkedin")
+        self.assertEqual(empty.status_code, 400)
+        self.assertEqual(unknown.status_code, 400)
+        self.assertEqual(
+            unknown.get_json()["allowed_resources"], list(app.RESOURCE_KEYS)
+        )
+        check_all.assert_not_called()
+
     def test_generate_caps_count(self):
         with patch("app.generate", return_value=[]) as generate:
             self.client.get("/api/generate?count=999")
@@ -54,6 +73,52 @@ class AppTests(unittest.TestCase):
     def test_ai_generate_rejects_non_object_json(self):
         response = self.client.post("/api/ai-generate", json=[{"brief": "test"}])
         self.assertEqual(response.status_code, 400)
+
+    @patch("app.trademark_links", return_value={})
+    @patch("app.check_many", return_value=[{
+        "availability": {},
+        "selected_resources": ["telegram", "youtube"],
+        "total_resources": 2,
+    }])
+    @patch("app.generate_ai_names", return_value=[{
+        "name": "Veya", "reason": "Причина", "pronunciation": "VEY-a",
+        "language_risks": [],
+    }])
+    def test_ai_generate_forwards_selected_resources(
+        self, _generate_ai_names, check_many, _trademark_links
+    ):
+        response = self.client.post(
+            "/api/ai-generate",
+            json={
+                "brief": "Український бренд",
+                "resources": ["youtube", "telegram"],
+            },
+            environ_base={"REMOTE_ADDR": "198.51.100.44"},
+        )
+        self.assertEqual(response.status_code, 200)
+        names, = check_many.call_args.args
+        self.assertEqual(list(names), ["Veya"])
+        self.assertEqual(
+            check_many.call_args.kwargs["resources"], ("telegram", "youtube")
+        )
+
+    @patch("app.generate_ai_names")
+    def test_ai_generate_rejects_empty_resource_selection_before_ai(self, generate):
+        response = self.client.post(
+            "/api/ai-generate",
+            json={"brief": "Український бренд", "resources": []},
+            environ_base={"REMOTE_ADDR": "198.51.100.45"},
+        )
+        self.assertEqual(response.status_code, 400)
+        generate.assert_not_called()
+
+    def test_legacy_generate_forwards_selected_resources(self):
+        with patch("app.generate", return_value=[]) as generate:
+            response = self.client.get(
+                "/api/generate?count=5&verify=1&resources=telegram"
+            )
+        self.assertEqual(response.status_code, 200)
+        generate.assert_called_once_with(5, True, ("telegram",))
 
     @patch("app.trademark_links", return_value={})
     @patch("app.generate_ai_names", return_value=[{
@@ -157,8 +222,14 @@ class AppTests(unittest.TestCase):
         self.assertIn("НЕ ЗНАЙДЕНО", body)
         self.assertIn("докази перевірки", body)
         self.assertIn("NOT FOUND означає лише", body)
-        self.assertIn("AI brand discovery · v4.5", body)
+        self.assertIn("AI brand discovery · v4.6", body)
         self.assertIn("Name.com", body)
         self.assertIn("offerEvidence", body)
+        self.assertIn('name="resource" value="telegram"', body)
+        self.assertIn('name="resource" value="youtube"', body)
+        self.assertIn("selectedResources", body)
+        self.assertIn("resourcesForRow", body)
+        self.assertIn("Обери щонайменше один ресурс", body)
+        self.assertNotIn("Перевіряю 7 ресурсів", body)
         self.assertNotIn("підтверджено вільних", body)
         self.assertIn("jsonResponse", body)

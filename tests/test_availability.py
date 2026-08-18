@@ -1,7 +1,7 @@
 import unittest
 import sys
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 try:
     import requests
@@ -30,6 +30,24 @@ def response(status_code, text="", payload=None):
 
 
 class AvailabilityTests(unittest.TestCase):
+    def test_resource_selection_defaults_to_all_in_canonical_order(self):
+        self.assertEqual(
+            availability.normalize_resources(),
+            availability.RESOURCE_KEYS,
+        )
+
+    def test_resource_selection_deduplicates_and_restores_canonical_order(self):
+        self.assertEqual(
+            availability.normalize_resources("youtube,telegram,youtube"),
+            ("telegram", "youtube"),
+        )
+
+    def test_resource_selection_rejects_empty_and_unknown_values(self):
+        with self.assertRaisesRegex(ValueError, "at least one"):
+            availability.normalize_resources([])
+        with self.assertRaisesRegex(ValueError, "Unsupported resources: linkedin"):
+            availability.normalize_resources(["telegram", "linkedin"])
+
     def test_result_has_auditable_evidence_fields(self):
         result = availability._result("unknown", "test", "https://example.test")
         self.assertEqual(result["claimability"], "unconfirmed")
@@ -274,6 +292,43 @@ class AvailabilityTests(unittest.TestCase):
         self.assertEqual(result["available_count"], 2)
         self.assertEqual(result["not_found_count"], 0)
         self.assertEqual(result["unresolved_count"], 5)
+
+    def test_check_all_runs_only_selected_resources(self):
+        not_found = {"status": "not_found"}
+        with (
+            patch("availability.check_com") as check_com,
+            patch("availability.check_instagram") as check_instagram,
+            patch("availability.check_telegram", return_value=not_found) as check_telegram,
+            patch("availability.check_tiktok") as check_tiktok,
+            patch("availability.check_youtube", return_value=not_found) as check_youtube,
+            patch("availability.check_facebook") as check_facebook,
+            patch("availability.check_x") as check_x,
+        ):
+            result = availability.check_all(
+                "Example", ["youtube", "telegram", "youtube"]
+            )
+        self.assertEqual(result["selected_resources"], ["telegram", "youtube"])
+        self.assertEqual(result["total_resources"], 2)
+        self.assertEqual(set(result["availability"]), {"telegram", "youtube"})
+        self.assertEqual(result["not_found_count"], 2)
+        check_telegram.assert_called_once_with("Example")
+        check_youtube.assert_called_once_with("Example")
+        for checker in (check_com, check_instagram, check_tiktok, check_facebook, check_x):
+            checker.assert_not_called()
+
+    def test_check_many_forwards_one_selection_to_every_name(self):
+        with patch("availability.check_all", return_value={}) as check_all:
+            results = availability.check_many(
+                ["Alpha", "Beta"], max_workers=1, resources=["telegram"]
+            )
+        self.assertEqual(results, [{}, {}])
+        self.assertEqual(
+            check_all.call_args_list,
+            [
+                call("Alpha", resources=("telegram",)),
+                call("Beta", resources=("telegram",)),
+            ],
+        )
 
     def test_not_found_is_rankable_evidence_but_not_availability(self):
         statuses = iter((
