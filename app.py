@@ -18,6 +18,7 @@ from ai_engine import (
 )
 from brand_dna import WebsiteFetchError, build_brand_dna, clean_brand_dna, fetch_public_website
 from identity_bundle import classify_identity_bundle, normalize_required_resources
+from prompt_intelligence import interpret_prompt
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -311,6 +312,41 @@ def api_brand_dna():
         app.logger.exception("Brand DNA analysis failed")
         return jsonify({
             "error": "Temporary Brand DNA analysis error. Please try again.",
+            "error_type": type(error).__name__,
+        }), 503
+    finally:
+        AI_REQUEST_SLOTS.release()
+
+
+@app.post("/api/interpret")
+@limiter.limit(AI_RATE_LIMIT)
+def api_interpret():
+    data = json_object()
+    if data is None:
+        return jsonify({"error": "JSON body must be an object"}), 400
+    prompt = " ".join(str(data.get("prompt", "")).split())
+    if len(prompt) < 2:
+        return jsonify({"error": "Prompt must contain at least 2 characters"}), 400
+    if len(prompt) > 2000:
+        return jsonify({"error": "Prompt must contain at most 2000 characters"}), 400
+    try:
+        resources = normalize_resources(data.get("resources"))
+    except ValueError as error:
+        return resource_error(error)
+    if not AI_REQUEST_SLOTS.acquire(blocking=False):
+        return jsonify({
+            "error": "AI is busy. Please try again in a few seconds.",
+            "retry_after": 5,
+        }), 503, {"Retry-After": "5"}
+    try:
+        intent = interpret_prompt(prompt, resources, data.get("feedback"))
+        return jsonify(intent)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        app.logger.exception("Prompt interpretation failed")
+        return jsonify({
+            "error": "Temporary prompt interpretation error. Please try again.",
             "error_type": type(error).__name__,
         }), 503
     finally:
