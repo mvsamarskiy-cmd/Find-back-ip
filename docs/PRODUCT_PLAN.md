@@ -42,7 +42,10 @@ No estimated monetary value is shown without comparable market sales.
 - [x] Stop counting public 404 responses as confirmed free.
 - [x] Add deterministic fixtures for known occupied and synthetic handles.
 - [x] Add official YouTube and X lookup adapters where credentials permit.
-- [ ] Add registrar availability confirmation after RDAP screening.
+- [x] Add an optional official Name.com registration check after RDAP screening,
+  with conservative credential, throttling, and malformed-response handling.
+- [ ] Configure production Name.com credentials and verify a live
+  `claimable`/`purchasable` result.
 - [ ] Add Telegram MTProto and Fragment classification as a separate secured service.
 
 ## Phase 3 — mathematical generation funnel

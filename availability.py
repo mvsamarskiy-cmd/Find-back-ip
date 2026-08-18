@@ -6,7 +6,9 @@ from urllib.parse import quote
 import requests
 
 HTTP_TIMEOUT = float(os.environ.get("HTTP_TIMEOUT", "6"))
-USER_AGENT = os.environ.get("HTTP_USER_AGENT", "Mozilla/5.0 (compatible; NameMachine/4.4)")
+USER_AGENT = os.environ.get("HTTP_USER_AGENT", "Mozilla/5.0 (compatible; NameMachine/4.5)")
+NAMECOM_CHECK_URL = "https://api.name.com/core/v1/domains:checkAvailability"
+NAMECOM_SEARCH_URL = "https://www.name.com/domain/search"
 
 STATUS_VALUES = (
     "claimable",
@@ -32,6 +34,7 @@ def _result(
     confidence=0.0,
     occupancy=None,
     claimability="unconfirmed",
+    offer=None,
 ):
     """Return one normalized status plus an auditable evidence record."""
     if status not in STATUS_VALUES:
@@ -52,7 +55,7 @@ def _result(
             "reserved": "not_claimable",
         }.get(status, claimability)
 
-    return {
+    result = {
         "status": status,
         "detail": detail,
         "url": url,
@@ -63,6 +66,157 @@ def _result(
         "claimability": claimability,
         "checked_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
+    if offer is not None:
+        result["offer"] = offer
+    return result
+
+
+def _namecom_offer(row, domain):
+    """Keep only documented, non-secret fields from a Name.com result."""
+    purchase_type = row.get("purchaseType") or "registration"
+    offer = {
+        "provider": "name.com",
+        "domain_name": domain,
+        "purchase_type": str(purchase_type),
+        "premium": bool(row.get("premium", False)),
+    }
+    for source_key, output_key in (
+        ("purchasePrice", "purchase_price"),
+        ("renewalPrice", "renewal_price"),
+    ):
+        value = row.get(source_key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            offer[output_key] = value
+    reason = row.get("reason")
+    if isinstance(reason, str) and reason.strip():
+        offer["reason"] = reason.strip()[:300]
+    return offer
+
+
+def _check_namecom_registration(domain):
+    """Confirm a fresh .com registration after RDAP reports no domain.
+
+    Returning ``None`` means the optional integration is not configured. Once
+    credentials are configured, every registrar outcome is returned explicitly
+    so authentication, throttling, or malformed data cannot be hidden behind a
+    false availability claim.
+    """
+    username = os.environ.get("NAMECOM_USERNAME", "").strip()
+    token = os.environ.get("NAMECOM_API_TOKEN", "").strip()
+    if not username or not token:
+        return None
+
+    method = "registrar_check_availability"
+    try:
+        response = requests.post(
+            NAMECOM_CHECK_URL,
+            auth=(username, token),
+            json={"domainNames": [domain], "purchaseType": "registration"},
+            timeout=HTTP_TIMEOUT,
+            headers={"User-Agent": USER_AGENT, "Content-Type": "application/json"},
+        )
+    except requests.RequestException as error:
+        return _result(
+            "unknown",
+            f"RDAP found no registration; registrar error: {type(error).__name__}",
+            NAMECOM_SEARCH_URL,
+            source="namecom_core_api",
+            method=method,
+            confidence=0.9,
+            occupancy="not_found",
+        )
+
+    if response.status_code == 429:
+        return _result(
+            "rate_limited",
+            "RDAP found no registration; registrar rate limited the confirmation (429)",
+            NAMECOM_SEARCH_URL,
+            source="namecom_core_api",
+            method=method,
+            confidence=0.9,
+            occupancy="not_found",
+        )
+    if response.status_code in (401, 403):
+        return _result(
+            "unknown",
+            f"RDAP found no registration; registrar authentication unavailable ({response.status_code})",
+            NAMECOM_SEARCH_URL,
+            source="namecom_core_api",
+            method=method,
+            confidence=0.9,
+            occupancy="not_found",
+        )
+    if response.status_code != 200:
+        return _result(
+            "unknown",
+            f"RDAP found no registration; registrar HTTP {response.status_code}",
+            NAMECOM_SEARCH_URL,
+            source="namecom_core_api",
+            method=method,
+            confidence=0.9,
+            occupancy="not_found",
+        )
+
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        payload = None
+    rows = payload.get("results") if isinstance(payload, dict) else None
+    exact = next(
+        (
+            row for row in rows
+            if isinstance(row, dict)
+            and str(row.get("domainName", "")).lower() == domain
+        ),
+        None,
+    ) if isinstance(rows, list) else None
+    if exact is None:
+        return _result(
+            "unknown",
+            "RDAP found no registration; registrar response omitted the exact domain",
+            NAMECOM_SEARCH_URL,
+            source="namecom_core_api",
+            method=method,
+            confidence=0.9,
+            occupancy="not_found",
+        )
+
+    offer = _namecom_offer(exact, domain)
+    if exact.get("purchasable") is True:
+        if offer["premium"] or offer["purchase_type"] != "registration":
+            return _result(
+                "purchasable",
+                "Name.com confirmed an authoritative purchase path after RDAP screening",
+                NAMECOM_SEARCH_URL,
+                source="namecom_core_api",
+                method=method,
+                confidence=0.99,
+                occupancy="not_found",
+                claimability="purchase_available",
+                offer=offer,
+            )
+        return _result(
+            "claimable",
+            "Name.com confirmed standard .com registration after RDAP screening",
+            NAMECOM_SEARCH_URL,
+            source="namecom_core_api",
+            method=method,
+            confidence=0.99,
+            occupancy="not_found",
+            claimability="confirmed",
+            offer=offer,
+        )
+
+    return _result(
+        "unknown",
+        "RDAP found no registration, but Name.com did not offer a standard registration",
+        NAMECOM_SEARCH_URL,
+        source="namecom_core_api",
+        method=method,
+        confidence=0.95,
+        occupancy="not_found",
+        offer=offer,
+    )
 
 
 def check_com(name):
@@ -82,8 +236,11 @@ def check_com(name):
                 confidence=0.99, occupancy="occupied", claimability="not_claimable",
             )
         if response.status_code == 404:
+            registrar = _check_namecom_registration(domain)
+            if registrar is not None:
+                return registrar
             return _result(
-                "not_found", "Not found in .com RDAP; registrar purchase is not confirmed",
+                "not_found", "Not found in .com RDAP; Name.com confirmation is not configured",
                 public_url, source="verisign_rdap", method="rdap_exact_domain",
                 confidence=0.9, occupancy="not_found",
             )
