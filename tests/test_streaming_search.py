@@ -30,6 +30,8 @@ class StreamingSearchTests(unittest.TestCase):
         }
 
     def _post(self, count=2):
+        # buffered=True consumes the lazy streaming iterator before unittest.mock
+        # patches leave scope, while production remains genuinely streamed.
         return self.client.post(
             "/api/ai-generate-stream",
             json={
@@ -39,6 +41,7 @@ class StreamingSearchTests(unittest.TestCase):
                 "required_resources": ["com"],
                 "preferences": {},
             },
+            buffered=True,
         )
 
     @staticmethod
