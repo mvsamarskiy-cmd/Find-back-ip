@@ -23,7 +23,7 @@ class BrandDnaUiTests(unittest.TestCase):
     def test_frontend_keeps_backend_contract_simple_until_intent_compiler_release(self):
         self.assertIn("brand_dna:null", self.body)
         self.assertIn("search_context:{mode:'new_brand'", self.body)
-        self.assertIn("generation_context:adaptiveContext(batch)", self.body)
+        self.assertIn("generation_context:adaptiveContext(globalBatch)", self.body)
 
 
 if __name__ == "__main__":
