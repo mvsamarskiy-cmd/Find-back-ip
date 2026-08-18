@@ -6,6 +6,7 @@ import threading
 
 from audit_store import AUDIT_STORE
 from entry_mode_backend import install_entry_mode_intelligence
+from live_background import run_live_background_job
 import search_worker
 
 
@@ -13,6 +14,11 @@ import search_worker
 # Background generation imports app directly, so install it here as well before
 # the worker loop can interpret its first durable job.
 install_entry_mode_intelligence(search_worker.app_module)
+
+# Keep search_worker.main and its heartbeat/shutdown behavior stable. Its runner
+# is a module-level callable, so production can switch to the true-live durable
+# implementation without duplicating the worker process lifecycle.
+search_worker.run_availability_hunter_job = run_live_background_job
 
 
 def _audit_cleanup_loop():
