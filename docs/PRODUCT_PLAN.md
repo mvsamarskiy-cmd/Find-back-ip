@@ -102,16 +102,21 @@ No estimated monetary value is shown without comparable market sales.
 - [x] Split results into `conflict` and `opportunity` columns while preserving an
   explicit unresolved state; each main column has an independent resource filter,
   and the opportunity column also filters confirmed vs promising evidence.
-- [ ] Generate diversified local candidate families outside OpenAI.
+- [ ] Generate diversified local candidate families outside OpenAI. AI candidates
+  are now explicitly family-labelled; fully local semantic family generation is
+  still pending.
 - [ ] Funnel: 20,000 -> 6,000 structural -> 1,500 linguistic -> 300 collision ->
-  100 external checks -> 20 final reports.
-- [ ] Apply family quotas to prevent suffix monoculture.
-- [ ] Add stronger visual, semantic, and edit-distance deduplication across the
-  full funnel; current cross-batch filtering already rejects exact and conservative
-  phonetic near-duplicates.
-- [ ] Rank full Identity Bundles across the selected resources; deterministic
-  MUST-HAVE classification now exists, while full weighted composition scoring
-  remains pending.
+  100 external checks -> 20 final reports. A deterministic structural quality
+  prefilter now ranks the bounded AI pool before external checks; scaling the
+  upstream pool and adding later linguistic/collision stages remain pending.
+- [x] Apply family quotas to prevent suffix monoculture.
+- [x] Add conservative visual and edit-distance deduplication on top of exact,
+  phonetic, and sequence-similarity filtering. Deeper semantic deduplication for
+  the future large local funnel remains pending.
+- [x] Rank full Identity Bundles across selected required and optional resources
+  with a weighted Opportunity score. Required conflicts still dominate semantic
+  classification, and `not_found` remains unconfirmed even when it contributes
+  partial ranking utility.
 
 ## Phase 4 — durable server history
 

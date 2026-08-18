@@ -121,10 +121,9 @@ class PreferenceContextTests(unittest.TestCase):
             {"name": "Pryvio"},
             {"name": "Klykno"},
         ]
-        self.assertEqual(
-            select_diverse_names(rows, 10, exclude_names=["Pryvia"]),
-            [{"name": "Klykno"}],
-        )
+        selected = select_diverse_names(rows, 10, exclude_names=["Pryvia"])
+        self.assertEqual([row["name"] for row in selected], ["Klykno"])
+        self.assertIn("local_quality_score", selected[0])
 
     def test_select_diverse_names_rejects_invalid_rows(self):
         rows = [
@@ -138,7 +137,9 @@ class PreferenceContextTests(unittest.TestCase):
             {"name": "BrightHub"},
             {"name": "Valid"},
         ]
-        self.assertEqual(select_diverse_names(rows, 10), [{"name": "Valid"}])
+        selected = select_diverse_names(rows, 10)
+        self.assertEqual([row["name"] for row in selected], ["Valid"])
+        self.assertIn("local_quality_score", selected[0])
 
     def test_allowed_name_enforces_ascii_and_blacklist(self):
         self.assertTrue(_is_allowed_name("Nuvexa"))

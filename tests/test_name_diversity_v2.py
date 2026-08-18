@@ -61,10 +61,9 @@ class NameDiversityV2Tests(unittest.TestCase):
         self.assertIn("invented_phonetic", families)
 
     def test_legacy_rows_without_family_still_pass_selector(self):
-        self.assertEqual(
-            select_diverse_names([{"name": "Nuvexa"}], 1),
-            [{"name": "Nuvexa"}],
-        )
+        selected = select_diverse_names([{"name": "Nuvexa"}], 1)
+        self.assertEqual([row["name"] for row in selected], ["Nuvexa"])
+        self.assertIn("local_quality_score", selected[0])
 
 
 if __name__ == "__main__":
