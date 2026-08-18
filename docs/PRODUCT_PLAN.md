@@ -53,8 +53,14 @@ No estimated monetary value is shown without comparable market sales.
 - [ ] Configure production Name.com credentials and verify a live
   `claimable`/`purchasable` result.
 - [ ] Add Telegram MTProto and Fragment classification as a separate secured service.
-- [ ] Add trademark/collision evidence as a separate non-binary risk dimension;
-  never label a mark globally `free` only because an exact search returns no hit.
+- [x] Add a trademark/collision risk contract as a separate non-binary dimension:
+  territory + Nice classes + identical/similar sign + status/priority criteria,
+  official EUIPO/WIPO/UPRP search routes, and deterministic scoring for trusted
+  observations. No-hit is never labelled globally `free`.
+- [ ] Add a permitted machine-readable trademark registry adapter that supplies
+  trustworthy observations to that risk contract. Do not automate/scrape the WIPO
+  Global Brand Database public search service, whose terms prohibit automated
+  queries.
 
 ## Phase 3 — identity search and mathematical generation funnel
 
