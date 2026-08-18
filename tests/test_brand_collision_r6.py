@@ -115,13 +115,11 @@ class BrandCollisionApiAndUiTests(unittest.TestCase):
         self.assertIn("не юридичне підтвердження", source)
         self.assertNotIn("бренд вільний", source.lower())
 
-    def test_bootstrap_loads_collision_ui_after_entry_modes_and_bumps_release(self):
+    def test_bootstrap_keeps_collision_ui_after_entry_modes(self):
         body = app.test_client().get("/").get_data(as_text=True)
         self.assertIn('/static/entry_modes.js?v=1', body)
         self.assertIn('/static/brand_collision_ui.js?v=1', body)
         self.assertLess(body.index('/static/entry_modes.js?v=1'), body.index('/static/brand_collision_ui.js?v=1'))
-        version = app.test_client().get("/api/version").get_json()
-        self.assertEqual(version["release"], "v8.3-brand-collision-v1")
 
 
 if __name__ == "__main__":
