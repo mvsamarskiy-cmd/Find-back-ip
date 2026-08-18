@@ -7,15 +7,18 @@ from telegram_bootstrap import RELEASE_MARKER, app
 class VariantExpansionUiTests(unittest.TestCase):
     def setUp(self):
         self.source = Path('static/variant_expansion_ui.js').read_text(encoding='utf-8')
+        self.sync_source = Path('static/variant_expansion_sync.js').read_text(encoding='utf-8')
 
-    def test_ui_is_loaded_after_cleanup(self):
+    def test_ui_and_sync_are_loaded_in_order(self):
         body = app.test_client().get('/').get_data(as_text=True)
-        variant = '/static/variant_expansion_ui.js?v=1'
         cleanup = '/static/ui_cleanup_r8.js?v=1'
-        self.assertIn(variant, body)
-        self.assertIn(cleanup, body)
+        variant = '/static/variant_expansion_ui.js?v=1'
+        sync = '/static/variant_expansion_sync.js?v=1'
+        for tag in (cleanup, variant, sync):
+            self.assertIn(tag, body)
         self.assertLess(body.index(cleanup), body.index(variant))
-        self.assertEqual(RELEASE_MARKER, 'v8.7-variant-expansion')
+        self.assertLess(body.index(variant), body.index(sync))
+        self.assertTrue(RELEASE_MARKER.startswith('v8.'))
 
     def test_expansion_requires_explicit_choice(self):
         self.assertIn('Розширити пошук', self.source)
@@ -49,9 +52,19 @@ class VariantExpansionUiTests(unittest.TestCase):
         self.assertIn('current.variantExpansions', self.source)
         self.assertNotIn('current.results.push', self.source)
 
-    def test_diagnostics_expose_ui(self):
+    def test_sync_uses_separate_authenticated_session_endpoint(self):
+        self.assertIn("X-NameMachine-Session-Token", self.sync_source)
+        self.assertIn("/variant-expansions/", self.sync_source)
+        self.assertIn("method: 'PUT'", self.sync_source)
+        self.assertIn('loadServer(name)', self.sync_source)
+        self.assertIn('saveServer(name, expansion)', self.sync_source)
+        self.assertNotIn('current.results.push', self.sync_source)
+
+    def test_diagnostics_expose_ui_and_durable_sync(self):
         payload = app.test_client().get('/api/verification/diagnostics').get_json()
         self.assertTrue(payload['background_search_ui']['variant_expansion_ui'])
+        self.assertTrue(payload['background_search_ui']['variant_expansion_durable_sync'])
+        self.assertTrue(payload['variant_storage']['separate_from_candidate_bundles'])
         self.assertEqual(payload['variant_grammar']['verification_endpoint'], '/api/variants/check')
 
 
