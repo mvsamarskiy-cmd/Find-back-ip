@@ -18,6 +18,8 @@ order for unfinished work.
 | Diversified candidate generation | PR #7 | Included |
 | ASCII-only names and empty-result rejection | PR #12 supersedes draft PR #8 | Included; old PR #8 is obsolete |
 | Evidence envelope and optional official YouTube/X adapters | PR #9 | Included |
+| Evidence-correct status vocabulary and ranking | Phase 2.1 release | Included |
+| Single UI source of truth | Phase 2.1 release | Obsolete embedded v4.2 UI removed; `templates/index.html` is canonical |
 | API, browser-history, dependency, and security stabilization | PR #10 | Included |
 | AI/check rate limits and bounded AI concurrency | PR #11 | Included |
 | Clear UI handling of HTML/5xx responses | PR #13 | Included |
@@ -26,10 +28,10 @@ order for unfinished work.
 ## Product-plan status
 
 - Phase 1 is complete.
-- Phase 2 is partially complete: evidence metadata, conservative social results,
-  deterministic tests, and optional official YouTube/X adapters exist. The full
-  status vocabulary, registrar confirmation, Telegram MTProto, and Fragment
-  classification are not implemented.
+- Phase 2 is partially complete: the full evidence status vocabulary, metadata,
+  conservative `not_found` handling, deterministic tests, and optional official
+  YouTube/X adapters exist. Registrar confirmation, Telegram MTProto, and
+  Fragment classification are not implemented.
 - Phase 3 is partially complete: bounded multi-family generation and basic
   deduplication exist. Brand DNA, the 20,000-candidate funnel, full component
   scoring, and required-resource ranking are not implemented.
@@ -62,4 +64,3 @@ order for unfinished work.
    releases.
 4. Add the queue, progressive jobs, metrics, and alerts.
 5. Design secure Telegram authorization before any MTProto or Fragment work.
-

@@ -6,7 +6,20 @@ from urllib.parse import quote
 import requests
 
 HTTP_TIMEOUT = float(os.environ.get("HTTP_TIMEOUT", "6"))
-USER_AGENT = os.environ.get("HTTP_USER_AGENT", "Mozilla/5.0 (compatible; NameMachine/4.1)")
+USER_AGENT = os.environ.get("HTTP_USER_AGENT", "Mozilla/5.0 (compatible; NameMachine/4.4)")
+
+STATUS_VALUES = (
+    "claimable",
+    "purchasable",
+    "taken",
+    "not_found",
+    "invalid",
+    "reserved",
+    "rate_limited",
+    "unknown",
+)
+ACTIONABLE_STATUSES = frozenset({"claimable", "purchasable"})
+UNRESOLVED_STATUSES = frozenset({"rate_limited", "unknown"})
 
 
 def _result(
@@ -20,13 +33,25 @@ def _result(
     occupancy=None,
     claimability="unconfirmed",
 ):
-    """Return a backward-compatible result plus an auditable evidence record.
+    """Return one normalized status plus an auditable evidence record."""
+    if status not in STATUS_VALUES:
+        raise ValueError(f"Unsupported availability status: {status}")
 
-    ``status`` remains available for the current UI.  Occupancy and
-    claimability are deliberately separate: an account can be absent from the
-    public web while its username is reserved or otherwise impossible to
-    claim.
-    """
+    if occupancy is None:
+        occupancy = {
+            "taken": "occupied",
+            "not_found": "not_found",
+        }.get(status, "unknown")
+
+    if claimability == "unconfirmed":
+        claimability = {
+            "claimable": "confirmed",
+            "purchasable": "purchase_available",
+            "taken": "not_claimable",
+            "invalid": "not_claimable",
+            "reserved": "not_claimable",
+        }.get(status, claimability)
+
     return {
         "status": status,
         "detail": detail,
@@ -34,7 +59,7 @@ def _result(
         "source": source,
         "method": method,
         "confidence": round(max(0.0, min(1.0, float(confidence))), 2),
-        "occupancy": occupancy or ("occupied" if status == "taken" else "unknown"),
+        "occupancy": occupancy,
         "claimability": claimability,
         "checked_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
@@ -58,9 +83,9 @@ def check_com(name):
             )
         if response.status_code == 404:
             return _result(
-                "available", "Not found in .com RDAP; registrar purchase is not confirmed",
+                "not_found", "Not found in .com RDAP; registrar purchase is not confirmed",
                 public_url, source="verisign_rdap", method="rdap_exact_domain",
-                confidence=0.9, occupancy="not_found", claimability="likely",
+                confidence=0.9, occupancy="not_found",
             )
         return _result("unknown", f"RDAP HTTP {response.status_code}", public_url)
     except requests.RequestException as error:
@@ -78,18 +103,18 @@ def check_instagram(name):
         )
         if response.status_code == 404:
             return _result(
-                "unknown",
+                "not_found",
                 "Public profile not found; claimability is not confirmed",
-                url,
+                url, confidence=0.72, occupancy="not_found",
             )
         if response.status_code == 200:
             text = response.text.lower()
             missing_markers = ("page isn't available", "sorry, this page isn't available")
             if any(marker in text for marker in missing_markers):
                 return _result(
-                    "unknown",
+                    "not_found",
                     "Instagram page is unavailable; claimability is not confirmed",
-                    url,
+                    url, confidence=0.62, occupancy="not_found",
                 )
             # A generic HTTP 200 may be a login/challenge page, so it is not
             # sufficient evidence that the requested handle exists.
@@ -101,7 +126,9 @@ def check_instagram(name):
                     confidence=0.82, occupancy="occupied", claimability="not_claimable",
                 )
             return _result("unknown", "Instagram response inconclusive", url)
-        if response.status_code in (401, 403, 429):
+        if response.status_code == 429:
+            return _result("rate_limited", "Instagram rate limited the check (429)", url)
+        if response.status_code in (401, 403):
             return _result("unknown", f"Instagram blocked check ({response.status_code})", url)
         return _result("unknown", f"Instagram HTTP {response.status_code}", url)
     except requests.RequestException as error:
@@ -120,9 +147,9 @@ def check_telegram(name):
         text = response.text.lower()
         if response.status_code == 404:
             return _result(
-                "unknown",
+                "not_found",
                 "Public Telegram page not found; claimability is not confirmed",
-                url,
+                url, confidence=0.72, occupancy="not_found",
             )
         if response.status_code == 200:
             if "tgme_page_title" in text and "tgme_page_extra" in text:
@@ -131,7 +158,9 @@ def check_telegram(name):
                     confidence=0.85, occupancy="occupied", claimability="not_claimable",
                 )
             return _result("unknown", "Telegram response inconclusive", url)
-        if response.status_code in (401, 403, 429):
+        if response.status_code == 429:
+            return _result("rate_limited", "Telegram rate limited the check (429)", url)
+        if response.status_code in (401, 403):
             return _result("unknown", f"Telegram blocked check ({response.status_code})", url)
         return _result("unknown", f"Telegram HTTP {response.status_code}", url)
     except requests.RequestException as error:
@@ -155,19 +184,21 @@ def _check_public_profile(name, platform, url, taken_markers=(), missing_markers
         text = response.text.lower()
         if response.status_code == 404:
             return _result(
-                "unknown",
+                "not_found",
                 f"{platform} public profile not found; claimability is not confirmed",
-                url,
+                url, confidence=0.7, occupancy="not_found",
             )
-        if response.status_code in (401, 403, 429):
+        if response.status_code == 429:
+            return _result("rate_limited", f"{platform} rate limited the check (429)", url)
+        if response.status_code in (401, 403):
             return _result("unknown", f"{platform} blocked check ({response.status_code})", url)
         if response.status_code != 200:
             return _result("unknown", f"{platform} HTTP {response.status_code}", url)
         if any(marker.format(handle=handle) in text for marker in missing_markers):
             return _result(
-                "unknown",
+                "not_found",
                 f"{platform} reports no public profile; claimability is not confirmed",
-                url,
+                url, confidence=0.62, occupancy="not_found",
             )
         if any(marker.format(handle=handle) in text for marker in taken_markers):
             return _result(
@@ -209,11 +240,16 @@ def check_youtube(name):
                         confidence=0.99, occupancy="occupied", claimability="not_claimable",
                     )
                 return _result(
-                    "unknown", "YouTube Data API found no channel; claimability is unconfirmed",
+                    "not_found", "YouTube Data API found no channel; claimability is unconfirmed",
                     url, source="youtube_data_api", method="official_handle_lookup",
                     confidence=0.92, occupancy="not_found",
                 )
-            if response.status_code in (403, 429):
+            if response.status_code == 429:
+                return _result(
+                    "rate_limited", "YouTube API rate limited the check (429)", url,
+                    source="youtube_data_api", method="official_handle_lookup",
+                )
+            if response.status_code == 403:
                 return _result(
                     "unknown", f"YouTube API unavailable ({response.status_code})", url,
                     source="youtube_data_api", method="official_handle_lookup",
@@ -255,9 +291,19 @@ def check_x(name):
                 )
             if response.status_code == 404:
                 return _result(
-                    "unknown", "X API found no user; claimability is unconfirmed", url,
+                    "not_found", "X API found no user; claimability is unconfirmed", url,
                     source="x_api", method="official_username_lookup",
                     confidence=0.92, occupancy="not_found",
+                )
+            if response.status_code == 429:
+                return _result(
+                    "rate_limited", "X API rate limited the check (429)", url,
+                    source="x_api", method="official_username_lookup",
+                )
+            if response.status_code in (401, 403):
+                return _result(
+                    "unknown", f"X API unavailable ({response.status_code})", url,
+                    source="x_api", method="official_username_lookup",
                 )
         except (requests.RequestException, ValueError):
             pass
@@ -294,17 +340,34 @@ def check_all(name):
                 )
 
     statuses = [value["status"] for value in result.values()]
-    available_count = sum(status == "available" for status in statuses)
-    taken_count = sum(status == "taken" for status in statuses)
-    unknown_count = sum(status == "unknown" for status in statuses)
+    status_counts = {
+        status: statuses.count(status)
+        for status in STATUS_VALUES
+    }
+    claimable_count = status_counts["claimable"]
+    purchasable_count = status_counts["purchasable"]
+    actionable_count = sum(status_counts[status] for status in ACTIONABLE_STATUSES)
+    unresolved_count = sum(status_counts[status] for status in UNRESOLVED_STATUSES)
     return {
         "availability": result,
-        "available_count": available_count,
-        "taken_count": taken_count,
-        "unknown_count": unknown_count,
+        "status_counts": status_counts,
+        "claimable_count": claimable_count,
+        "purchasable_count": purchasable_count,
+        "actionable_count": actionable_count,
+        "not_found_count": status_counts["not_found"],
+        "taken_count": status_counts["taken"],
+        "invalid_count": status_counts["invalid"],
+        "reserved_count": status_counts["reserved"],
+        "rate_limited_count": status_counts["rate_limited"],
+        "unknown_count": status_counts["unknown"],
+        "unresolved_count": unresolved_count,
         "total_resources": len(checks),
-        "all_available": available_count == len(checks),
-        "all_verified": unknown_count == 0,
+        "all_claimable": claimable_count == len(checks),
+        "all_verified": unresolved_count == 0,
+        # Compatibility for API clients from before the evidence-status release.
+        # Only confirmed actionable results count; ``not_found`` never does.
+        "available_count": actionable_count,
+        "all_available": actionable_count == len(checks),
     }
 
 
