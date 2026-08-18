@@ -19,7 +19,7 @@
       if (aSeq !== bSeq) return bSeq - aSeq;
       const aAt = String(a?.received_at || '');
       const bAt = String(b?.received_at || '');
-      if (aAt !== bAt) return bAt.localeCompare(aAt);
+      if (aAt !== bAt) return aAt < bAt ? 1 : -1;
       return 0; // stable insertion order; deliberately never alphabetical
     });
   }
