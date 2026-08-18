@@ -37,7 +37,7 @@ class AvailabilityV2Tests(unittest.TestCase):
         }
 
         with patch.object(availability_v2.legacy, "check_all", return_value=legacy_payload):
-            with patch.object(availability_v2, "enrich_instagram", side_effect=lambda name, row: row):
+            with patch.object(availability_v2, "collect_live_provider_evidence", return_value={}):
                 result = availability_v2.check_all("Example", resources=["com", "instagram"])
 
         self.assertEqual(result["claimable_count"], 1)
@@ -45,7 +45,7 @@ class AvailabilityV2Tests(unittest.TestCase):
         self.assertEqual(result["verification"]["com"]["verdict"], "available_verified")
         self.assertEqual(result["verification"]["instagram"]["verdict"], "likely_available")
 
-    def test_instagram_positive_enrichment_recounts_and_updates_verdict(self):
+    def test_instagram_positive_evidence_recounts_and_updates_verdict(self):
         legacy_payload = {
             "availability": {
                 "instagram": {
@@ -61,23 +61,30 @@ class AvailabilityV2Tests(unittest.TestCase):
                 }
             }
         }
-        enriched = {
-            "status": "taken",
-            "detail": "exact profile",
-            "url": "https://instagram.com/natgeo/",
+        evidence = {
+            "platform": "instagram",
+            "handle": "natgeo",
             "source": "meta_instagram_oembed",
             "method": "tokenless_oembed_profile",
+            "signal": "exists",
             "confidence": 0.95,
-            "occupancy": "occupied",
-            "claimability": "not_claimable",
-            "checked_at": "2026-08-18T00:00:00Z",
+            "detail": "exact profile",
+            "url": "https://instagram.com/natgeo/",
+            "metadata": {},
         }
         with patch.object(availability_v2.legacy, "check_all", return_value=legacy_payload):
-            with patch.object(availability_v2, "enrich_instagram", return_value=enriched):
+            with patch.object(
+                availability_v2,
+                "collect_live_provider_evidence",
+                return_value={"instagram": [evidence]},
+            ):
                 result = availability_v2.check_all("natgeo", resources=["instagram"])
         self.assertEqual(result["taken_count"], 1)
         self.assertEqual(result["unknown_count"], 0)
         self.assertEqual(result["verification"]["instagram"]["verdict"], "taken")
+        sources = {row["source"] for row in result["verification"]["instagram"]["evidence"]}
+        self.assertIn("public_web", sources)
+        self.assertIn("meta_instagram_oembed", sources)
 
     def test_taken_remains_taken(self):
         legacy_payload = {
@@ -92,7 +99,8 @@ class AvailabilityV2Tests(unittest.TestCase):
             }
         }
         with patch.object(availability_v2.legacy, "check_all", return_value=legacy_payload):
-            result = availability_v2.check_all("Example", resources=["telegram"])
+            with patch.object(availability_v2, "collect_live_provider_evidence", return_value={}):
+                result = availability_v2.check_all("Example", resources=["telegram"])
         self.assertEqual(result["verification"]["telegram"]["verdict"], "taken")
 
     def test_check_many_uses_augmented_checker(self):
@@ -110,7 +118,8 @@ class AvailabilityV2Tests(unittest.TestCase):
             }
 
         with patch.object(availability_v2.legacy, "check_all", side_effect=fake_legacy):
-            rows = availability_v2.check_many(["alpha", "beta"], max_workers=2, resources=["youtube"])
+            with patch.object(availability_v2, "collect_live_provider_evidence", return_value={}):
+                rows = availability_v2.check_many(["alpha", "beta"], max_workers=2, resources=["youtube"])
 
         self.assertEqual(len(rows), 2)
         self.assertTrue(all("verification" in row for row in rows))
