@@ -2,7 +2,8 @@
  *
  * Procedural mode exposes the real root/strategy being explored. Turbo mode
  * deliberately hides non-claimable mass from the primary feed while keeping all
- * verifier rows durable for audit and learning.
+ * verifier rows durable for audit and learning. Entry workflow context, when
+ * present, is supplied by static/entry_modes.js at click time.
  */
 (() => {
   const POLL_MS = 2200;
@@ -142,6 +143,19 @@
     return panel;
   }
 
+  function searchContextForPrompt(prompt) {
+    if (typeof window.nameMachineSearchContext === 'function') {
+      return window.nameMachineSearchContext(prompt);
+    }
+    return {
+      mode: 'new_brand',
+      brand_name: '',
+      guidance: current?.directionAnchors?.length
+        ? 'Орієнтуйся на: ' + current.directionAnchors.slice(-5).join(', ')
+        : '',
+    };
+  }
+
   async function startHunterSearch(panel) {
     if (startBusy) return;
     const session = creds();
@@ -165,6 +179,14 @@
       return;
     }
 
+    let entrySearchContext;
+    try {
+      entrySearchContext = searchContextForPrompt(prompt);
+    } catch (error) {
+      document.getElementById('status').textContent = error.message || 'Уточни задачу.';
+      return;
+    }
+
     startBusy = true;
     if (start) start.disabled = true;
     if (goal) goal.textContent = `Запускаю: знайти ${targetMatches} вільних, максимум ${maxChecks} перевірок…`;
@@ -181,13 +203,7 @@
           resources,
           required_resources: resources,
           preferences: typeof buildPreferences === 'function' ? buildPreferences() : {},
-          search_context: {
-            mode: 'new_brand',
-            brand_name: '',
-            guidance: current?.directionAnchors?.length
-              ? 'Орієнтуйся на: ' + current.directionAnchors.slice(-5).join(', ')
-              : '',
-          },
+          search_context: entrySearchContext,
           brand_dna: null,
           generation_context: typeof adaptiveContext === 'function'
             ? adaptiveContext((Number(current?.batchCounter) || 0) + 1)
@@ -207,6 +223,7 @@
         target_count: maxChecks,
         target_matches: targetMatches,
         search_strategy: strategy,
+        entry_mode: typeof window.nameMachineEntryMode === 'function' ? window.nameMachineEntryMode() : (current?.entryMode || 'other'),
         started_at: new Date().toISOString(),
       };
       current.updated = new Date().toISOString();
@@ -215,6 +232,7 @@
         target_matches: targetMatches,
         max_checks: maxChecks,
         search_strategy: strategy,
+        entry_mode: current.backgroundSearch.entry_mode,
         resources: [...resources],
         prompt,
       });
@@ -231,6 +249,14 @@
     } finally {
       startBusy = false;
     }
+  }
+
+  function inferEntryModeFromJob(job) {
+    const context = job?.search_context || {};
+    const guidance = String(context.guidance || '');
+    if (context.mode === 'existing_brand_fixed') return 'identity';
+    if (guidance.includes('[[nm-mode-lock:new_brand]]')) return 'brand';
+    return current?.entryMode || 'other';
   }
 
   async function pollHunterProgress() {
@@ -254,6 +280,7 @@
       const checked = Number(runtime.checked ?? job.delivered_count) || 0;
       const maxChecks = Number(runtime.max_checks || config.max_checks || job.target_count) || 0;
       const done = ['completed', 'cancelled', 'failed'].includes(job.state);
+      const entryMode = inferEntryModeFromJob(job);
 
       if (!current.backgroundSearch || current.backgroundSearch.id !== job.id || current.backgroundSearch.search_strategy !== strategy) {
         current.backgroundSearch = {
@@ -263,8 +290,10 @@
           target_count: maxChecks,
           target_matches: targetMatches,
           search_strategy: strategy,
+          entry_mode: entryMode,
           started_at: job.started_at || job.created_at || current?.backgroundSearch?.started_at || '',
         };
+        if (!current.entryMode) current.entryMode = entryMode;
         try { write(SESSION_KEY, current); } catch (_) {}
         try { render(); } catch (_) {}
       }
