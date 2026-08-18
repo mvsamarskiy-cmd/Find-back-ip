@@ -1,25 +1,28 @@
 """HTTP routes for explicit, platform-aware identifier variants.
 
-The endpoint never checks availability itself. It only returns syntax-valid
-candidate shapes after the caller explicitly opts into mutations; all returned
-rows remain unverified until the ordinary NameMachine verifier checks them.
+Variant generation is deliberately separate from availability evidence. The
+``/api/variants`` endpoint only creates syntax-valid shapes after explicit user
+opt-in. ``/api/variants/check`` then sends one exact platform identifier through
+the normal Verification v2 stack without stripping punctuation or digits.
 """
 
 from __future__ import annotations
 
 import os
 
-from flask import jsonify, request
+from flask import jsonify
 
 from variant_grammar import (
     RESOURCE_KEYS,
     clean_variant_options,
     generate_variants_for_resources,
     mutation_capabilities,
+    validate_variant_shape,
 )
 
 
 VARIANT_RATE_LIMIT = os.environ.get("VARIANT_RATE_LIMIT", "120 per minute")
+VARIANT_CHECK_RATE_LIMIT = os.environ.get("VARIANT_CHECK_RATE_LIMIT", "60 per minute")
 MAX_VARIANT_STEM = 63
 MAX_VARIANTS_PER_RESOURCE = 50
 
@@ -43,6 +46,17 @@ def _normalize_resources(value):
     return output
 
 
+def _single_resource(value):
+    resource = str(value or "").strip().lower()
+    if resource not in RESOURCE_KEYS:
+        raise ValueError(f"Unsupported resource: {resource or value!r}")
+    return resource
+
+
+def _identifier(value):
+    return str(value or "").strip().lower().lstrip("@")[:MAX_VARIANT_STEM]
+
+
 def variant_diagnostics():
     return {
         "supported": True,
@@ -51,6 +65,10 @@ def variant_diagnostics():
         "availability_checked_here": False,
         "claimability_proved_here": False,
         "numbers_invented_automatically": False,
+        "generation_endpoint": "/api/variants",
+        "verification_endpoint": "/api/variants/check",
+        "verification_uses_normal_engine": True,
+        "strict_free_status": "claimable",
         "resources": {
             resource: mutation_capabilities(resource)
             for resource in RESOURCE_KEYS
@@ -114,9 +132,78 @@ def install_variant_routes(app, app_module):
             },
         })
 
+    @app.post("/api/variants/check")
+    @app_module.limiter.limit(VARIANT_CHECK_RATE_LIMIT)
+    def api_check_variant():
+        """Verify one exact platform identifier without normalizing it to letters-only."""
+        data = app_module.json_object()
+        if data is None:
+            return jsonify({"error": "JSON body must be an object"}), 400
+        try:
+            resource = _single_resource(data.get("resource"))
+        except ValueError as error:
+            return jsonify({"error": str(error), "allowed_resources": list(RESOURCE_KEYS)}), 400
+
+        identifier = _identifier(data.get("identifier"))
+        if not identifier:
+            return jsonify({"error": "identifier is required"}), 400
+        if not validate_variant_shape(resource, identifier):
+            return jsonify({
+                "error": "identifier is not valid for the selected platform grammar",
+                "resource": resource,
+                "identifier": identifier,
+            }), 400
+
+        try:
+            checked = app_module.check_all(identifier, resources=[resource])
+        except Exception as error:
+            app.logger.warning(
+                "Variant verification failed for %s: %s",
+                resource,
+                type(error).__name__,
+            )
+            return jsonify({
+                "error": "Variant verification is temporarily unavailable",
+                "error_type": type(error).__name__,
+            }), 503
+
+        if not isinstance(checked, dict):
+            return jsonify({"error": "Variant verifier returned an invalid response"}), 503
+        availability_map = checked.get("availability")
+        availability = (
+            availability_map.get(resource)
+            if isinstance(availability_map, dict)
+            else None
+        )
+        if not isinstance(availability, dict):
+            return jsonify({"error": "Variant verifier omitted availability evidence"}), 503
+        verification_map = checked.get("verification")
+        verification = (
+            verification_map.get(resource)
+            if isinstance(verification_map, dict)
+            else None
+        )
+        status = str(availability.get("status") or "unknown")
+
+        return jsonify({
+            "resource": resource,
+            "identifier": identifier,
+            "availability": availability,
+            "verification": verification if isinstance(verification, dict) else None,
+            "strict_free": status == "claimable",
+            "purchasable": status == "purchasable",
+            "status": status,
+            "semantics": {
+                "claimable_is_green": True,
+                "purchasable_is_green": False,
+                "not_found_is_green": False,
+            },
+        })
+
 
 __all__ = [
     "MAX_VARIANTS_PER_RESOURCE",
+    "VARIANT_CHECK_RATE_LIMIT",
     "VARIANT_RATE_LIMIT",
     "install_variant_routes",
     "variant_diagnostics",
