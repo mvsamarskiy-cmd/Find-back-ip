@@ -157,7 +157,7 @@ class PreferenceContextTests(unittest.TestCase):
     def test_follow_up_generation_plan_moves_neighborhood(self):
         plan = _generation_plan(10, generation_context={"batch_number": 2})[1]
         self.assertIn("follow-up batch", plan)
-        self.assertIn("different", plan)
+        self.assertIn("change lexical and phonetic neighborhoods", plan)
 
     def test_prompt_requires_ascii_latin_names(self):
         self.assertIn("ASCII Latin letters A-Z", SYSTEM_PROMPT)
