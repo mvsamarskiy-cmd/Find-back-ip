@@ -134,16 +134,19 @@ def clean(s): return re.sub(r"[^a-z]", "", s.lower())
 
 
 def clean_preferences(value):
-    """Bound browser-supplied feedback before it reaches the model prompt."""
+    """Bound browser-supplied feedback before it reaches the adaptive generator."""
     if not isinstance(value, dict):
-        return {"liked": [], "disliked": [], "reasons": {}}
+        return {
+            "liked": [], "disliked": [], "reasons": {}, "feedback": [],
+            "direction_anchors": [], "shortlist": [],
+        }
 
-    def examples(key):
+    def examples(key, limit=20):
         raw = value.get(key, [])
         if not isinstance(raw, list):
             return []
         output = []
-        for item in raw[:20]:
+        for item in raw[:limit]:
             name = clean(str(item))[:30]
             if name and name not in output:
                 output.append(name)
@@ -160,7 +163,38 @@ def clean_preferences(value):
                 reasons[safe_key] = max(-20, min(20, int(score)))
             except (TypeError, ValueError):
                 continue
-    return {"liked": examples("liked"), "disliked": examples("disliked"), "reasons": reasons}
+
+    feedback = []
+    raw_feedback = value.get("feedback", [])
+    if isinstance(raw_feedback, list):
+        for row in raw_feedback[:80]:
+            if not isinstance(row, dict):
+                continue
+            name = clean(str(row.get("name", "")))[:30]
+            if not name:
+                continue
+            try:
+                vote = int(row.get("vote", 0))
+            except (TypeError, ValueError):
+                vote = 0
+            vote = 1 if vote > 0 else -1 if vote < 0 else 0
+            family = re.sub(r"[^a-z_]", "", str(row.get("family", "unknown")).lower())[:30]
+            comment = " ".join(str(row.get("comment", "")).split())[:300]
+            feedback.append({
+                "name": name,
+                "vote": vote,
+                "comment": comment,
+                "family": family or "unknown",
+            })
+
+    return {
+        "liked": examples("liked"),
+        "disliked": examples("disliked"),
+        "reasons": reasons,
+        "feedback": feedback,
+        "direction_anchors": examples("direction_anchors"),
+        "shortlist": examples("shortlist"),
+    }
 
 
 def generate_ai_with_context(
