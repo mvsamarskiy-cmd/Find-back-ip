@@ -20,6 +20,8 @@ from background_search_api import (  # noqa: E402
 )
 from brand_collision import brand_collision_diagnostics  # noqa: E402
 from brand_collision_api import install_brand_collision_routes  # noqa: E402
+from candidate_events_api import install_candidate_event_routes  # noqa: E402
+from durable_candidate_events import LIVE_CANDIDATES  # noqa: E402
 from entry_mode_backend import install_entry_mode_intelligence  # noqa: E402
 from generic_naming_api import install_generic_naming_routes  # noqa: E402
 from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
@@ -33,11 +35,12 @@ install_streaming_routes(app, app_module)
 install_session_routes(app, app_module)
 install_audit_routes(app, app_module)
 install_background_search_routes(app, app_module)
+install_candidate_event_routes(app, app_module)
 install_generic_naming_routes(app, app_module)
 install_brand_collision_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.3-brand-collision-v1"
+RELEASE_MARKER = "v8.4-live-durable-events"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=5"></script>'
@@ -52,6 +55,7 @@ FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=2"></script>'
 CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
 ENTRY_MODES_TAG = '<script src="/static/entry_modes.js?v=1"></script>'
 BRAND_COLLISION_UI_TAG = '<script src="/static/brand_collision_ui.js?v=1"></script>'
+DURABLE_LIVE_EVENTS_TAG = '<script src="/static/durable_live_events.js?v=1"></script>'
 
 
 @app.after_request
@@ -85,11 +89,13 @@ def prevent_stale_html(response):
         if CLAIMABILITY_UI_TAG not in body:
             tags.append(CLAIMABILITY_UI_TAG)
         # Entry modes adapt the existing streaming/feed behavior; collision UI
-        # loads immediately after so it can attach only to explicit brand cards.
+        # and durable lifecycle rendering load after those card wrappers.
         if ENTRY_MODES_TAG not in body:
             tags.append(ENTRY_MODES_TAG)
         if BRAND_COLLISION_UI_TAG not in body:
             tags.append(BRAND_COLLISION_UI_TAG)
+        if DURABLE_LIVE_EVENTS_TAG not in body:
+            tags.append(DURABLE_LIVE_EVENTS_TAG)
         if tags and "</body>" in body:
             response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
@@ -180,6 +186,7 @@ def api_verification_diagnostics():
             "pre_generation_phase_events": True,
             "operational_activity_only": True,
         },
+        "durable_candidate_events": LIVE_CANDIDATES.diagnostics(),
         "large_feed_navigation": {
             "enabled": True,
             "newest_first": True,
@@ -191,7 +198,9 @@ def api_verification_diagnostics():
         "background_search_ui": {
             "enabled_when_worker_ready": True,
             "candidate_delta_endpoint": "/api/sessions/<session_id>/candidate-feed",
+            "candidate_lifecycle_endpoint": "/api/sessions/<session_id>/candidate-events",
             "candidate_page_size": 100,
+            "lifecycle_poll_ms": 900,
             "targets": [500, 1000, 5000, 20000],
             "availability_hunter_api": True,
             "result_goal_field": "target_matches",
