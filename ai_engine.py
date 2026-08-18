@@ -5,6 +5,7 @@ import unicodedata
 from difflib import SequenceMatcher
 
 from brand_dna import brand_dna_context
+from trademark_risk import trademark_search_plan
 
 
 BANNED_ROOTS = {
@@ -385,10 +386,5 @@ def generate_ai_names(
 
 
 def trademark_links(name):
-    query = name.strip()
-    return {
-        "notice": "Manual legal search required; these links do not prove availability.",
-        "euipo": f"https://euipo.europa.eu/eSearch/#basic/1+1+1+1/{query}",
-        "wipo": "https://branddb.wipo.int/",
-        "uprp": "https://ewyszukiwarka.pue.uprp.gov.pl/search/simple-search",
-    }
+    """Backward-compatible name kept for API callers; now returns a risk plan."""
+    return trademark_search_plan(name)
