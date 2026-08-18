@@ -2,10 +2,138 @@ import re
 
 
 VOWELS = frozenset("aeiouy")
+LOCAL_SOURCE = "local_lexical_expansion"
+
+# Deliberately small stoplist: the local expander should use project-specific
+# nouns/adjectives, not prose glue from a brief. It is not a semantic model.
+STOPWORDS = frozenset({
+    "about", "after", "also", "brand", "create", "creating", "from", "have",
+    "into", "name", "need", "project", "service", "that", "their", "them",
+    "this", "want", "with", "your", "для", "бренд", "назва", "назву", "проєкт",
+    "проект", "сервіс", "хочу", "щоб", "який", "яка", "яке", "такий", "таке",
+})
 
 
 def _letters(value):
     return re.sub(r"[^a-z]", "", str(value).lower())
+
+
+def _ascii_tokens(value):
+    return [
+        token.lower()
+        for token in re.findall(r"[A-Za-z]{3,14}", str(value or ""))
+        if token.lower() not in STOPWORDS
+    ]
+
+
+def lexical_seeds(brief="", brand_dna=None, limit=18):
+    """Extract a bounded set of literal lexical seeds from user-controlled context.
+
+    This intentionally does not invent synonyms. It expands only words that are
+    already present in the brief or structured Brand DNA, keeping the local stage
+    deterministic and auditable.
+    """
+    values = [brief]
+    if isinstance(brand_dna, dict):
+        for key in (
+            "entity_type", "offer", "positioning", "summary", "audiences",
+            "brand_traits", "themes", "naming_directions", "keywords",
+        ):
+            raw = brand_dna.get(key)
+            if isinstance(raw, list):
+                values.extend(raw[:12])
+            elif raw:
+                values.append(raw)
+
+    seeds = []
+    seen = set()
+    for value in values:
+        for token in _ascii_tokens(value):
+            if token in seen:
+                continue
+            seen.add(token)
+            seeds.append(token)
+            if len(seeds) >= limit:
+                return seeds
+    return seeds
+
+
+def _candidate(name, family, roots, pattern):
+    clean = _letters(name)
+    if not 3 <= len(clean) <= 30:
+        return None
+    title = clean[:1].upper() + clean[1:]
+    return {
+        "name": title,
+        "family": family,
+        "reason": (
+            "Локальна комбінація з лексики Brand DNA/опису: "
+            + " + ".join(roots)
+            + f" ({pattern})."
+        ),
+        "pronunciation": title,
+        "language_risks": [],
+        "candidate_source": LOCAL_SOURCE,
+    }
+
+
+def expand_local_families(brief="", brand_dna=None, limit=180):
+    """Create a bounded deterministic candidate pool without another AI request.
+
+    The expander uses literal project roots and multiple composition strategies.
+    It intentionally avoids one-letter typo mutations. Downstream structural,
+    blacklist, near-duplicate, family-quota, and external-availability gates still
+    decide which candidates survive.
+    """
+    seeds = lexical_seeds(brief, brand_dna)
+    if len(seeds) < 2:
+        return []
+
+    output = []
+    seen = set()
+
+    def add(name, family, roots, pattern):
+        if len(output) >= limit:
+            return
+        row = _candidate(name, family, roots, pattern)
+        if not row:
+            return
+        key = row["name"].lower()
+        if key in seen or key in seeds:
+            return
+        seen.add(key)
+        output.append(row)
+
+    # Direct semantic compounds remain closest to the user's own vocabulary.
+    for left in seeds:
+        for right in seeds:
+            if left == right:
+                continue
+            add(left + right, "semantic_compound", (left, right), "compound")
+            if len(output) >= limit:
+                return output
+
+    # Root blends use substantial pieces from both roots, rather than adding a
+    # generic suffix to one saturated word.
+    for index, left in enumerate(seeds):
+        for right in seeds[index + 1:]:
+            left_cut = max(3, min(5, (len(left) + 1) // 2))
+            right_cut = max(2, min(5, len(right) // 2))
+            add(left[:left_cut] + right[-right_cut:], "root_blend", (left, right), "front/back blend")
+            add(right[:left_cut] + left[-right_cut:], "root_blend", (right, left), "front/back blend")
+            if len(output) >= limit:
+                return output
+
+    # A second blend geometry provides phonetic diversity without typo spam.
+    for index, left in enumerate(seeds):
+        for right in seeds[index + 1:]:
+            left_part = left[: max(2, len(left) // 2)]
+            right_part = right[max(1, len(right) // 2):]
+            add(left_part + right_part, "invented_phonetic", (left, right), "midpoint blend")
+            if len(output) >= limit:
+                return output
+
+    return output
 
 
 def structural_quality(name):
@@ -72,17 +200,22 @@ def structural_quality(name):
 
 
 def rank_candidate_pool(candidates):
-    """Annotate and rank AI candidates before expensive external checks.
+    """Annotate and rank candidates before expensive external checks.
 
     Stable original order breaks ties so model preference is preserved when the
-    deterministic quality score cannot distinguish candidates.
+    deterministic quality score cannot distinguish candidates. Locally expanded
+    rows receive a small prior penalty: they are useful breadth, not a claim that
+    simple morphology is better than a model-authored concept.
     """
     ranked = []
     for index, candidate in enumerate(candidates):
         if not isinstance(candidate, dict):
             continue
         row = dict(candidate)
-        row["local_quality_score"] = structural_quality(row.get("name", ""))
+        score = structural_quality(row.get("name", ""))
+        if row.get("candidate_source") == LOCAL_SOURCE:
+            score = max(0, score - 6)
+        row["local_quality_score"] = score
         ranked.append((index, row))
     ranked.sort(key=lambda item: (-item[1]["local_quality_score"], item[0]))
     return [row for _, row in ranked]
