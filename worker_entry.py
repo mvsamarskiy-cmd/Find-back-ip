@@ -1,10 +1,11 @@
-"""Production worker entrypoint with short-lived audit cleanup."""
+"""Production worker entrypoint with short-lived telemetry cleanup."""
 
 from __future__ import annotations
 
 import threading
 
 from audit_store import AUDIT_STORE
+from durable_candidate_events import LIVE_CANDIDATES
 from entry_mode_backend import install_entry_mode_intelligence
 from live_background import run_live_background_job
 import search_worker
@@ -21,23 +22,29 @@ install_entry_mode_intelligence(search_worker.app_module)
 search_worker.run_availability_hunter_job = run_live_background_job
 
 
-def _audit_cleanup_loop():
-    # Run immediately, then at most hourly. Expired telemetry therefore disappears
-    # within roughly one hour after its TTL even when no new browser session writes.
+def _telemetry_cleanup_loop():
+    # Run immediately, then at most hourly. Short-lived audit and lifecycle rows
+    # disappear after their TTL while final candidate/session facts remain durable.
     while not search_worker.STOP.is_set():
         try:
-            removed = AUDIT_STORE.prune_expired()
-            if removed:
-                print(f"NameMachine audit retention: removed {removed} expired events", flush=True)
+            audit_removed = AUDIT_STORE.prune_expired()
+            live_removed = LIVE_CANDIDATES.prune_expired()
+            if audit_removed or live_removed:
+                print(
+                    "NameMachine retention:",
+                    f"audit={audit_removed}",
+                    f"candidate_events={live_removed}",
+                    flush=True,
+                )
         except Exception as error:
-            print(f"NameMachine audit retention failed: {type(error).__name__}", flush=True)
+            print(f"NameMachine telemetry retention failed: {type(error).__name__}", flush=True)
         search_worker.STOP.wait(3600.0)
 
 
 def main():
     sweeper = threading.Thread(
-        target=_audit_cleanup_loop,
-        name="namemachine-audit-retention",
+        target=_telemetry_cleanup_loop,
+        name="namemachine-telemetry-retention",
         daemon=True,
     )
     sweeper.start()
