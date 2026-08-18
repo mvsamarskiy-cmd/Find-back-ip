@@ -3,6 +3,7 @@ import unittest
 
 from background_jobs import SearchJobStore, run_one_job
 from session_store import SessionStore
+from variant_store import VariantExpansionStore
 
 
 @unittest.skipUnless(os.environ.get("TEST_POSTGRES_URL"), "TEST_POSTGRES_URL is not configured")
@@ -98,6 +99,34 @@ class PostgresSessionStoreTests(unittest.TestCase):
         background_runs = [row for row in snapshot["runs"] if row.get("background_job_id") == job["id"]]
         self.assertEqual(len(background_runs), 1)
         self.assertEqual(background_runs[0]["status"], "completed")
+
+    def test_real_postgres_variant_expansion_round_trip(self):
+        variants = VariantExpansionStore(self.store)
+        saved = variants.upsert(
+            self.created["id"],
+            self.created["token"],
+            "GoldenMile",
+            {
+                "resources": ["x"],
+                "options": {"underscore": True},
+                "checked_at": "2026-08-19T00:00:00Z",
+                "results": [{
+                    "resource": "x",
+                    "identifier": "_goldenmile",
+                    "status": "not_found",
+                    "strict_free": True,
+                    "availability": {"status": "not_found", "source": "socialscan"},
+                }],
+            },
+        )
+        self.assertEqual(saved["parent_name"], "GoldenMile")
+        self.assertFalse(saved["results"][0]["strict_free"])
+
+        loaded = variants.get(self.created["id"], self.created["token"], "GoldenMile")
+        self.assertEqual(loaded["results"][0]["identifier"], "_goldenmile")
+        self.assertEqual(loaded["results"][0]["status"], "not_found")
+        self.assertFalse(loaded["results"][0]["strict_free"])
+        self.assertTrue(loaded.get("updated_at"))
 
 
 if __name__ == "__main__":

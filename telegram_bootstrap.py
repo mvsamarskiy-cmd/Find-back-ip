@@ -29,6 +29,8 @@ from session_api import install_session_routes, session_storage_diagnostics  # n
 from session_provenance import install_session_provenance  # noqa: E402
 from streaming_search import install_streaming_routes  # noqa: E402
 from variant_api import install_variant_routes, variant_diagnostics  # noqa: E402
+from variant_session_api import install_variant_session_routes  # noqa: E402
+from variant_store import VARIANT_STORE  # noqa: E402
 from verification.diagnostics import provider_diagnostics  # noqa: E402
 
 app_module.check_all = check_all_v2
@@ -43,9 +45,10 @@ install_candidate_event_routes(app, app_module)
 install_generic_naming_routes(app, app_module)
 install_brand_collision_routes(app, app_module)
 install_variant_routes(app, app_module)
+install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.7-variant-expansion"
+RELEASE_MARKER = "v8.7.1-variant-durability"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=6"></script>'
@@ -63,6 +66,7 @@ BRAND_COLLISION_UI_TAG = '<script src="/static/brand_collision_ui.js?v=1"></scri
 DURABLE_LIVE_EVENTS_TAG = '<script src="/static/durable_live_events.js?v=1"></script>'
 UI_CLEANUP_TAG = '<script src="/static/ui_cleanup_r8.js?v=1"></script>'
 VARIANT_EXPANSION_UI_TAG = '<script src="/static/variant_expansion_ui.js?v=1"></script>'
+VARIANT_EXPANSION_SYNC_TAG = '<script src="/static/variant_expansion_sync.js?v=1"></script>'
 
 
 @app.after_request
@@ -103,9 +107,11 @@ def prevent_stale_html(response):
             tags.append(DURABLE_LIVE_EVENTS_TAG)
         if UI_CLEANUP_TAG not in body:
             tags.append(UI_CLEANUP_TAG)
-        # Load the variant card wrapper last so it composes with all prior card/UI wrappers.
         if VARIANT_EXPANSION_UI_TAG not in body:
             tags.append(VARIANT_EXPANSION_UI_TAG)
+        # Sync is an overlay on the visible expansion controller and must load last.
+        if VARIANT_EXPANSION_SYNC_TAG not in body:
+            tags.append(VARIANT_EXPANSION_SYNC_TAG)
         if tags and "</body>" in body:
             response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
@@ -182,6 +188,7 @@ def api_verification_diagnostics():
         },
         "brand_collision": brand_collision_diagnostics(),
         "variant_grammar": variant_diagnostics(),
+        "variant_storage": VARIANT_STORE.diagnostics(),
         "strict_free_semantics": {
             "green_status": "claimable",
             "purchasable_is_green": False,
@@ -225,6 +232,7 @@ def api_verification_diagnostics():
             "technical_details_toggle": True,
             "report_preview_closable": True,
             "variant_expansion_ui": True,
+            "variant_expansion_durable_sync": True,
         },
         "session_storage": session_storage_diagnostics(),
         "background_search": background_search_diagnostics(),

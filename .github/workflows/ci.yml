@@ -41,6 +41,7 @@ jobs:
       - run: node --check static/durable_live_events.js
       - run: node --check static/ui_cleanup_r8.js
       - run: node --check static/variant_expansion_ui.js
+      - run: node --check static/variant_expansion_sync.js
 
   postgres-session-store:
     runs-on: ubuntu-latest
