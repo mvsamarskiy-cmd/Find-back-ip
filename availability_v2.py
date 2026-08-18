@@ -11,12 +11,18 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 
 import availability as legacy
+from provenance import install_generation_provenance, verification_provenance
 from verification.collector import collect_verification_verdicts
 from verification.live_provider_evidence import (
     apply_compatibility_evidence,
     collect_live_provider_evidence,
 )
 
+
+# Both production web bootstrap and the background worker import this module after
+# app.py. Install the generation wrapper here so already-imported app globals and
+# future ai_engine imports converge on the same provenance-aware function.
+install_generation_provenance()
 
 RESOURCE_KEYS = legacy.RESOURCE_KEYS
 normalize_resources = legacy.normalize_resources
@@ -53,6 +59,27 @@ def _recount(result):
     return result
 
 
+def _attach_verification_provenance(result):
+    provenance = verification_provenance()
+    result["verification_provenance"] = provenance
+    verdicts = result.get("verification")
+    if isinstance(verdicts, dict):
+        for platform, raw in list(verdicts.items()):
+            if not isinstance(raw, dict):
+                continue
+            verdict = dict(raw)
+            verdict.setdefault(
+                "verification_engine_version",
+                provenance["verification_engine_version"],
+            )
+            verdict.setdefault(
+                "evidence_fusion_version",
+                provenance["evidence_fusion_version"],
+            )
+            verdicts[platform] = verdict
+    return result
+
+
 def _augment(handle, payload):
     result = dict(payload or {})
     base_availability = dict(result.get("availability") or {})
@@ -79,7 +106,7 @@ def _augment(handle, payload):
         availability,
         extra_by_platform=extra_by_platform,
     )
-    return result
+    return _attach_verification_provenance(result)
 
 
 def check_all(name, resources=None):
