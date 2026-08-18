@@ -1,7 +1,7 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "startCommand": "gunicorn app:app --config gunicorn.conf.py",
+    "startCommand": "gunicorn telegram_bootstrap:app --config gunicorn.conf.py",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
