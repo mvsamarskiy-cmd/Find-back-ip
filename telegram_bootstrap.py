@@ -19,7 +19,7 @@ app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 
 
-RELEASE_MARKER = "v6.6-tiktok-oembed"
+RELEASE_MARKER = "v6.7-telegram-positive-ensemble"
 
 
 @app.after_request
@@ -77,6 +77,16 @@ def api_verification_diagnostics():
         "live": True,
         "positive_only": True,
         "can_confirm_occupancy": True,
+        "authoritative_claimability": False,
+    }
+    providers["telegram_positive_ensemble"] = {
+        "configured": True,
+        "no_api_key": True,
+        "live": True,
+        "positive_only": True,
+        "sources": ["legacy_t_me", "fragment_public_web", "whatsmyname_positive_only"],
+        "negative_evidence_promoted": False,
+        "fragment_marketplace_available_is_free_claimable": False,
         "authoritative_claimability": False,
     }
     return jsonify({
