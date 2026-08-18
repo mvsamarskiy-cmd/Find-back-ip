@@ -15,6 +15,7 @@ from ai_engine import (
     trademark_links,
 )
 from brand_dna import WebsiteFetchError, build_brand_dna, clean_brand_dna, fetch_public_website
+from identity_bundle import classify_identity_bundle, normalize_required_resources
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -109,6 +110,11 @@ def search_context_error(error):
 def query_resources():
     raw = request.args.get("resources")
     return normalize_resources(None if raw is None else raw)
+
+
+def query_required_resources(selected_resources):
+    raw = request.args.get("required")
+    return normalize_required_resources(None if raw is None else raw, selected_resources)
 
 
 ONSETS = ["v","n","m","r","l","s","t","k","d","f","z","b","p","c","g","h","br","cr","dr","fr","gr","kr","pr","tr","vr","st","sk","cl","fl","pl"]
@@ -244,9 +250,13 @@ def api_check(name):
     if not 3<=len(n)<=30: return jsonify({"error":"Name must contain 3-30 latin letters"}),400
     try:
         resources=query_resources()
+        required_resources=query_required_resources(resources)
     except ValueError as error:
         return resource_error(error)
-    row={"name":n.capitalize(),"score":score_name(n),"length":len(n)}; row.update(check_all(n,resources)); return jsonify(row)
+    row={"name":n.capitalize(),"score":score_name(n),"length":len(n)}
+    row.update(check_all(n,resources))
+    row.update(classify_identity_bundle(row.get("availability"), required_resources))
+    return jsonify(row)
 
 
 @app.post("/api/brand-dna")
@@ -343,6 +353,9 @@ def api_ai_generate():
         return error_response
     try:
         resources=normalize_resources(data.get("resources"))
+        required_resources=normalize_required_resources(
+            data.get("required_resources"), resources
+        )
     except ValueError as error:
         return resource_error(error)
     try: count=max(1,min(20,int(data.get("count",10))))
@@ -372,6 +385,7 @@ def api_ai_generate():
         checks=check_many((row["name"] for row in names),resources=resources)
         for row, availability in zip(names, checks):
             row.update(availability)
+            row.update(classify_identity_bundle(row.get("availability"), required_resources))
             row["trademark"]=trademark_links(row["name"])
         names.sort(key=availability_sort_key)
         return jsonify(names)
