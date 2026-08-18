@@ -7,8 +7,9 @@ from telegram_bootstrap import app
 class TurboSearchUiTests(unittest.TestCase):
     def test_turbo_assets_are_cache_busted(self):
         body = app.test_client().get('/').get_data(as_text=True)
-        self.assertIn('/static/availability_hunter_ui.js?v=3', body)
+        self.assertIn('/static/availability_hunter_ui.js?v=4', body)
         self.assertIn('/static/feed_navigation.js?v=2', body)
+        self.assertIn('/static/entry_modes.js?v=1', body)
 
     def test_turbo_primary_feed_filters_to_all_green(self):
         source = Path('static/feed_navigation.js').read_text(encoding='utf-8')
