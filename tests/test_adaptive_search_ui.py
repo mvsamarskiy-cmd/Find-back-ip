@@ -7,18 +7,13 @@ class AdaptiveSearchUiTests(unittest.TestCase):
     def setUp(self):
         self.body = app.app.test_client().get("/").get_data(as_text=True)
 
-    def test_ui_declares_bounded_multi_batch_search(self):
+    def test_ui_keeps_bounded_multi_batch_search_under_simple_controls(self):
         self.assertIn("MAX_EXTERNAL_CHECKS=100", self.body)
         self.assertIn("BATCH_SIZE=20", self.body)
         self.assertIn("MAX_BATCHES=5", self.body)
-        self.assertIn("Запустити глибокий пошук", self.body)
-        self.assertIn("safety cap 100", self.body)
-
-    def test_target_is_number_of_usable_identity_bundles(self):
-        self.assertIn("Ціль: 5 придатних", self.body)
-        self.assertIn("Ціль: 10 придатних", self.body)
-        self.assertIn("Ціль: 20 придатних", self.body)
-        self.assertIn("afterOpportunities>=target", self.body)
+        self.assertIn('id="startBtn"', self.body)
+        self.assertIn('id="stopBtn"', self.body)
+        self.assertIn("Continue", self.body)
 
     def test_follow_up_batches_send_prior_results_as_context(self):
         self.assertIn("function adaptiveContext", self.body)
@@ -27,14 +22,23 @@ class AdaptiveSearchUiTests(unittest.TestCase):
         self.assertIn("successful_names", self.body)
         self.assertIn("generation_context:adaptiveContext(batch)", self.body)
 
-    def test_browser_uses_batched_checked_endpoint_not_per_name_check_loop(self):
+    def test_browser_uses_batched_checked_endpoint(self):
         self.assertIn("fetch('/api/ai-generate'", self.body)
+        self.assertIn("required_resources:resources", self.body)
         self.assertNotIn("fetch('/api/check/'+encodeURIComponent(row.name)", self.body)
 
-    def test_partial_results_survive_failed_later_batch(self):
+    def test_stop_preserves_partial_session_and_feedback(self):
+        self.assertIn("function stopSearch()", self.body)
+        self.assertIn("activeController.abort()", self.body)
         self.assertIn("часткові результати збережено", self.body)
-        self.assertIn("current.done=false", self.body)
-        self.assertIn("saveHistory(current)", self.body)
+        self.assertIn("feedback", self.body)
+        self.assertIn("shortlist", self.body)
+        self.assertIn("directionAnchors", self.body)
+
+    def test_results_append_across_continue_runs(self):
+        self.assertIn("current.results.push", self.body)
+        self.assertIn("current.runs.push(run)", self.body)
+        self.assertNotIn("results:[]};saveHistory", self.body)
 
 
 if __name__ == "__main__":
