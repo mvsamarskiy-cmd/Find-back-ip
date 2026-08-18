@@ -24,13 +24,16 @@ from candidate_events_api import install_candidate_event_routes  # noqa: E402
 from durable_candidate_events import LIVE_CANDIDATES  # noqa: E402
 from entry_mode_backend import install_entry_mode_intelligence  # noqa: E402
 from generic_naming_api import install_generic_naming_routes  # noqa: E402
+import session_api as session_api_module  # noqa: E402
 from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
+from session_provenance import install_session_provenance  # noqa: E402
 from streaming_search import install_streaming_routes  # noqa: E402
 from verification.diagnostics import provider_diagnostics  # noqa: E402
 
 app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 install_entry_mode_intelligence(app_module)
+install_session_provenance(session_api_module)
 install_streaming_routes(app, app_module)
 install_session_routes(app, app_module)
 install_audit_routes(app, app_module)
@@ -40,7 +43,7 @@ install_generic_naming_routes(app, app_module)
 install_brand_collision_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.5.1-candidate-metadata"
+RELEASE_MARKER = "v8.5.2-provenance-persistence"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=6"></script>'
