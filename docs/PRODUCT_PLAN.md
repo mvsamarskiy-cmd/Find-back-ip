@@ -76,7 +76,7 @@ No estimated monetary value is shown without comparable market sales.
   legacy brief-only calls.
 - [ ] Add website URL and Brand DNA review/edit controls to the browser UI and
   persist the resulting DNA inside the local project profile.
-- [ ] Split requirements into MUST HAVE and optional resources so a candidate is
+- [x] Split requirements into MUST HAVE and optional resources so a candidate is
   rejected when a required identity resource conflicts but may survive an
   optional conflict.
 - [ ] Generate in feedback-aware batches, learn which lexical neighborhoods are
@@ -85,15 +85,17 @@ No estimated monetary value is shown without comparable market sales.
 - [ ] Search until enough strong identity bundles are found or a configurable
   safety cap is reached; initial UI target is at most 100 externally checked
   candidates, not 100 forced `free` results.
-- [ ] Split results into `conflict` and `opportunity` columns while preserving an
-  explicit unresolved state; each column gets independent resource/status filters.
+- [x] Split results into `conflict` and `opportunity` columns while preserving an
+  explicit unresolved state; each main column has an independent resource filter,
+  and the opportunity column also filters confirmed vs promising evidence.
 - [ ] Generate diversified local candidate families.
 - [ ] Funnel: 20,000 -> 6,000 structural -> 1,500 linguistic -> 300 collision ->
   100 external checks -> 20 final reports.
 - [ ] Apply family quotas to prevent suffix monoculture.
 - [ ] Add phonetic, visual, semantic, and edit-distance deduplication.
-- [ ] Rank full Identity Bundles across the selected resources; current
-  evidence-aware sorting is only the first step.
+- [ ] Rank full Identity Bundles across the selected resources; deterministic
+  MUST-HAVE classification now exists, while full weighted composition scoring
+  remains pending.
 
 ## Phase 4 — durable server history
 
