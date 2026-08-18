@@ -43,6 +43,7 @@ HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=4"></script>'
 AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'
 AUDIT_REPORT_TAG = '<script src="/static/audit_report.js?v=4"></script>'
 CLIENT_REPORT_TAG = '<script src="/static/client_report.js?v=6"></script>'
+CLIENT_REPORT_MODES_TAG = '<script src="/static/client_report_modes.js?v=1"></script>'
 REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=5"></script>'
 FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=2"></script>'
 CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
@@ -71,6 +72,8 @@ def prevent_stale_html(response):
             tags.append(AUDIT_REPORT_TAG)
         if CLIENT_REPORT_TAG not in body:
             tags.append(CLIENT_REPORT_TAG)
+        if CLIENT_REPORT_MODES_TAG not in body:
+            tags.append(CLIENT_REPORT_MODES_TAG)
         if REPORT_CONTROLS_TAG not in body:
             tags.append(REPORT_CONTROLS_TAG)
         if FEED_NAVIGATION_TAG not in body:
