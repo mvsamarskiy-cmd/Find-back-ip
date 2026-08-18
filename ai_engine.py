@@ -6,6 +6,7 @@ import unicodedata
 from difflib import SequenceMatcher
 
 from brand_dna import brand_dna_context
+from candidate_funnel import rank_candidate_pool
 from trademark_risk import trademark_search_plan
 
 
@@ -326,15 +327,13 @@ def _is_allowed_name(value, search_context=None):
 
 
 def select_diverse_names(candidates, count, search_context=None, exclude_names=None):
-    """Keep valid candidates while enforcing cross-batch and family diversity."""
+    """Rank locally, then enforce cross-batch and naming-family diversity."""
     selected = []
     blocked = _bounded_names(exclude_names, 100)
     family_counts = {family: 0 for family in GENERATION_FAMILY_KEYS}
     family_cap = max(2, math.ceil(max(1, count) / 3))
 
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
+    for candidate in rank_candidate_pool(candidates):
         name = str(candidate.get("name", "")).strip()
         family = str(candidate.get("family", "")).strip()
         if not _is_allowed_name(name, search_context):
