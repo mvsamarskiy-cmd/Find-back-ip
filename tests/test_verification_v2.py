@@ -3,6 +3,7 @@ from verification.bridge import (
     legacy_result_to_evidence,
     verdict_from_legacy_result,
 )
+from verification.collector import collect_platform_evidence, collect_verification_verdicts
 from verification.diagnostics import provider_diagnostics
 from verification.fusion import fuse_evidence
 from verification.models import Evidence
@@ -158,6 +159,62 @@ def test_stronger_unresolved_source_blocks_weaker_absence_marketing():
         ],
     )
     assert verdict.verdict == "unknown"
+
+
+def test_collector_preserves_original_and_enriched_evidence():
+    rows = collect_platform_evidence(
+        "x",
+        "example",
+        legacy_row={
+            "status": "not_found",
+            "source": "public_web",
+            "method": "public_profile",
+            "confidence": 0.65,
+            "url": "https://x.com/example",
+        },
+        enriched_row={
+            "status": "taken",
+            "source": "socialscan",
+            "method": "registration_probe",
+            "confidence": 0.9,
+            "url": "https://x.com/example",
+        },
+    )
+    assert len(rows) == 2
+    assert {row["signal"] for row in rows} == {"absent", "exists"}
+    assert {row["source"] for row in rows} == {"public_web", "socialscan"}
+
+
+def test_collector_deduplicates_unchanged_compatibility_rows():
+    row = {
+        "status": "taken",
+        "source": "public_web",
+        "method": "public_profile",
+        "confidence": 0.85,
+        "url": "https://example.test/user",
+    }
+    rows = collect_platform_evidence("telegram", "user", row, dict(row))
+    assert len(rows) == 1
+
+
+def test_collector_fuses_conflict_instead_of_last_writer_wins():
+    verdicts = collect_verification_verdicts(
+        "example",
+        {"x": {
+            "status": "claimable",
+            "source": "x_api",
+            "method": "official_username_check",
+            "confidence": 0.99,
+        }},
+        {"x": {
+            "status": "taken",
+            "source": "socialscan",
+            "method": "registration_probe",
+            "confidence": 0.9,
+        }},
+    )
+    assert verdicts["x"]["verdict"] == "unknown"
+    assert len(verdicts["x"]["evidence"]) == 2
 
 
 def test_diagnostics_never_exposes_secret_values(monkeypatch):
