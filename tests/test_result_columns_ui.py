@@ -5,40 +5,39 @@ import app
 
 class ResultColumnsUiTests(unittest.TestCase):
     def setUp(self):
-        self.client = app.app.test_client()
+        self.body = app.app.test_client().get("/").get_data(as_text=True)
 
-    def test_home_has_required_resource_controls_and_result_columns(self):
-        body = self.client.get("/").get_data(as_text=True)
-        self.assertIn('name="requiredResource" value="com"', body)
-        self.assertIn('name="requiredResource" value="telegram"', body)
-        self.assertIn("Обов’язково мати (MUST HAVE)", body)
-        self.assertIn('id="conflictGrid"', body)
-        self.assertIn('id="opportunityGrid"', body)
-        self.assertIn('id="unresolvedGrid"', body)
-        self.assertIn("🔴 Конфлікти", body)
-        self.assertIn("🟢 Придатні / перспективні", body)
+    def test_home_has_three_simple_workspaces(self):
+        self.assertIn('id="recommendedGrid"', self.body)
+        self.assertIn('id="feedGrid"', self.body)
+        self.assertIn('id="shortlistGrid"', self.body)
+        self.assertIn("Рекомендовані", self.body)
+        self.assertIn("Стрічка", self.body)
+        self.assertIn("Кандидати", self.body)
+        self.assertNotIn("Обов’язково мати (MUST HAVE)", self.body)
+        self.assertNotIn('name="requiredResource"', self.body)
 
-    def test_each_main_column_has_its_own_resource_filter(self):
-        body = self.client.get("/").get_data(as_text=True)
-        self.assertIn('id="conflictResourceFilter"', body)
-        self.assertIn('id="opportunityResourceFilter"', body)
-        self.assertIn('id="opportunityStateFilter"', body)
-        self.assertIn("✓ Підтверджені", body)
-        self.assertIn("◌ Перспективні", body)
+    def test_recommended_requires_every_selected_resource_confirmed(self):
+        self.assertIn("function allGreen(row)", self.body)
+        self.assertIn("resources.every", self.body)
+        self.assertIn("confirmedStatuses.has", self.body)
+        self.assertIn("claimable", self.body)
+        self.assertIn("purchasable", self.body)
 
-    def test_ui_never_calls_not_found_confirmed_free(self):
-        body = self.client.get("/").get_data(as_text=True)
-        self.assertIn("NOT FOUND", body)
-        self.assertIn("перспективні", body.lower())
-        self.assertIn("не підтверджує можливість реєстрації", body)
-        self.assertNotIn("NOT FOUND = ВІЛЬНИЙ", body)
+    def test_not_found_is_not_called_free(self):
+        self.assertIn("status==='not_found'", self.body)
+        self.assertIn("Не знайдено", self.body)
+        self.assertNotIn("NOT FOUND = ВІЛЬНИЙ", self.body)
 
-    def test_batched_requests_send_required_resources(self):
-        body = self.client.get("/").get_data(as_text=True)
-        self.assertIn("fetch('/api/ai-generate'", body)
-        self.assertIn("required_resources:required", body)
-        self.assertIn("bundle_state", body)
-        self.assertNotIn("&required=", body)
+    def test_feed_supports_explicit_learning_actions(self):
+        self.assertIn("👍", self.body)
+        self.assertIn("👎", self.body)
+        self.assertIn("Коментар", self.body)
+        self.assertIn("Взяти за напрям", self.body)
+        self.assertIn("В кандидати", self.body)
+        self.assertIn("function saveComment", self.body)
+        self.assertIn("function takeDirection", self.body)
+        self.assertIn("function toggleShortlist", self.body)
 
 
 if __name__ == "__main__":

@@ -80,17 +80,15 @@ class SearchIntentApiTests(unittest.TestCase):
         self.assertIn("Brief or Brand DNA", response.get_json()["error"])
         generate_ai_names.assert_not_called()
 
-    def test_home_exposes_search_intent_and_guidance_controls(self):
+    def test_home_hides_legacy_search_intent_form_but_keeps_prompt(self):
         response = self.client.get("/")
         body = response.get_data(as_text=True)
-        self.assertIn('id="searchMode"', body)
-        self.assertIn('id="brandName"', body)
-        self.assertIn('id="guidance"', body)
-        self.assertIn("Бренд уже є — назва зафіксована", body)
-        self.assertIn("Додаткові побажання", body)
-        self.assertIn("Чому не подобається", body)
-        self.assertIn("Надто банально", body)
-        self.assertIn("Не подобається закінчення", body)
+        self.assertIn('id="prompt"', body)
+        self.assertNotIn('id="searchMode"', body)
+        self.assertNotIn('id="brandName"', body)
+        self.assertNotIn('id="guidance"', body)
+        self.assertIn("Опиши, що вже маєш і що хочеш знайти", body)
+        self.assertIn("search_context:{mode:'new_brand'", body)
 
 
 if __name__ == "__main__":
