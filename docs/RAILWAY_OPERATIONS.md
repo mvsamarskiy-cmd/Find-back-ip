@@ -56,12 +56,18 @@ projects just to preserve code.
 If the newest release breaks production:
 
 1. In GitHub Actions run **Prepare production rollback PR**.
-2. The workflow checks out the current `main`, reverts exactly that release into
-   a temporary `agent/rollback-*` branch, and opens a pull request.
-3. Require normal green CI. Never reset or force-push `main`.
-4. Squash-merge the rollback PR so Railway receives one new recovery commit.
-5. After Railway deploys it, run `python verification/railway_guard.py smoke`.
-6. Close/merge the PR normally; the existing branch-cleanup workflow removes the
+2. The workflow checks out the current `main` and locally reverts exactly that
+   release.
+3. Before anything is pushed, it verifies that the reverted Git tree is exactly
+   the previous release tree and runs unit tests, inline-JavaScript validation,
+   and the Gunicorn config check. If any check fails, no rollback branch is
+   published.
+4. Only after verification does it push a temporary `agent/rollback-*` branch and
+   open a pull request. Review it and satisfy any repository-required checks.
+5. Never reset or force-push `main`. Merge the rollback normally so Railway gets
+   one auditable recovery commit.
+6. After Railway deploys it, run `python verification/railway_guard.py smoke`.
+7. Close/merge the PR normally; the existing branch-cleanup workflow removes the
    temporary rollback branch.
 
 This deliberately uses a Git **revert**, not a history rewrite, so both the bad
