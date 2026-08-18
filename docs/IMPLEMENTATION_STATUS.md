@@ -1,7 +1,7 @@
 # NameMachine implementation status
 
-Updated for the Brand DNA browser release prepared from GitHub `main` commit
-`d7d76981c7a917297cbe609a0412ccf32c7d37db` on 2026-08-18.
+Updated for the trademark-risk framework release prepared from GitHub `main`
+commit `416a3656a74ca7b75e553e10afcc97062abd8156` on 2026-08-18.
 
 This file records what exists now. `PRODUCT_PLAN.md` remains the implementation
 order for unfinished work.
@@ -31,29 +31,34 @@ order for unfinished work.
 | Explicit search intent, natural-language guidance, and symmetric feedback reasons | PR #21 | Included in `main` |
 | MUST-HAVE Identity Bundle classification and split result columns | PR #22 | Included in `main` |
 | Adaptive multi-batch deep search with a 100-check safety cap | PR #23 | Included in `main` |
-| Browser website analysis and editable Brand DNA project workflow | PR #24 | Implemented on release branch; requires final green CI and merge before production |
+| Browser website analysis and editable Brand DNA project workflow | PR #24 | Included in `main` |
+| Legally conservative trademark/collision risk contract | Current release | Implemented on release branch; requires green CI and merge |
 
 ## Product-plan status
 
 - Phase 1 is functionally complete and captures signed reasons on likes and
   dislikes so future generation has explicit positive and negative taste evidence.
-- Phase 2 is partially complete: the full evidence status vocabulary, metadata,
-  conservative `not_found` handling, deterministic tests, optional official
-  YouTube/X adapters, and the optional Name.com registration adapter exist.
-  Production Name.com credentials and a live actionable proof are pending;
-  Telegram MTProto/Fragment and automated trademark collision evidence are not
-  implemented.
+- Phase 2 is materially advanced: the full digital-resource evidence vocabulary,
+  metadata, conservative `not_found` handling, deterministic tests, optional
+  official YouTube/X adapters, and optional Name.com registration adapter exist.
+  Trademark candidates now also receive a separate non-binary collision plan with
+  territory, Nice-class scope, identical/similar-sign criteria, status/priority
+  criteria, and official EUIPO TMview/eSearch, WIPO, and Polish UPRP search routes.
+  Trusted observations can be scored deterministically as high/medium/low-observed
+  risk, but the product intentionally never treats no results as globally `free`.
+  A permitted machine-readable trademark registry adapter is still pending; the
+  WIPO public Global Brand Database must not be scraped or queried automatically.
+  Production Name.com credentials/live proof and Telegram MTProto/Fragment also
+  remain pending.
 - Phase 3 is materially advanced: resource selection, search intent, natural-
   language guidance, structured Brand DNA, safe website extraction, editable
   browser DNA review, MUST-HAVE vs optional resources, deterministic Identity
   Bundle classification, split result columns, and bounded adaptive deep search
-  all exist. Website-derived DNA can be reviewed/corrected, is persisted in the
-  local project/search history, and is sent to every adaptive batch. Deep search
-  blocks exact and conservative phonetic near-duplicates and stops at the target
-  or after at most 100 externally checked candidates. The full 20k funnel, family
-  quotas, stronger visual/semantic/edit-distance deduplication, automated
-  trademark collision evidence, and weighted Identity Bundle scoring remain
-  pending.
+  all exist. Deep search blocks exact and conservative phonetic near-duplicates
+  and stops at the target or after at most 100 externally checked candidates. The
+  full 20k funnel, family quotas, stronger visual/semantic/edit-distance
+  deduplication, machine-fed trademark observations, and weighted Identity Bundle
+  scoring remain pending.
 - Phase 4 is not implemented. Projects, history, preferences, search intent,
   guidance, required-resource choices, adaptive search history, and Brand DNA are
   still browser-local rather than durable server-side data; PostgreSQL, migrations,
@@ -83,10 +88,11 @@ post-deploy smoke and commit match are confirmed.
 
 ## Next implementation order
 
-1. Add a legally careful trademark/collision evidence layer as a non-binary risk
-   dimension; do not call a mark globally free from a missing exact result.
-2. Improve Telegram evidence with MTProto/Fragment classification where a secure
+1. Improve Telegram evidence with MTProto/Fragment classification where a secure
    credential/service boundary is available.
+2. Add a permitted machine-readable trademark registry adapter when an official or
+   licensed data path is available; feed its normalized records into the existing
+   trademark-risk contract rather than scraping public search pages.
 3. Add stronger family quotas plus visual/semantic/edit-distance deduplication and
    weighted Identity Bundle scoring before scaling toward the full 20,000-candidate
    funnel.
