@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "ops" / "railway-production.json"
-USER_AGENT = "NameMachine-production-canary/1.0"
+USER_AGENT = "NameMachine-production-canary/1.1"
 
 
 class CanaryError(RuntimeError):
@@ -48,7 +48,22 @@ def _require(condition, message):
         raise CanaryError(message)
 
 
-def run_canary(base_url, *, expected_release=None, require_worker=False, fetch_json=_get_json):
+def _commit_matches(actual, expected):
+    actual = str(actual or "").strip().lower()
+    expected = str(expected or "").strip().lower()
+    if not actual or not expected:
+        return False
+    return actual == expected or actual.startswith(expected) or expected.startswith(actual)
+
+
+def run_canary(
+    base_url,
+    *,
+    expected_release=None,
+    expected_commit=None,
+    require_worker=False,
+    fetch_json=_get_json,
+):
     base = str(base_url or "").rstrip("/")
     _require(base.startswith("https://"), "Production canary requires an HTTPS base URL")
 
@@ -64,6 +79,11 @@ def run_canary(base_url, *, expected_release=None, require_worker=False, fetch_j
         _require(
             release == expected_release,
             f"Release mismatch: expected {expected_release!r}, got {release!r}",
+        )
+    if expected_commit:
+        _require(
+            _commit_matches(commit, expected_commit),
+            f"Commit mismatch: expected {expected_commit!r}, got {commit!r}",
         )
 
     diagnostics = fetch_json(f"{base}/api/verification/diagnostics")
@@ -121,6 +141,11 @@ def main(argv=None):
         help="Fail unless /api/version reports this exact release marker",
     )
     parser.add_argument(
+        "--expected-commit",
+        default=None,
+        help="Fail unless /api/version reports this Git commit (full or short SHA)",
+    )
+    parser.add_argument(
         "--require-worker",
         action="store_true",
         help="Also require at least one live background worker and ready=true",
@@ -130,6 +155,7 @@ def main(argv=None):
         report = run_canary(
             args.url,
             expected_release=args.expected_release,
+            expected_commit=args.expected_commit,
             require_worker=args.require_worker,
         )
     except (CanaryError, urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:

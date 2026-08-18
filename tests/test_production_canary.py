@@ -18,7 +18,7 @@ class ProductionCanaryTests(unittest.TestCase):
             f"{self.base}/health": {"status": "ok"},
             f"{self.base}/api/version": {
                 "release": "v8.5.1-candidate-metadata",
-                "git_commit": "abc123",
+                "git_commit": "abc123def456",
             },
             f"{self.base}/api/verification/diagnostics": {
                 "strict_free_semantics": {
@@ -43,17 +43,24 @@ class ProductionCanaryTests(unittest.TestCase):
     def fetch(self, url):
         return self.payloads[url]
 
-    def test_canary_checks_release_truth_semantics_and_worker(self):
+    def test_canary_checks_release_commit_truth_semantics_and_worker(self):
         report = CANARY.run_canary(
             self.base,
             expected_release="v8.5.1-candidate-metadata",
+            expected_commit="abc123def456",
             require_worker=True,
             fetch_json=self.fetch,
         )
         self.assertEqual(report["health"], "ok")
+        self.assertEqual(report["git_commit"], "abc123def456")
         self.assertEqual(report["strict_green_status"], "claimable")
         self.assertTrue(report["feed"]["pagination"])
         self.assertTrue(report["background_search"]["ready"])
+
+    def test_short_and_full_commit_forms_match(self):
+        self.assertTrue(CANARY._commit_matches("abc123def456", "abc123d"))
+        self.assertTrue(CANARY._commit_matches("abc123d", "abc123def456"))
+        self.assertFalse(CANARY._commit_matches("abc123", "fff999"))
 
     def test_canary_rejects_not_found_becoming_green(self):
         self.payloads[f"{self.base}/api/verification/diagnostics"]["strict_free_semantics"][
@@ -67,6 +74,14 @@ class ProductionCanaryTests(unittest.TestCase):
             CANARY.run_canary(
                 self.base,
                 expected_release="v9-does-not-exist",
+                fetch_json=self.fetch,
+            )
+
+    def test_canary_rejects_commit_mismatch(self):
+        with self.assertRaisesRegex(CANARY.CanaryError, "Commit mismatch"):
+            CANARY.run_canary(
+                self.base,
+                expected_commit="fff999",
                 fetch_json=self.fetch,
             )
 
