@@ -5,15 +5,17 @@ from telegram_bootstrap import app
 
 
 class AuditReportUiTests(unittest.TestCase):
-    def test_report_v4_loads_after_background_search_with_controls(self):
+    def test_internal_audit_and_client_report_load_before_client_controls(self):
         body = app.test_client().get("/").get_data(as_text=True)
         self.assertIn('/static/audit_report.js?v=4', body)
-        self.assertIn('/static/report_controls.js?v=4', body)
+        self.assertIn('/static/client_report.js?v=5', body)
+        self.assertIn('/static/report_controls.js?v=5', body)
         self.assertLess(body.index('/static/background_search.js'), body.index('/static/audit_report.js?v=4'))
-        self.assertLess(body.index('/static/audit_report.js?v=4'), body.index('/static/report_controls.js?v=4'))
-        self.assertLess(body.index('/static/report_controls.js?v=4'), body.index('/static/feed_navigation.js'))
+        self.assertLess(body.index('/static/audit_report.js?v=4'), body.index('/static/client_report.js?v=5'))
+        self.assertLess(body.index('/static/client_report.js?v=5'), body.index('/static/report_controls.js?v=5'))
+        self.assertLess(body.index('/static/report_controls.js?v=5'), body.index('/static/feed_navigation.js'))
 
-    def test_default_report_is_compact_categorized_and_single_clock(self):
+    def test_internal_compact_report_is_categorized_and_single_clock(self):
         source = Path("static/audit_report.js").read_text(encoding="utf-8")
         self.assertIn("NameMachine SESSION REPORT v4", source)
         self.assertIn("1. ПІДСУМОК", source)
@@ -25,7 +27,7 @@ class AuditReportUiTests(unittest.TestCase):
         self.assertIn("function tplus", source)
         self.assertNotIn("duration=", source)
 
-    def test_default_report_does_not_dump_full_candidate_ledger(self):
+    def test_internal_compact_report_does_not_dump_full_candidate_ledger(self):
         source = Path("static/audit_report.js").read_text(encoding="utf-8")
         compact_start = source.index("function buildCompactReport")
         technical_start = source.index("function buildTechnicalAudit")
@@ -42,16 +44,17 @@ class AuditReportUiTests(unittest.TestCase):
         self.assertIn("${tplus(event?.at)}", source)
         self.assertNotIn("ACK delay", source)
 
-    def test_email_uses_device_mail_composer_without_server_claim(self):
-        source = Path("static/audit_report.js").read_text(encoding="utf-8")
+    def test_client_email_uses_device_mail_composer_without_server_claim(self):
+        client = Path("static/client_report.js").read_text(encoding="utf-8")
         controls = Path("static/report_controls.js").read_text(encoding="utf-8")
-        self.assertIn("window.emailReport", source)
-        self.assertIn("mailto:", source)
-        self.assertIn("На який email підготувати звіт?", source)
+        self.assertIn("window.emailClientReport", client)
+        self.assertIn("mailto:", client)
+        self.assertIn("На який email підготувати звіт?", client)
         self.assertIn("Надіслати на email", controls)
-        self.assertIn("Технічний аудит TXT", controls)
+        self.assertIn("Клієнтський звіт HTML", controls)
+        self.assertNotIn("Технічний аудит TXT", controls)
 
-    def test_report_fetches_live_jobs_and_preserves_historical_resources(self):
+    def test_internal_report_fetches_live_jobs_and_preserves_historical_resources(self):
         source = Path("static/audit_report.js").read_text(encoding="utf-8")
         self.assertIn("search-jobs?limit=100", source)
         self.assertIn("resourcesForRow(row)", source)
