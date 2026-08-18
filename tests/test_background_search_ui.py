@@ -26,6 +26,24 @@ class BackgroundSearchUiTests(unittest.TestCase):
         self.assertIn("current.streamCounter", source)
         self.assertNotIn("saveCurrent(); // remote-origin", source)
 
+    def test_live_telemetry_exposes_clock_quality_counts_and_feedback_reaction(self):
+        source = Path("static/background_search.js").read_text(encoding="utf-8")
+        self.assertIn('largeSearchClock', source)
+        self.assertIn('largeSearchGreen', source)
+        self.assertIn('largeSearchPromising', source)
+        self.assertIn('largeSearchConflicts', source)
+        self.assertIn('worker зчитав зміни', source)
+        self.assertIn('worker_feedback_applied', source)
+
+    def test_export_is_a_detailed_live_audit_not_legacy_100_result_summary(self):
+        source = Path("static/background_search.js").read_text(encoding="utf-8")
+        self.assertIn('NameMachine LIVE AUDIT REPORT', source)
+        self.assertIn('ACTION / REACTION TIMELINE', source)
+        self.assertIn('CANDIDATE LEDGER', source)
+        self.assertIn('Worker feedback snapshot', source)
+        self.assertIn('legacy 5-batch / 100-result foreground run', source)
+        self.assertIn('window.exportTxt', source)
+
 
 if __name__ == "__main__":
     unittest.main()
