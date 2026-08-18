@@ -8,8 +8,10 @@ from availability import RESOURCE_KEYS, check_all, check_many, normalize_resourc
 from ai_engine import (
     BANNED_ROOTS,
     BANNED_SUFFIXES,
+    DEFAULT_GENERATION_CONTEXT,
     DEFAULT_SEARCH_CONTEXT,
     SEARCH_MODES,
+    clean_generation_context,
     clean_search_context,
     generate_ai_names,
     trademark_links,
@@ -107,6 +109,10 @@ def search_context_error(error):
     }), 400
 
 
+def generation_context_error(error):
+    return jsonify({"error": str(error)}), 400
+
+
 def query_resources():
     raw = request.args.get("resources")
     return normalize_resources(None if raw is None else raw)
@@ -155,13 +161,23 @@ def clean_preferences(value):
     return {"liked": examples("liked"), "disliked": examples("disliked"), "reasons": reasons}
 
 
-def generate_ai_with_context(brief, count, preferences, brand_dna, search_context):
-    """Preserve legacy call shape when no optional generation context is present."""
+def generate_ai_with_context(
+    brief,
+    count,
+    preferences,
+    brand_dna,
+    search_context,
+    generation_context=None,
+):
+    """Preserve the legacy call shape when no optional generation context exists."""
     kwargs = {}
     if brand_dna:
         kwargs["brand_dna"] = brand_dna
     if search_context != DEFAULT_SEARCH_CONTEXT:
         kwargs["search_context"] = search_context
+    adaptive = generation_context or dict(DEFAULT_GENERATION_CONTEXT)
+    if adaptive != DEFAULT_GENERATION_CONTEXT:
+        kwargs["generation_context"] = adaptive
     if kwargs:
         return generate_ai_names(brief, count, preferences, **kwargs)
     return generate_ai_names(brief, count, preferences)
@@ -311,6 +327,10 @@ def api_ai_names():
     if error_response:
         return error_response
     try:
+        generation_context=clean_generation_context(data.get("generation_context"))
+    except ValueError as error:
+        return generation_context_error(error)
+    try:
         count=max(1,min(20,int(data.get("count",10))))
     except (ValueError,TypeError):
         count=10
@@ -329,6 +349,7 @@ def api_ai_names():
                     clean_preferences(data.get("preferences")),
                     brand_dna,
                     search_context,
+                    generation_context,
                 )
                 for row in names:
                     row["trademark"]=trademark_links(row["name"])
@@ -358,6 +379,10 @@ def api_ai_generate():
         )
     except ValueError as error:
         return resource_error(error)
+    try:
+        generation_context=clean_generation_context(data.get("generation_context"))
+    except ValueError as error:
+        return generation_context_error(error)
     try: count=max(1,min(20,int(data.get("count",10))))
     except (ValueError,TypeError): count=10
     if not AI_REQUEST_SLOTS.acquire(blocking=False):
@@ -375,6 +400,7 @@ def api_ai_generate():
                     clean_preferences(data.get("preferences")),
                     brand_dna,
                     search_context,
+                    generation_context,
                 )
                 break
             except Exception as error:
