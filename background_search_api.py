@@ -16,6 +16,10 @@ from worker_heartbeat import status as worker_status
 
 BACKGROUND_CREATE_RATE_LIMIT = os.environ.get("BACKGROUND_CREATE_RATE_LIMIT", "30 per minute")
 BACKGROUND_READ_RATE_LIMIT = os.environ.get("BACKGROUND_READ_RATE_LIMIT", "180 per minute")
+TURBO_GUIDANCE = (
+    "Turbo search: maximize lexical and phonetic breadth across the interpreted semantic territory. "
+    "Do not linger on one root or make tiny mutations of occupied names. The objective is strict-free yield, not a pretty brainstorm list."
+)
 
 
 def background_search_diagnostics():
@@ -42,6 +46,13 @@ def background_search_diagnostics():
             "one_root_at_a_time": True,
             "strategies": list(STRATEGIES),
             "uses_real_verification_yield": True,
+        },
+        "turbo_search": {
+            "supported": True,
+            "broad_exploration": True,
+            "primary_feed_strict_free_only": True,
+            "strict_match_policy": STRICT_MATCH_POLICY,
+            "rejected_rows_remain_durable": True,
         },
     }
 
@@ -116,8 +127,8 @@ def install_background_search_routes(app, app_module):
                 return jsonify({"error": "target_matches cannot exceed max_checks"}), 400
 
             strategy = str(data.get("search_strategy") or "procedural").strip().lower()
-            if strategy not in {"procedural", "adaptive"}:
-                return jsonify({"error": "search_strategy must be procedural or adaptive"}), 400
+            if strategy not in {"procedural", "adaptive", "turbo"}:
+                return jsonify({"error": "search_strategy must be procedural, turbo, or adaptive"}), 400
 
             search_context = dict(search_context or {})
             search_context[HUNTER_KEY] = {
@@ -126,10 +137,20 @@ def install_background_search_routes(app, app_module):
                 "max_checks": max_checks,
                 "match_policy": STRICT_MATCH_POLICY,
             }
+            search_context["search_strategy"] = strategy
             if strategy == "procedural":
                 search_context[PROCEDURAL_KEY] = {
                     "enabled": True,
                     "strategy": "procedural",
+                }
+            elif strategy == "turbo":
+                existing_guidance = str(search_context.get("guidance") or "").strip()
+                search_context["guidance"] = " | ".join(
+                    part for part in [existing_guidance, TURBO_GUIDANCE] if part
+                )[:500]
+                search_context["turbo_search"] = {
+                    "enabled": True,
+                    "strict_free_primary_feed": True,
                 }
             target_count = max_checks
 
