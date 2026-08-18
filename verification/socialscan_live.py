@@ -13,10 +13,6 @@ import availability
 from verification.providers import socialscan_adapter
 
 
-_INSTALLED = False
-_ORIGINAL_X = None
-
-
 def _from_evidence(name, evidence):
     handle = str(name).strip().lower()
     url = f"https://x.com/{handle}"
@@ -62,30 +58,20 @@ def _from_evidence(name, evidence):
     return None
 
 
-def check_x(name):
-    """Use official X API first, then Socialscan, then public-web fallback."""
-    global _ORIGINAL_X
-    original = _ORIGINAL_X or availability.check_x
-
-    # Preserve first-party semantics whenever the official API is configured.
+def enrich_x(name, legacy_row):
+    """Return a stronger conservative X row without mutating legacy globals."""
     if os.environ.get("X_BEARER_TOKEN", "").strip():
-        return original(name)
+        return legacy_row
 
     evidence = socialscan_adapter.check_username(name, "x")
     promoted = _from_evidence(name, evidence)
-    if promoted is not None:
-        return promoted
-    return original(name)
+    if promoted is None:
+        return legacy_row
+
+    # Existing positive occupancy evidence is never weakened by Socialscan.
+    if isinstance(legacy_row, dict) and legacy_row.get("status") == "taken":
+        return legacy_row
+    return promoted
 
 
-def install():
-    """Patch the legacy X checker once; safe when Socialscan is unavailable."""
-    global _INSTALLED, _ORIGINAL_X
-    if _INSTALLED:
-        return
-    _ORIGINAL_X = availability.check_x
-    availability.check_x = check_x
-    _INSTALLED = True
-
-
-__all__ = ["check_x", "install"]
+__all__ = ["enrich_x"]
