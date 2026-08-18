@@ -33,6 +33,7 @@ STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js"></script>'
 BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
+AUDIT_REPORT_TAG = '<script src="/static/audit_report.js"></script>'
 FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js"></script>'
 
 
@@ -50,6 +51,8 @@ def prevent_stale_html(response):
             tags.append(SESSION_SYNC_TAG)
         if BACKGROUND_SEARCH_TAG not in body:
             tags.append(BACKGROUND_SEARCH_TAG)
+        if AUDIT_REPORT_TAG not in body:
+            tags.append(AUDIT_REPORT_TAG)
         if FEED_NAVIGATION_TAG not in body:
             tags.append(FEED_NAVIGATION_TAG)
         if tags and "</body>" in body:
