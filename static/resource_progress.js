@@ -3,6 +3,47 @@
   const baseUiState = uiState;
   const baseBadgeLabel = badgeLabel;
   let flushPending = false;
+  let activityTimer = null;
+  let activityIndex = 0;
+
+  const activityCopy = {
+    understanding: [
+      'Інтерпретую запит',
+      'Фіксую вибрані ресурси',
+      'Відокремлюю вимоги від naming-напрямів'
+    ],
+    generating: [
+      'Формую нові варіанти',
+      'Враховую лайки, дизлайки й коментарі',
+      'Розводжу варіанти по різних naming families',
+      'Відсіюю дублікати та слабкі мутації',
+      'Ранжую кандидатів перед зовнішньою перевіркою'
+    ]
+  };
+
+  function stopActivity() {
+    if (activityTimer) clearInterval(activityTimer);
+    activityTimer = null;
+    activityIndex = 0;
+  }
+
+  function startActivity(phase, label, batchLabel) {
+    stopActivity();
+    const messages = activityCopy[phase] || [];
+    const status = document.getElementById('status');
+    if (!messages.length) {
+      status.textContent = (label || 'Працюю') + (batchLabel ? ' · партія ' + batchLabel : '');
+      return;
+    }
+    const renderActivity = () => {
+      const message = messages[activityIndex % messages.length];
+      activityIndex += 1;
+      const dots = '.'.repeat(((activityIndex - 1) % 3) + 1);
+      status.textContent = message + dots + (batchLabel ? ' · партія ' + batchLabel : '');
+    };
+    renderActivity();
+    activityTimer = setInterval(renderActivity, 1250);
+  }
 
   uiState = row => String(row?.status || '') === 'checking'
     ? { cls: 'unknown', label: 'Перевіряю…' }
@@ -167,29 +208,45 @@
     try {
       await consume(response, event => {
         if (!event || typeof event !== 'object') return;
+        if (event.type === 'fatal_error') {
+          stopActivity();
+          throw new Error(event.message || 'Тимчасова помилка генерації.');
+        }
         if (event.type === 'phase') {
-          document.getElementById('status').textContent = event.phase === 'generated'
-            ? 'Згенеровано ' + (event.total || 0) + ' · готую перевірку · партія ' + batchLabel
-            : 'Перевіряю ресурси · ' + (event.total_resource_checks || 0) + ' перевірок';
+          if (event.phase === 'understanding' || event.phase === 'generating') {
+            startActivity(event.phase, event.label, batchLabel);
+          } else if (event.phase === 'generated') {
+            stopActivity();
+            document.getElementById('status').textContent =
+              (event.label || 'Кандидати сформовані') + ' · ' + (event.total || 0) + ' · партія ' + batchLabel;
+          } else {
+            stopActivity();
+            document.getElementById('status').textContent =
+              (event.label || 'Перевіряю ресурси') + ' · ' + (event.total_resource_checks || 0) + ' перевірок';
+          }
         } else if (event.type === 'candidate') {
           added += addCandidate(event, run.id, batchNumber);
           scheduleFlush();
         } else if (event.type === 'resource') {
+          stopActivity();
           if (applyResource(event)) scheduleFlush();
           const platform = labels[event.resource] || event.resource || 'ресурс';
           document.getElementById('status').textContent = platform + ' · ' +
             (event.completed_resource_checks || 0) + '/' + (event.total_resource_checks || 0) +
             ' · у стрічці ' + current.results.length;
         } else if (event.type === 'result' && event.row) {
+          stopActivity();
           if (finishCandidate(event, run.id, batchNumber)) finalized += 1;
           scheduleFlush();
           document.getElementById('status').textContent = 'Готово кандидатів ' +
             (event.completed || finalized) + '/' + (event.total || batchCount);
         } else if (event.type === 'done') {
+          stopActivity();
           serverDone = true;
         }
       });
     } finally {
+      stopActivity();
       activeController = null;
       flushNow();
     }
@@ -234,7 +291,7 @@
         const batchCount = Math.min(BATCH_SIZE, MAX_EXTERNAL_CHECKS - (current.results.length - run.startResultCount));
         current.batchCounter = (Number(current.batchCounter) || 0) + 1;
         const globalBatch = current.batchCounter;
-        document.getElementById('status').textContent = 'Генерую · партія ' + batch + '/' + MAX_BATCHES + ' · цикл ' + globalBatch;
+        document.getElementById('status').textContent = 'Запускаю партію ' + batch + '/' + MAX_BATCHES + ' · цикл ' + globalBatch;
         const outcome = await runBatch(prompt, resources, run, globalBatch, batch + '/' + MAX_BATCHES, batchCount);
         if (stopRequested) { stopReason = 'user_stop'; break; }
         if (!outcome.added && outcome.serverDone) { stopReason = 'empty'; break; }
@@ -247,6 +304,7 @@
         ? 'Пошук на паузі. Часткові результати вже збережено.'
         : 'Поточний цикл завершено. Можеш уточнити запит і продовжити.';
     } catch (error) {
+      stopActivity();
       run.endResultCount = current.results.length;
       run.endBatch = Number(current.batchCounter) || 0;
       markInterrupted(run.id);
@@ -258,6 +316,7 @@
         document.getElementById('status').textContent = (current.results.length ? 'Пошук зупинено, часткові результати збережено. ' : '') + (error.message || 'Помилка потокової перевірки.');
       }
     } finally {
+      stopActivity();
       activeController = null;
       flushNow();
       document.getElementById('stopBtn').disabled = true;

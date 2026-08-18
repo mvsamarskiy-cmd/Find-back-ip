@@ -34,6 +34,18 @@ class StreamingUiTests(unittest.TestCase):
         self.assertIn("startSearch = async function resourceProgressSearch", source)
         self.assertIn("activeController.abort", Path("templates/index.html").read_text(encoding="utf-8"))
 
+    def test_generation_activity_is_visible_without_exposing_model_reasoning(self):
+        source = Path("static/resource_progress.js").read_text(encoding="utf-8")
+        self.assertIn("activityCopy", source)
+        self.assertIn("Інтерпретую запит", source)
+        self.assertIn("Формую нові варіанти", source)
+        self.assertIn("Враховую лайки, дизлайки й коментарі", source)
+        self.assertIn("event.type === 'fatal_error'", source)
+        self.assertIn("stopActivity", source)
+        diagnostics = app.test_client().get("/api/verification/diagnostics").get_json()
+        self.assertTrue(diagnostics["streaming_feed"]["pre_generation_phase_events"])
+        self.assertTrue(diagnostics["streaming_feed"]["operational_activity_only"])
+
 
 if __name__ == "__main__":
     unittest.main()

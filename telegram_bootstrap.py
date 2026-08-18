@@ -23,7 +23,7 @@ install_streaming_routes(app, app_module)
 install_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v7.0-durable-session-store"
+RELEASE_MARKER = "v7.1-live-search-activity"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js"></script>'
@@ -116,6 +116,8 @@ def api_verification_diagnostics():
             "newest_first_feed": True,
             "candidate_events": True,
             "resource_progress_events": True,
+            "pre_generation_phase_events": True,
+            "operational_activity_only": True,
         },
         "session_storage": session_storage_diagnostics(),
         "providers": providers,
