@@ -37,10 +37,12 @@ values. A different Railway project is not a replacement production target.
 8. After deployment, run `python verification/railway_guard.py smoke` and confirm
    Railway reports the same Git commit as GitHub `main`.
 9. If the current release breaks production, restore code with Git history: use
-   the manual `Prepare production rollback PR` workflow, which reverts exactly
-   the current `main` release on a temporary `agent/rollback-*` branch. Never
-   reset or force-push `main`; the rollback must pass CI, merge normally, deploy,
-   and pass the same production smoke check.
+   the manual `Prepare production rollback PR` workflow. It reverts exactly the
+   current `main` release, proves that the restored tree equals the previous
+   release, runs the release verification commands, and only then pushes a
+   temporary `agent/rollback-*` branch and opens a PR. Never reset or force-push
+   `main`; merge the verified rollback normally and run the same production smoke
+   check after deployment.
 10. Run `python verification/railway_guard.py audit` whenever Railway access is
     established. It reports other projects attached to this repository but never
     deletes them automatically.
