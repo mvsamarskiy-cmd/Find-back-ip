@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import unicodedata
@@ -36,6 +37,15 @@ DEFAULT_GENERATION_CONTEXT = {
     "successful_names": [],
 }
 
+GENERATION_FAMILIES = {
+    "semantic_compound": "direct semantic compounds grounded in the brief",
+    "evocative_metaphor": "evocative metaphors with a defensible connection to the brief",
+    "root_blend": "root blends or portmanteaus that remain easy to spell",
+    "invented_phonetic": "invented phonetic names with natural syllables",
+    "abstract": "short abstract names that can acquire brand meaning",
+}
+GENERATION_FAMILY_KEYS = tuple(GENERATION_FAMILIES)
+
 
 SYSTEM_PROMPT = """You are a rigorous international naming and digital-identity strategist.
 Generate candidates for the exact entity, audience, market, language, purpose,
@@ -48,22 +58,15 @@ When prior batches are supplied, never recycle excluded names or create trivial
 one-letter/one-suffix mutations of conflict names. If conflicts dominate a prior
 batch, deliberately move into different semantic roots, metaphors, phonetic
 structures, and naming families rather than staying in the saturated neighborhood.
-When an existing brand is locked, generate resource-identifier stems tied to that
-brand instead of inventing a replacement brand. Brand DNA is bounded context
-produced from user-supplied sources, not an availability claim. Never claim
-trademark, domain, company, website, or handle availability. Explain every
-candidate in Ukrainian and report possible negative meanings and pronunciation
-concerns honestly. Candidate names must contain only ASCII Latin letters A-Z: no
-spaces, hyphens, apostrophes, digits, diacritics, or Cyrillic."""
-
-
-GENERATION_FAMILIES = (
-    "direct semantic compounds grounded in the brief",
-    "evocative metaphors with a defensible connection to the brief",
-    "root blends or portmanteaus that remain easy to spell",
-    "invented phonetic names with natural syllables",
-    "short abstract names that can acquire brand meaning",
-)
+Distribute candidates across the requested naming families instead of producing a
+suffix monoculture. Label every candidate with its actual naming family. When an
+existing brand is locked, generate resource-identifier stems tied to that brand
+instead of inventing a replacement brand. Brand DNA is bounded context produced
+from user-supplied sources, not an availability claim. Never claim trademark,
+domain, company, website, or handle availability. Explain every candidate in
+Ukrainian and report possible negative meanings and pronunciation concerns
+honestly. Candidate names must contain only ASCII Latin letters A-Z: no spaces,
+hyphens, apostrophes, digits, diacritics, or Cyrillic."""
 
 
 SCHEMA = {
@@ -75,11 +78,12 @@ SCHEMA = {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"},
+                    "family": {"type": "string", "enum": list(GENERATION_FAMILY_KEYS)},
                     "reason": {"type": "string"},
                     "pronunciation": {"type": "string"},
                     "language_risks": {"type": "array", "items": {"type": "string"}},
                 },
-                "required": ["name", "reason", "pronunciation", "language_risks"],
+                "required": ["name", "family", "reason", "pronunciation", "language_risks"],
                 "additionalProperties": False,
             },
         }
@@ -166,12 +170,7 @@ def _bounded_names(value, limit):
 def clean_generation_context(value):
     """Bound cross-batch memory so repeated search stays predictable and cheap."""
     if value is None:
-        return {
-            "batch_number": 1,
-            "exclude_names": [],
-            "conflict_names": [],
-            "successful_names": [],
-        }
+        return dict(DEFAULT_GENERATION_CONTEXT)
     if not isinstance(value, dict):
         raise ValueError("generation_context must be an object")
     try:
@@ -188,8 +187,6 @@ def clean_generation_context(value):
 
 def generation_context_prompt(value):
     context = clean_generation_context(value)
-    conflicts = context["conflict_names"]
-    successes = context["successful_names"]
     rule = (
         "This is the first batch. Explore broadly across the available naming families."
         if context["batch_number"] == 1
@@ -205,8 +202,8 @@ def generation_context_prompt(value):
         {
             "batch_number": context["batch_number"],
             "excluded_names": context["exclude_names"],
-            "conflict_examples": conflicts,
-            "successful_examples": successes,
+            "conflict_examples": context["conflict_names"],
+            "successful_examples": context["successful_names"],
             "adaptation_rule": rule,
         },
         ensure_ascii=False,
@@ -254,19 +251,60 @@ def _phonetic_signature(value):
     return collapsed[0] + consonants
 
 
+def _visual_signature(value):
+    """Normalize a few common Latin-letter visual confusions conservatively."""
+    name = _normalized_name(value)
+    if not name:
+        return ""
+    name = name.replace("rn", "m").replace("vv", "w")
+    return re.sub(r"(.)\1+", r"\1", name)
+
+
+def _edit_distance(left, right, limit=2):
+    """Small bounded Levenshtein distance used only for near-duplicate rejection."""
+    a, b = _normalized_name(left), _normalized_name(right)
+    if abs(len(a) - len(b)) > limit:
+        return limit + 1
+    previous = list(range(len(b) + 1))
+    for i, char_a in enumerate(a, 1):
+        current = [i]
+        row_min = i
+        for j, char_b in enumerate(b, 1):
+            value = min(
+                current[-1] + 1,
+                previous[j] + 1,
+                previous[j - 1] + (char_a != char_b),
+            )
+            current.append(value)
+            row_min = min(row_min, value)
+        if row_min > limit:
+            return limit + 1
+        previous = current
+    return previous[-1]
+
+
 def _too_similar(left, right):
     a, b = _normalized_name(left), _normalized_name(right)
     if not a or not b:
         return True
     if a == b:
         return True
+    if min(len(a), len(b)) >= 5 and _edit_distance(a, b, 1) <= 1:
+        return True
     if abs(len(a) - len(b)) <= 1 and SequenceMatcher(None, a, b).ratio() >= 0.84:
         return True
     signature_a, signature_b = _phonetic_signature(a), _phonetic_signature(b)
-    return (
+    if (
         len(a) >= 5
         and len(b) >= 5
         and signature_a == signature_b
+        and abs(len(a) - len(b)) <= 2
+    ):
+        return True
+    visual_a, visual_b = _visual_signature(a), _visual_signature(b)
+    return (
+        min(len(a), len(b)) >= 5
+        and visual_a == visual_b
         and abs(len(a) - len(b)) <= 2
     )
 
@@ -288,21 +326,30 @@ def _is_allowed_name(value, search_context=None):
 
 
 def select_diverse_names(candidates, count, search_context=None, exclude_names=None):
-    """Keep valid candidates while removing exact/near duplicates across batches."""
+    """Keep valid candidates while enforcing cross-batch and family diversity."""
     selected = []
     blocked = _bounded_names(exclude_names, 100)
+    family_counts = {family: 0 for family in GENERATION_FAMILY_KEYS}
+    family_cap = max(2, math.ceil(max(1, count) / 3))
+
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
         name = str(candidate.get("name", "")).strip()
+        family = str(candidate.get("family", "")).strip()
         if not _is_allowed_name(name, search_context):
             continue
         if any(_too_similar(name, old) for old in blocked):
             continue
         if any(_too_similar(name, row["name"]) for row in selected):
             continue
+        if family in family_counts and family_counts[family] >= family_cap:
+            continue
         clean = dict(candidate)
         clean["name"] = name
+        if family in family_counts:
+            clean["family"] = family
+            family_counts[family] += 1
         selected.append(clean)
         if len(selected) >= count:
             break
@@ -313,23 +360,29 @@ def _generation_plan(count, search_context=None, generation_context=None):
     context = clean_search_context(search_context)
     adaptive = clean_generation_context(generation_context)
     pool_size = min(40, max(count + 8, count * 2))
+    families = "\n".join(
+        f"- {key}: {description}" for key, description in GENERATION_FAMILIES.items()
+    )
     if context["mode"] == "new_brand":
-        families = "\n".join(f"- {family}" for family in GENERATION_FAMILIES)
         rules = (
-            "Diversify the pool evenly across these naming families:\n"
+            "Diversify the pool across these naming families and label each candidate "
+            "with the matching family key:\n"
             f"{families}\n"
-            "Avoid repeated suffixes, one-letter variants, and names with the same "
-            "consonant skeleton. Do not repeat a candidate in another spelling.\n"
+            "Do not let one family dominate the pool. Avoid repeated suffixes, "
+            "one-letter variants, visually confusable variants, and names with the "
+            "same consonant skeleton. Do not repeat a candidate in another spelling.\n"
             f"Forbidden roots anywhere in a name: {', '.join(sorted(BANNED_ROOTS))}.\n"
             f"Forbidden endings: {', '.join(sorted(BANNED_SUFFIXES))}."
         )
     else:
         rules = (
-            "Generate diverse digital-identity variants for the existing brand. "
+            "Generate diverse digital-identity variants for the existing brand and "
+            "still distribute them across the available naming-family labels below:\n"
+            f"{families}\n"
             "Use meaningful prefixes, suffixes, compounds, or concise brand-linked "
             "forms instead of one-letter mutations. Do not apply the new-brand "
             "blacklist to words already present in an established brand. Avoid "
-            "repeated suffixes and near-duplicate spellings."
+            "repeated suffixes, visual near-duplicates, and phonetic near-duplicates."
         )
     if adaptive["batch_number"] > 1:
         rules += (
