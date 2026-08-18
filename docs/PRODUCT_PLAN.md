@@ -102,9 +102,13 @@ No estimated monetary value is shown without comparable market sales.
 - [x] Split results into `conflict` and `opportunity` columns while preserving an
   explicit unresolved state; each main column has an independent resource filter,
   and the opportunity column also filters confirmed vs promising evidence.
-- [ ] Generate diversified local candidate families outside OpenAI. AI candidates
-  are now explicitly family-labelled; fully local semantic family generation is
-  still pending.
+- [x] Implement a bounded deterministic local lexical-family expander outside
+  OpenAI. It extracts literal roots from the brief/Brand DNA and creates semantic
+  compounds, substantial root blends, and midpoint phonetic blends without
+  one-letter typo mutation spam.
+- [ ] Feed the local lexical-family pool into the production shortlist before
+  external checks. The primitive is implemented and tested separately first so
+  the release remains behaviorally isolated.
 - [ ] Funnel: 20,000 -> 6,000 structural -> 1,500 linguistic -> 300 collision ->
   100 external checks -> 20 final reports. A deterministic structural quality
   prefilter now ranks the bounded AI pool before external checks; scaling the
