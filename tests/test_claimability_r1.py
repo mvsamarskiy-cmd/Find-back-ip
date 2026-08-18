@@ -8,7 +8,15 @@ from verification.diagnostics import provider_diagnostics
 
 
 class TelegramStrictClaimabilityTests(unittest.TestCase):
-    def envelope(self, claim_status=None, *, mtproto="not_found", fragment="not_found", method="account.checkUsername"):
+    def envelope(
+        self,
+        claim_status=None,
+        *,
+        mtproto="not_found",
+        fragment="not_found",
+        method="channels.checkUsername",
+        scope="channel",
+    ):
         evidence = {
             "username": "example",
             "mtproto": {"status": mtproto, "detail": "mt"},
@@ -22,7 +30,7 @@ class TelegramStrictClaimabilityTests(unittest.TestCase):
             evidence["claimability"] = {
                 "status": claim_status,
                 "method": method,
-                "scope": "account",
+                "scope": scope,
                 "detail": "direct Telegram check",
             }
         return {"transport_status": "ok", "evidence": evidence}
@@ -34,14 +42,15 @@ class TelegramStrictClaimabilityTests(unittest.TestCase):
             "fragment": {"status": "not_found"},
             "claimability": {
                 "status": "claimable",
-                "method": "account.checkUsername",
-                "scope": "account",
+                "method": "channels.checkUsername",
+                "scope": "channel",
                 "detail": "available",
             },
         }
         result = telegram_evidence._normalize_payload(payload, "example")
         self.assertEqual(result["claimability"]["status"], "claimable")
-        self.assertEqual(result["claimability"]["method"], "account.checkUsername")
+        self.assertEqual(result["claimability"]["method"], "channels.checkUsername")
+        self.assertEqual(result["claimability"]["scope"], "channel")
 
     def test_contract_rejects_unknown_claimability_method(self):
         payload = {
@@ -57,13 +66,26 @@ class TelegramStrictClaimabilityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "claimability method"):
             telegram_evidence._normalize_payload(payload, "example")
 
-    def test_direct_checkusername_success_is_strict_claimable(self):
+    def test_channel_checkusername_success_is_strict_claimable(self):
         result = telegram_integration.classify_telegram_evidence(
             "Example", self.envelope("claimable")
         )
         self.assertEqual(result["status"], "claimable")
         self.assertEqual(result["claimability"], "confirmed")
-        self.assertEqual(result["method"], "account.checkUsername")
+        self.assertEqual(result["method"], "channels.checkUsername")
+
+    def test_account_scope_success_is_not_strict_green(self):
+        result = telegram_integration.classify_telegram_evidence(
+            "Example",
+            self.envelope(
+                "claimable",
+                method="account.checkUsername",
+                scope="account",
+            ),
+        )
+        self.assertEqual(result["status"], "not_found")
+        self.assertEqual(result["claimability"], "unconfirmed")
+        self.assertNotEqual(result["status"], "claimable")
 
     def test_claimable_conflicting_with_fragment_sale_fails_closed(self):
         result = telegram_integration.classify_telegram_evidence(
@@ -116,6 +138,10 @@ class ClaimabilityDiagnosticsTests(unittest.TestCase):
         result = provider_diagnostics()
         self.assertTrue(result["domain"]["registrar"]["can_confirm_claimability"])
         self.assertTrue(result["telegram"]["authoritative_claimability"])
+        self.assertEqual(
+            result["telegram"]["evidence_service"]["strict_green_scope"],
+            "channel",
+        )
         text = str(result)
         self.assertNotIn("name-secret", text)
         self.assertNotIn("telegram-secret", text)

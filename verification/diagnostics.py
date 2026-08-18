@@ -59,7 +59,9 @@ def provider_diagnostics():
             "evidence_service": {
                 "configured": telegram_evidence,
                 "required_env": ["TELEGRAM_EVIDENCE_URL", "TELEGRAM_EVIDENCE_TOKEN"],
-                "claimability_contract": "checkUsername-v1",
+                "claimability_contract": "channels.checkUsername-v2",
+                "strict_green_scope": "channel",
+                "strict_green_method": "channels.checkUsername",
                 "can_accept_authoritative_claimability": telegram_evidence,
             },
             "authoritative_claimability": telegram_evidence,
