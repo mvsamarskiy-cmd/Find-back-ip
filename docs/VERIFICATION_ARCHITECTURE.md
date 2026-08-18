@@ -33,7 +33,7 @@ for occupancy or claimability.
 
 | Resource | Best exact-handle evidence | Meaning of a miss | Production requirement |
 |---|---|---|---|
-| `.com` | Verisign RDAP, then registrar availability | likely unregistered, not yet purchasable-confirmed | registrar API for final confirmation |
+| `.com` | Verisign RDAP, then Name.com Core API Check Availability | likely unregistered until the registrar responds | `NAMECOM_USERNAME` and `NAMECOM_API_TOKEN` |
 | YouTube | Data API `channels.list(forHandle=...)` | no channel found; claimability still unconfirmed | `YOUTUBE_API_KEY` |
 | X | API v2 user lookup by username | no user found; reserved/suspended remains possible | `X_BEARER_TOKEN` and eligible plan |
 | Telegram | MTProto `contacts.resolveUsername` | not occupied, but may be reserved/premium/Fragment | isolated Telegram service and account session |
@@ -62,6 +62,13 @@ Every result includes `occupancy`, `claimability`, `source`, `method`,
 compatibility alias for `claimable_count + purchasable_count`; `not_found` is
 never included in it.
 
+For `.com`, `RDAP 200` is immediately `taken`. `RDAP 404` triggers the official
+Name.com registration-only check when both credentials exist. A standard
+registration is `claimable`; a premium or non-standard authoritative offer is
+`purchasable`. Authentication failures, rate limits, malformed results, and a
+registrar refusal to offer registration never become actionable. The returned
+offer contains only documented purchase fields and never credentials.
+
 ## Search and OpenAI research
 
 Use Brave Search as an independent current web index and optionally Google
@@ -81,6 +88,6 @@ check fast, inexpensive, and resilient.
 2. UI evidence drawer and contradiction warnings.
 3. Search-index collision report for finalists.
 4. OpenAI cited synthesis for finalists.
-5. Isolated Telegram MTProto/Fragment service.
-6. Registrar confirmation and manual claim checklist.
+5. Name.com registrar confirmation and manual claim checklist.
+6. Isolated Telegram MTProto/Fragment service.
 7. Queue, cache, circuit breakers, observability, and load tests before scale.

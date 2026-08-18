@@ -157,5 +157,8 @@ class AppTests(unittest.TestCase):
         self.assertIn("НЕ ЗНАЙДЕНО", body)
         self.assertIn("докази перевірки", body)
         self.assertIn("NOT FOUND означає лише", body)
+        self.assertIn("AI brand discovery · v4.5", body)
+        self.assertIn("Name.com", body)
+        self.assertIn("offerEvidence", body)
         self.assertNotIn("підтверджено вільних", body)
         self.assertIn("jsonResponse", body)

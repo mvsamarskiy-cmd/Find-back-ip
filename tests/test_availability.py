@@ -16,14 +16,17 @@ except ModuleNotFoundError:
         RequestException=RequestException,
         Timeout=Timeout,
         get=lambda *args, **kwargs: None,
+        post=lambda *args, **kwargs: None,
     )
     sys.modules["requests"] = requests
 
 import availability
 
 
-def response(status_code, text=""):
-    return SimpleNamespace(status_code=status_code, text=text)
+def response(status_code, text="", payload=None):
+    value = SimpleNamespace(status_code=status_code, text=text)
+    value.json = lambda: payload
+    return value
 
 
 class AvailabilityTests(unittest.TestCase):
@@ -56,15 +59,130 @@ class AvailabilityTests(unittest.TestCase):
         self.assertEqual(not_found["claimability"], "unconfirmed")
         self.assertEqual(claimable["claimability"], "confirmed")
 
+    @patch.dict("availability.os.environ", {}, clear=True)
+    @patch("availability.requests.post")
     @patch("availability.requests.get", return_value=response(404))
-    def test_com_404_is_not_found_not_claimable(self, _get):
+    def test_com_404_without_registrar_credentials_is_not_found(self, _get, post):
         result = availability.check_com("Example")
         self.assertEqual(result["status"], "not_found")
         self.assertEqual(result["claimability"], "unconfirmed")
+        post.assert_not_called()
 
+    @patch.dict(
+        "availability.os.environ",
+        {"NAMECOM_USERNAME": "api-user", "NAMECOM_API_TOKEN": "secret-token"},
+        clear=True,
+    )
+    @patch("availability.requests.post")
+    @patch("availability.requests.get", return_value=response(404))
+    def test_com_standard_registration_is_claimable(self, _get, post):
+        post.return_value = response(200, payload={"results": [{
+            "domainName": "example.com",
+            "purchasable": True,
+            "purchaseType": "registration",
+            "purchasePrice": 10.99,
+            "renewalPrice": 12.99,
+        }]})
+        result = availability.check_com("Example")
+        self.assertEqual(result["status"], "claimable")
+        self.assertEqual(result["claimability"], "confirmed")
+        self.assertEqual(result["source"], "namecom_core_api")
+        self.assertEqual(result["occupancy"], "not_found")
+        self.assertEqual(result["offer"]["purchase_type"], "registration")
+        self.assertEqual(result["offer"]["purchase_price"], 10.99)
+        post.assert_called_once_with(
+            availability.NAMECOM_CHECK_URL,
+            auth=("api-user", "secret-token"),
+            json={"domainNames": ["example.com"], "purchaseType": "registration"},
+            timeout=availability.HTTP_TIMEOUT,
+            headers={
+                "User-Agent": availability.USER_AGENT,
+                "Content-Type": "application/json",
+            },
+        )
+
+    @patch.dict(
+        "availability.os.environ",
+        {"NAMECOM_USERNAME": "api-user", "NAMECOM_API_TOKEN": "secret-token"},
+        clear=True,
+    )
+    @patch("availability.requests.post")
+    @patch("availability.requests.get", return_value=response(404))
+    def test_com_premium_registration_is_purchasable(self, _get, post):
+        post.return_value = response(200, payload={"results": [{
+            "domainName": "example.com",
+            "purchasable": True,
+            "purchaseType": "registration",
+            "premium": True,
+            "purchasePrice": 2499.0,
+        }]})
+        result = availability.check_com("Example")
+        self.assertEqual(result["status"], "purchasable")
+        self.assertEqual(result["claimability"], "purchase_available")
+        self.assertTrue(result["offer"]["premium"])
+
+    @patch.dict(
+        "availability.os.environ",
+        {"NAMECOM_USERNAME": "api-user", "NAMECOM_API_TOKEN": "secret-token"},
+        clear=True,
+    )
+    @patch("availability.requests.post")
+    @patch("availability.requests.get", return_value=response(404))
+    def test_com_registrar_nonpurchase_is_conservative_unknown(self, _get, post):
+        post.return_value = response(200, payload={"results": [{
+            "domainName": "example.com",
+            "reason": "Not offered for registration",
+        }]})
+        result = availability.check_com("Example")
+        self.assertEqual(result["status"], "unknown")
+        self.assertEqual(result["occupancy"], "not_found")
+        self.assertEqual(result["claimability"], "unconfirmed")
+
+    @patch.dict(
+        "availability.os.environ",
+        {"NAMECOM_USERNAME": "api-user", "NAMECOM_API_TOKEN": "secret-token"},
+        clear=True,
+    )
+    @patch("availability.requests.post", return_value=response(429))
+    @patch("availability.requests.get", return_value=response(404))
+    def test_com_registrar_rate_limit_is_explicit(self, _get, _post):
+        result = availability.check_com("Example")
+        self.assertEqual(result["status"], "rate_limited")
+        self.assertEqual(result["source"], "namecom_core_api")
+
+    @patch.dict(
+        "availability.os.environ",
+        {"NAMECOM_USERNAME": "api-user", "NAMECOM_API_TOKEN": "secret-token"},
+        clear=True,
+    )
+    @patch("availability.requests.post", return_value=response(401))
+    @patch("availability.requests.get", return_value=response(404))
+    def test_com_registrar_auth_error_does_not_leak_credentials(self, _get, _post):
+        result = availability.check_com("Example")
+        self.assertEqual(result["status"], "unknown")
+        self.assertNotIn("secret-token", str(result))
+        self.assertNotIn("api-user", str(result))
+
+    @patch.dict(
+        "availability.os.environ",
+        {"NAMECOM_USERNAME": "api-user", "NAMECOM_API_TOKEN": "secret-token"},
+        clear=True,
+    )
+    @patch("availability.requests.post", return_value=response(200, payload={"results": []}))
+    @patch("availability.requests.get", return_value=response(404))
+    def test_com_registrar_missing_exact_domain_is_unknown(self, _get, _post):
+        self.assertEqual(availability.check_com("Example")["status"], "unknown")
+
+    @patch.dict(
+        "availability.os.environ",
+        {"NAMECOM_USERNAME": "api-user", "NAMECOM_API_TOKEN": "secret-token"},
+        clear=True,
+    )
+    @patch("availability.requests.post")
     @patch("availability.requests.get", return_value=response(200))
-    def test_com_200_is_taken(self, _get):
+    def test_com_200_is_taken_without_registrar_call(self, _get, post):
         self.assertEqual(availability.check_com("Example")["status"], "taken")
+        post.assert_not_called()
 
     @patch("availability.requests.get", return_value=response(200, "login page"))
     def test_instagram_generic_200_is_unknown(self, _get):

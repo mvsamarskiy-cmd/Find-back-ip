@@ -1,7 +1,7 @@
 # NameMachine implementation status
 
-Verified against GitHub `main` commit `043717542c9ad71174a14ffafe3074766a7d850e`
-and the Railway deployment of the same commit on 2026-08-17/18.
+Updated for the registrar-confirmation release prepared from GitHub `main`
+commit `ba11e8f90a5c2143a3fad7dd43240e7be41dee9c` on 2026-08-18.
 
 This file records what exists now. `PRODUCT_PLAN.md` remains the implementation
 order for unfinished work.
@@ -20,6 +20,7 @@ order for unfinished work.
 | Evidence envelope and optional official YouTube/X adapters | PR #9 | Included |
 | Evidence-correct status vocabulary and ranking | Phase 2.1 release | Included |
 | Single UI source of truth | Phase 2.1 release | Obsolete embedded v4.2 UI removed; `templates/index.html` is canonical |
+| Name.com confirmation after `.com` RDAP screening | Current registrar release | Implemented and tested; production credentials and live actionable proof remain pending |
 | API, browser-history, dependency, and security stabilization | PR #10 | Included |
 | AI/check rate limits and bounded AI concurrency | PR #11 | Included |
 | Clear UI handling of HTML/5xx responses | PR #13 | Included |
@@ -29,9 +30,10 @@ order for unfinished work.
 
 - Phase 1 is complete.
 - Phase 2 is partially complete: the full evidence status vocabulary, metadata,
-  conservative `not_found` handling, deterministic tests, and optional official
-  YouTube/X adapters exist. Registrar confirmation, Telegram MTProto, and
-  Fragment classification are not implemented.
+  conservative `not_found` handling, deterministic tests, optional official
+  YouTube/X adapters, and the optional Name.com registration adapter exist.
+  Production Name.com credentials and a live actionable proof are pending;
+  Telegram MTProto and Fragment classification are not implemented.
 - Phase 3 is partially complete: bounded multi-family generation and basic
   deduplication exist. Brand DNA, the 20,000-candidate funnel, full component
   scoring, and required-resource ranking are not implemented.
@@ -58,9 +60,9 @@ order for unfinished work.
 
 ## Next implementation order
 
-1. Finish Phase 2 correctness and evidence states.
-2. Add durable PostgreSQL history with idempotency before scaling generation.
-3. Implement the mathematical generation funnel in small, independently tested
+1. Activate Name.com in production and capture a live registrar-confirmed result.
+2. Design the isolated Telegram MTProto/Fragment service.
+3. Add durable PostgreSQL history with idempotency before scaling generation.
+4. Implement the mathematical generation funnel in small, independently tested
    releases.
-4. Add the queue, progressive jobs, metrics, and alerts.
-5. Design secure Telegram authorization before any MTProto or Fragment work.
+5. Add the queue, progressive jobs, metrics, and alerts.

@@ -1,4 +1,4 @@
-# NameMachine v4.4
+# NameMachine v4.5
 
 Deploy-ready Flask application for generating and screening international brand-name candidates.
 
@@ -18,6 +18,13 @@ miss but never counts as claimable. Only direct registration or purchase evidenc
 may produce `claimable` or `purchasable`. Social checks are best-effort, and
 trademark links are research aids rather than legal clearance.
 
+For `.com`, Verisign RDAP is always checked first. When `NAMECOM_USERNAME` and
+`NAMECOM_API_TOKEN` are both configured, an RDAP miss is followed by Name.com's
+official Core API Check Availability endpoint with `purchaseType=registration`.
+A standard registration becomes `claimable`; a premium or other authoritative
+purchase path becomes `purchasable`. Missing credentials retain the conservative
+`not_found` result, while registrar errors remain non-actionable.
+
 The staged implementation and reliability requirements are documented in
 [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md).
 
@@ -25,12 +32,20 @@ The staged implementation and reliability requirements are documented in
 
 1. Install dependencies: `pip install -r requirements.txt`
 2. Set `OPENAI_API_KEY` for AI generation.
-3. Optionally set `OPENAI_MODEL`, `HTTP_TIMEOUT`, and `AVAILABILITY_WORKERS`.
-4. Run `python app.py`.
+3. Optionally set `NAMECOM_USERNAME` and `NAMECOM_API_TOKEN` for direct `.com`
+   registration confirmation.
+4. Optionally set `OPENAI_MODEL`, `HTTP_TIMEOUT`, and `AVAILABILITY_WORKERS`.
+5. Run `python app.py`.
 
 ## Railway
 
-Deploy the `main` branch and set `OPENAI_API_KEY` as a Railway environment variable. Railway uses `railway.json` to start Gunicorn with the checked-in `gunicorn.conf.py`; the default 180-second worker timeout leaves enough time for multi-candidate AI responses. Railway supplies `PORT`. `GUNICORN_TIMEOUT` can override the default without changing the start command.
+Deploy the `main` branch and set `OPENAI_API_KEY` as a Railway environment variable.
+Set `NAMECOM_USERNAME` and `NAMECOM_API_TOKEN` together to activate authoritative
+`.com` registration confirmation; neither value is returned to clients. Railway
+uses `railway.json` to start Gunicorn with the checked-in `gunicorn.conf.py`; the
+default 180-second worker timeout leaves enough time for multi-candidate AI
+responses. Railway supplies `PORT`. `GUNICORN_TIMEOUT` can override the default
+without changing the start command.
 
 ### API protection
 
