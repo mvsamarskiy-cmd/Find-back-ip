@@ -1,8 +1,8 @@
 """Conservative live promotion for benchmarked Socialscan evidence.
 
-X keeps the existing behavior. Instagram is positive-only: Socialscan may
-strengthen exact occupied/invalid evidence, but availability/absence responses
-never override the legacy Instagram result and never become claimable.
+Only X is promoted in production. Socialscan's Instagram signal is intentionally
+benchmark-only because repeated live runs have been inconsistent. Therefore no
+Instagram evidence from this module can affect production availability.
 """
 
 import os
@@ -11,14 +11,9 @@ import availability
 from verification.providers import socialscan_adapter
 
 
-def _from_evidence(name, evidence, platform):
+def _from_evidence(name, evidence):
     handle = str(name).strip().lower()
-    platform = str(platform).strip().lower()
-    url = {
-        "x": f"https://x.com/{handle}",
-        "instagram": f"https://www.instagram.com/{handle}/",
-    }[platform]
-    label = "X" if platform == "x" else "Instagram"
+    url = f"https://x.com/{handle}"
     signal = str((evidence or {}).get("signal") or "unknown")
     confidence = float((evidence or {}).get("confidence") or 0.0)
     detail = str((evidence or {}).get("detail") or "")[:300]
@@ -26,7 +21,7 @@ def _from_evidence(name, evidence, platform):
     if signal == "exists":
         return availability._result(
             "taken",
-            detail or f"Socialscan registration probe reports this {label} username is occupied",
+            detail or "Socialscan registration probe reports this X username is occupied",
             url,
             source="socialscan",
             method="registration_probe",
@@ -37,7 +32,7 @@ def _from_evidence(name, evidence, platform):
     if signal == "invalid":
         return availability._result(
             "invalid",
-            detail or f"Socialscan reports this {label} username is invalid",
+            detail or "Socialscan reports this X username is invalid",
             url,
             source="socialscan",
             method="registration_probe",
@@ -45,7 +40,7 @@ def _from_evidence(name, evidence, platform):
             occupancy="unknown",
             claimability="not_claimable",
         )
-    if signal == "claimable" and platform == "x":
+    if signal == "claimable":
         # Deliberately *not* `claimable`: free-handle precision has not been
         # benchmarked and Socialscan uses undocumented registration paths.
         return availability._result(
@@ -67,7 +62,7 @@ def enrich_x(name, legacy_row):
         return legacy_row
 
     evidence = socialscan_adapter.check_username(name, "x")
-    promoted = _from_evidence(name, evidence, "x")
+    promoted = _from_evidence(name, evidence)
     if promoted is None:
         return legacy_row
     if isinstance(legacy_row, dict) and legacy_row.get("status") == "taken":
@@ -75,20 +70,4 @@ def enrich_x(name, legacy_row):
     return promoted
 
 
-def enrich_instagram(name, legacy_row):
-    """Use Socialscan only as positive Instagram occupancy evidence.
-
-    The provider has been inconsistent across live runs for Instagram. Therefore
-    `exists`/`invalid` can strengthen the result, while claimable/absent/unknown
-    evidence leaves the existing Instagram checker untouched.
-    """
-    evidence = socialscan_adapter.check_username(name, "instagram")
-    promoted = _from_evidence(name, evidence, "instagram")
-    if promoted is None:
-        return legacy_row
-    if isinstance(legacy_row, dict) and legacy_row.get("status") == "taken":
-        return legacy_row
-    return promoted
-
-
-__all__ = ["enrich_x", "enrich_instagram"]
+__all__ = ["enrich_x"]
