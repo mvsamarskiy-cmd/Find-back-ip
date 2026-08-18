@@ -1,0 +1,42 @@
+name: Production Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_release:
+        description: Optional exact /api/version release marker
+        required: false
+        type: string
+      require_worker:
+        description: Require background worker online and ready
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run canonical production canary
+        shell: bash
+        env:
+          EXPECTED_RELEASE: ${{ inputs.expected_release }}
+          REQUIRE_WORKER: ${{ inputs.require_worker }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ -n "$EXPECTED_RELEASE" ]]; then
+            args+=(--expected-release "$EXPECTED_RELEASE")
+          fi
+          if [[ "$REQUIRE_WORKER" == "true" ]]; then
+            args+=(--require-worker)
+          fi
+          python verification/production_canary.py "${args[@]}"
