@@ -11,27 +11,46 @@ STOPWORDS = frozenset({
     "into", "name", "need", "project", "service", "that", "their", "them",
     "this", "want", "with", "your", "для", "бренд", "назва", "назву", "проєкт",
     "проект", "сервіс", "хочу", "щоб", "який", "яка", "яке", "такий", "таке",
+    "і", "та", "або", "це", "цей", "ця", "мої", "моя", "мій", "якийсь",
 })
+
+CYRILLIC_LATIN = {
+    "а": "a", "б": "b", "в": "v", "г": "h", "ґ": "g", "д": "d",
+    "е": "e", "є": "ye", "ё": "yo", "ж": "zh", "з": "z", "и": "y",
+    "і": "i", "ї": "yi", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t",
+    "у": "u", "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh",
+    "щ": "shch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu",
+    "я": "ya",
+}
 
 
 def _letters(value):
     return re.sub(r"[^a-z]", "", str(value).lower())
 
 
-def _ascii_tokens(value):
-    return [
-        token.lower()
-        for token in re.findall(r"[A-Za-z]{3,14}", str(value or ""))
-        if token.lower() not in STOPWORDS
-    ]
+def _transliterate(value):
+    return "".join(CYRILLIC_LATIN.get(char, char) for char in str(value).lower())
+
+
+def _seed_tokens(value):
+    tokens = []
+    for raw in re.findall(r"[A-Za-zА-Яа-яІіЇїЄєҐґЁё]{3,18}", str(value or "")):
+        lowered = raw.lower()
+        if lowered in STOPWORDS:
+            continue
+        token = _letters(_transliterate(lowered))
+        if 3 <= len(token) <= 14 and token not in STOPWORDS:
+            tokens.append(token)
+    return tokens
 
 
 def lexical_seeds(brief="", brand_dna=None, limit=18):
     """Extract a bounded set of literal lexical seeds from user-controlled context.
 
-    This intentionally does not invent synonyms. It expands only words that are
-    already present in the brief or structured Brand DNA, keeping the local stage
-    deterministic and auditable.
+    Latin roots are preserved and Cyrillic roots are deterministically
+    transliterated. The function does not invent synonyms: every root still comes
+    from the brief or structured Brand DNA, keeping the local stage auditable.
     """
     values = [brief]
     if isinstance(brand_dna, dict):
@@ -48,7 +67,7 @@ def lexical_seeds(brief="", brand_dna=None, limit=18):
     seeds = []
     seen = set()
     for value in values:
-        for token in _ascii_tokens(value):
+        for token in _seed_tokens(value):
             if token in seen:
                 continue
             seen.add(token)
