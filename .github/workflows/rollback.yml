@@ -1,0 +1,81 @@
+name: Prepare production rollback PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Optional reason for the rollback
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: production-rollback
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+
+      - name: Create a one-release revert branch
+        id: rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bad_sha="$(git rev-parse HEAD)"
+          parent_count="$(git rev-list --parents -n 1 HEAD | awk '{print NF-1}')"
+          if [[ "$parent_count" -ne 1 ]]; then
+            echo "Refusing rollback: current main must have exactly one parent." >&2
+            exit 1
+          fi
+
+          parent_sha="$(git rev-parse HEAD^)"
+          short="${bad_sha:0:8}"
+          branch="agent/rollback-${short}-${GITHUB_RUN_ID}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git revert --no-edit "$bad_sha"
+          git push origin "$branch"
+
+          {
+            echo "branch=$branch"
+            echo "bad_sha=$bad_sha"
+            echo "parent_sha=$parent_sha"
+            echo "short=$short"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open rollback PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.rollback.outputs.branch }}
+          BAD_SHA: ${{ steps.rollback.outputs.bad_sha }}
+          PARENT_SHA: ${{ steps.rollback.outputs.parent_sha }}
+          SHORT_SHA: ${{ steps.rollback.outputs.short }}
+          REASON: ${{ inputs.reason }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          reason="${REASON:-Not provided}"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "Rollback ${SHORT_SHA}" \
+            --body "Automated rollback candidate for the current production release.
+
+Bad release: \`$BAD_SHA\`
+Restores the code state before that release: \`$PARENT_SHA\`
+Reason: $reason
+
+This does not rewrite Git history and does not bypass CI. Merge only after checks are green. After Railway deploys the revert commit, run the normal production smoke check."
