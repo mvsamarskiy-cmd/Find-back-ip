@@ -8,6 +8,8 @@ Deploy-ready Flask application for generating and screening international brand-
 - selectable concurrent checks for .com, Instagram, Telegram, TikTok, YouTube,
   Facebook, and X
 - OpenAI-powered generation from a Ukrainian brand brief
+- bounded structured Brand DNA compiled from a brief and optional public website
+- Brand-DNA-aware naming without changing legacy brief-only API behavior
 - mobile-friendly resource filters with a dynamic selected-resource denominator
 - project-specific likes, dislikes, and structured preference learning
 - persistent browser history and project profiles
@@ -29,6 +31,29 @@ purchase path becomes `purchasable`. Missing credentials retain the conservative
 
 The staged implementation and reliability requirements are documented in
 [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md).
+
+## Brand DNA API
+
+`POST /api/brand-dna` compiles a bounded naming context from a user brief, a
+public website URL, or both:
+
+```json
+{
+  "brief": "Спільнота голосує за продукти, які потім виробляються малими серіями",
+  "website_url": "https://example.com"
+}
+```
+
+The response contains `brand_dna` plus source metadata. Website analysis accepts
+only public HTTP(S) URLs on standard ports, validates redirects, rejects
+non-public/local addresses, caps the downloaded response, extracts visible text,
+and treats all website text as untrusted data rather than model instructions.
+A supplied website that cannot be safely read fails explicitly instead of being
+silently ignored.
+
+The returned `brand_dna` object can be passed back to `POST /api/ai-generate` or
+`POST /api/ai-names`. Client-supplied Brand DNA is bounded and sanitized again
+before it reaches the naming prompt.
 
 ## Resource selection API
 
@@ -53,7 +78,7 @@ running a different check.
 ## Local run
 
 1. Install dependencies: `pip install -r requirements.txt`
-2. Set `OPENAI_API_KEY` for AI generation.
+2. Set `OPENAI_API_KEY` for AI generation and Brand DNA compilation.
 3. Optionally set `NAMECOM_USERNAME` and `NAMECOM_API_TOKEN` for direct `.com`
    registration confirmation.
 4. Optionally set `OPENAI_MODEL`, `HTTP_TIMEOUT`, and `AVAILABILITY_WORKERS`.
@@ -73,7 +98,7 @@ without changing the start command.
 
 The default limits are intentionally conservative for a public, AI-backed service:
 
-- AI generation: `5 per minute;30 per hour` per client IP
+- AI generation and Brand DNA compilation: `5 per minute;30 per hour` per client IP
 - live name checks: `60 per minute` per client IP
 - concurrent AI requests: `2` per application process
 
