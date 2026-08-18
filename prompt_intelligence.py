@@ -217,6 +217,50 @@ def clean_intelligence(value, prompt="", selected_resources=None):
     }
 
 
+def compile_generation_input(intelligence, extra_guidance=""):
+    """Turn interpreted meaning into clean inputs for the existing generator.
+
+    The generator's literal lexical expander receives only naming-ready ASCII roots.
+    Human prose stays in search guidance, which the model can understand but the local
+    combinatorial engine cannot accidentally turn into `meni/treba/znaydy` blends.
+    """
+    if not isinstance(intelligence, dict):
+        raise ValueError("Prompt intelligence is required")
+    roots = _clean_roots(intelligence.get("naming_roots"))
+    if len(roots) < 2:
+        raise ValueError("Prompt intelligence did not produce enough naming roots")
+
+    guidance_parts = []
+    semantic_brief = _bounded_text(intelligence.get("semantic_brief"), 340)
+    if semantic_brief:
+        guidance_parts.append(semantic_brief)
+    avoid_words = _bounded_list(intelligence.get("avoid_words"), 12, 40)
+    avoid_suffixes = _bounded_list(intelligence.get("avoid_suffixes"), 10, 24)
+    avoid_styles = _bounded_list(intelligence.get("avoid_styles"), 8, 50)
+    if avoid_words:
+        guidance_parts.append("Не використовувати слова: " + ", ".join(avoid_words))
+    if avoid_suffixes:
+        guidance_parts.append("Не використовувати закінчення: " + ", ".join(avoid_suffixes))
+    if avoid_styles:
+        guidance_parts.append("Уникати стилю: " + ", ".join(avoid_styles))
+    extra = _bounded_text(extra_guidance, 180)
+    if extra:
+        guidance_parts.append(extra)
+
+    mode = str(intelligence.get("search_mode", "new_brand"))
+    brand_name = _bounded_text(intelligence.get("brand_name"), 80)
+    if mode == "new_brand":
+        brand_name = ""
+    return {
+        "brief": " ".join(roots),
+        "search_context": {
+            "mode": mode,
+            "brand_name": brand_name,
+            "guidance": " | ".join(guidance_parts)[:500],
+        },
+    }
+
+
 def interpret_prompt(prompt, selected_resources=None, feedback=None):
     safe_prompt = _bounded_text(prompt, 2000)
     if len(safe_prompt) < 2:

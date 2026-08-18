@@ -1,4 +1,5 @@
 import os, random, re
+from functools import lru_cache
 from threading import BoundedSemaphore
 from flask import Flask, request, jsonify, render_template
 from flask_limiter import Limiter
@@ -18,7 +19,7 @@ from ai_engine import (
 )
 from brand_dna import WebsiteFetchError, build_brand_dna, clean_brand_dna, fetch_public_website
 from identity_bundle import classify_identity_bundle, normalize_required_resources
-from prompt_intelligence import interpret_prompt
+from prompt_intelligence import compile_generation_input, interpret_prompt
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -199,6 +200,25 @@ def validate_generation_input(data):
     if search_context["mode"] == "new_brand" and not brief and not brand_dna:
         return None, None, None, (jsonify({"error": "Brief or Brand DNA is required for a new brand"}), 400)
     return brief, brand_dna, search_context, None
+
+
+@lru_cache(maxsize=128)
+def cached_prompt_intelligence(prompt, resources):
+    """Avoid paying for the same interpretation again on every batch."""
+    return interpret_prompt(prompt, resources)
+
+
+def apply_prompt_intelligence(brief, resources, search_context):
+    intelligence = cached_prompt_intelligence(brief, tuple(resources))
+    compiled = compile_generation_input(
+        intelligence,
+        extra_guidance=search_context.get("guidance", ""),
+    )
+    return (
+        compiled["brief"],
+        clean_search_context(compiled["search_context"]),
+        intelligence,
+    )
 
 
 def score_name(name):
@@ -427,6 +447,12 @@ def api_ai_generate():
             "retry_after":5,
         }),503,{"Retry-After":"5"}
     try:
+        if os.environ.get("OPENAI_API_KEY"):
+            brief, search_context, _intelligence = apply_prompt_intelligence(
+                brief,
+                resources,
+                search_context,
+            )
         last_error = None
         for attempt in range(3):
             try:
