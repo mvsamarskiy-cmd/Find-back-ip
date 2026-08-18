@@ -9,6 +9,7 @@ from pathlib import Path
 
 from verification.benchmark import KNOWN_FIXTURES, evaluate, summary
 from verification.providers import (
+    facebook_public_adapter,
     fragment_username_adapter,
     instagram_web_adapter,
     maigret_adapter,
@@ -29,6 +30,7 @@ PROVIDERS = {
     "youtube_public_handle": youtube_handle_adapter.check_username,
     "telegram_public": telegram_public_adapter.check_username,
     "fragment_username": fragment_username_adapter.check_username,
+    "facebook_public": facebook_public_adapter.check_username,
     "whatsmyname": whatsmyname_adapter.check_username,
     "maigret": maigret_adapter.check_username,
 }
@@ -45,6 +47,8 @@ def _eligible(fixtures, provider_name):
         allowed = {"youtube"}
     elif provider_name in {"telegram_public", "fragment_username"}:
         allowed = {"telegram"}
+    elif provider_name == "facebook_public":
+        allowed = {"facebook"}
     else:
         allowed = {"instagram", "telegram", "tiktok", "youtube", "facebook", "x"}
     return [fixture for fixture in fixtures if fixture.platform in allowed]
