@@ -31,7 +31,7 @@ class BrandCollisionEngineTests(unittest.TestCase):
         self.assertFalse(result["coverage"]["web_automated"])
         self.assertFalse(result["coverage"]["companies_uk_automated"])
         self.assertFalse(result["coverage"]["trademarks_automated"])
-        self.assertNotIn("free", result["notice"].lower())
+        self.assertIn("not a legal conclusion", result["notice"].lower())
 
     def test_brave_exact_domain_is_high_collision_signal(self):
         def requester(url, **kwargs):
