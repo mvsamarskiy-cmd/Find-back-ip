@@ -1,12 +1,23 @@
 from .models import VerificationVerdict
 
 
-AUTHORITATIVE_SOURCES = frozenset({
-    "namecom_core_api",
-    "youtube_data_api",
-    "x_api",
-    "verisign_rdap",
-})
+# Authority is intentionally explicit and conservative. It is used only to
+# explain/score evidence, never to upgrade absence into verified availability.
+SOURCE_AUTHORITY = {
+    "namecom_core_api": 100,
+    "youtube_data_api": 95,
+    "x_api": 95,
+    "verisign_rdap": 90,
+    "meta_instagram_oembed": 85,
+    "tiktok_oembed": 85,
+    "socialscan": 70,
+    "telegram_public_web": 65,
+    "fragment_public_web": 65,
+    "whatsmyname": 45,
+    "maigret": 25,
+    "public_web": 40,
+    "search_engine": 30,
+}
 
 
 def _confidence(row):
@@ -16,61 +27,142 @@ def _confidence(row):
         return 0.0
 
 
-def fuse_evidence(platform, handle, evidence):
-    """Fuse evidence deterministically without letting weak absence beat proof.
+def _authority(row):
+    return int(SOURCE_AUTHORITY.get(str(row.get("source", "")), 10))
 
-    The first version is intentionally conservative. A positive claimability
-    verdict requires an explicit claimable/purchasable signal. Absence-only
-    evidence can produce LIKELY_AVAILABLE, never AVAILABLE_VERIFIED.
+
+def _best(rows):
+    return max(rows, key=lambda row: (_authority(row), _confidence(row)))
+
+
+def _verdict(platform, handle, verdict, confidence, rows, reason):
+    return VerificationVerdict(
+        platform=platform,
+        handle=handle,
+        verdict=verdict,
+        confidence=max(0.0, min(1.0, float(confidence))),
+        evidence=rows,
+        reason=reason,
+    )
+
+
+def fuse_evidence(platform, handle, evidence):
+    """Fuse heterogeneous evidence with fail-closed contradiction semantics.
+
+    Safety invariants:
+    - absence alone can never become AVAILABLE_VERIFIED;
+    - claimability plus occupancy conflict can never become AVAILABLE_VERIFIED;
+    - INVALID input wins immediately;
+    - contradictory positive evidence becomes UNKNOWN for re-check/manual review;
+    - weak negative evidence never beats direct positive occupancy evidence.
     """
     rows = [dict(row) for row in evidence if isinstance(row, dict)]
-
-    claimable = [row for row in rows if row.get("signal") in {"claimable", "purchasable"}]
-    if claimable:
-        best = max(claimable, key=_confidence)
-        return VerificationVerdict(
-            platform=platform,
-            handle=handle,
-            verdict="available_verified",
-            confidence=_confidence(best),
-            evidence=rows,
-            reason="A provider explicitly confirmed a claimable or purchasable path.",
+    if not rows:
+        return _verdict(
+            platform,
+            handle,
+            "unknown",
+            0.0,
+            rows,
+            "No verification evidence is available.",
         )
 
-    conflicts = [row for row in rows if row.get("signal") in {"exists", "reserved", "invalid"}]
-    if conflicts:
-        best = max(conflicts, key=_confidence)
+    invalid = [row for row in rows if row.get("signal") == "invalid"]
+    if invalid:
+        best = _best(invalid)
+        return _verdict(
+            platform,
+            handle,
+            "invalid",
+            _confidence(best),
+            rows,
+            "At least one verifier determined that the identifier is invalid for this resource.",
+        )
+
+    claimable = [row for row in rows if row.get("signal") in {"claimable", "purchasable"}]
+    occupied = [row for row in rows if row.get("signal") in {"exists", "reserved"}]
+
+    # A registrar/provider saying "claimable" while another source says the same
+    # identifier exists/reserved is a contradiction. Never show green in that case.
+    if claimable and occupied:
+        strongest_claim = _best(claimable)
+        strongest_conflict = _best(occupied)
+        confidence = max(_confidence(strongest_claim), _confidence(strongest_conflict))
+        return _verdict(
+            platform,
+            handle,
+            "unknown",
+            confidence,
+            rows,
+            "Contradictory positive evidence: one provider reports claimability while another reports occupancy or reservation.",
+        )
+
+    if occupied:
+        best = _best(occupied)
         signal = best.get("signal")
-        verdict = "taken" if signal == "exists" else signal
-        return VerificationVerdict(
-            platform=platform,
-            handle=handle,
-            verdict=verdict,
-            confidence=_confidence(best),
-            evidence=rows,
-            reason="A provider returned direct conflict evidence.",
+        verdict = "taken" if signal == "exists" else "reserved"
+        return _verdict(
+            platform,
+            handle,
+            verdict,
+            _confidence(best),
+            rows,
+            "Direct positive conflict evidence was observed.",
+        )
+
+    if claimable:
+        best = _best(claimable)
+        return _verdict(
+            platform,
+            handle,
+            "available_verified",
+            _confidence(best),
+            rows,
+            "A provider explicitly confirmed a claimable or purchasable path and no contradictory occupancy evidence is present.",
         )
 
     absent = [row for row in rows if row.get("signal") == "absent"]
+    unresolved = [
+        row
+        for row in rows
+        if row.get("signal") in {"blocked", "rate_limited", "unknown"}
+    ]
+
     if absent:
         strongest = max(_confidence(row) for row in absent)
         independent_sources = {str(row.get("source", "")) for row in absent if row.get("source")}
         corroboration_bonus = min(0.08, max(0, len(independent_sources) - 1) * 0.04)
         confidence = min(0.95, strongest + corroboration_bonus)
-        return VerificationVerdict(
-            platform=platform,
-            handle=handle,
-            verdict="likely_available",
-            confidence=confidence,
-            evidence=rows,
-            reason="No public account was observed, but claimability was not directly confirmed.",
+
+        # If the only negative evidence is accompanied by an unresolved result from
+        # a stronger source, do not market the handle as likely available yet.
+        if unresolved:
+            strongest_absent_authority = max(_authority(row) for row in absent)
+            strongest_unresolved_authority = max(_authority(row) for row in unresolved)
+            if strongest_unresolved_authority > strongest_absent_authority:
+                return _verdict(
+                    platform,
+                    handle,
+                    "unknown",
+                    confidence,
+                    rows,
+                    "A stronger verifier was unresolved, so weaker absence evidence is insufficient for a likely-available verdict.",
+                )
+
+        return _verdict(
+            platform,
+            handle,
+            "likely_available",
+            confidence,
+            rows,
+            "No public account was observed, but claimability was not directly confirmed.",
         )
 
-    return VerificationVerdict(
-        platform=platform,
-        handle=handle,
-        verdict="unknown",
-        confidence=0.0,
-        evidence=rows,
-        reason="No decisive verification evidence is available.",
+    return _verdict(
+        platform,
+        handle,
+        "unknown",
+        0.0,
+        rows,
+        "No decisive verification evidence is available.",
     )
