@@ -13,17 +13,20 @@ install()
 from app import app  # noqa: E402
 import app as app_module  # noqa: E402
 from availability_v2 import check_all as check_all_v2, check_many as check_many_v2  # noqa: E402
+from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
 from streaming_search import install_streaming_routes  # noqa: E402
 from verification.diagnostics import provider_diagnostics  # noqa: E402
 
 app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 install_streaming_routes(app, app_module)
+install_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v6.9-resource-progress-stream"
+RELEASE_MARKER = "v7.0-durable-session-store"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
+SESSION_SYNC_TAG = '<script src="/static/session_sync.js"></script>'
 
 
 @app.after_request
@@ -36,6 +39,8 @@ def prevent_stale_html(response):
             tags.append(STREAM_CLIENT_TAG)
         if RESOURCE_PROGRESS_TAG not in body:
             tags.append(RESOURCE_PROGRESS_TAG)
+        if SESSION_SYNC_TAG not in body:
+            tags.append(SESSION_SYNC_TAG)
         if tags and "</body>" in body:
             response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
@@ -112,6 +117,7 @@ def api_verification_diagnostics():
             "candidate_events": True,
             "resource_progress_events": True,
         },
+        "session_storage": session_storage_diagnostics(),
         "providers": providers,
     })
 
