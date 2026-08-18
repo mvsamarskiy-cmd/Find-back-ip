@@ -1,14 +1,18 @@
 /* Best-effort short-lived audit telemetry sync.
  *
  * The client report never reads this store. This only mirrors operational events
- * for debugging; the server applies a seven-day TTL by default.
+ * for debugging; both the browser copy and server copy use a seven-day TTL by
+ * default. Durable candidates/feedback remain separate so the search can resume.
  */
 (() => {
   const POLL_MS = 5000;
   const BATCH_SIZE = 50;
+  const LOCAL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+  const LOCAL_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
   const sent = new Set();
   let inFlight = false;
   let timer = null;
+  let lastLocalPruneAt = 0;
 
   function credentials() { return current?.serverSession || null; }
 
@@ -17,7 +21,27 @@
     catch (_) { return String(event?.at || '') + '|' + String(event?.type || ''); }
   }
 
+  function pruneLocalAudit(force = false) {
+    if (!current || !Array.isArray(current.activityLog)) return 0;
+    const now = Date.now();
+    if (!force && now - lastLocalPruneAt < LOCAL_PRUNE_INTERVAL_MS) return 0;
+    lastLocalPruneAt = now;
+    const cutoff = now - LOCAL_RETENTION_MS;
+    const before = current.activityLog.length;
+    current.activityLog = current.activityLog.filter(event => {
+      const at = Date.parse(event?.at || '');
+      return Number.isFinite(at) && at > cutoff;
+    });
+    const removed = before - current.activityLog.length;
+    if (removed) {
+      current.updated = new Date().toISOString();
+      write(SESSION_KEY, current);
+    }
+    return removed;
+  }
+
   function pendingEvents() {
+    pruneLocalAudit();
     const log = Array.isArray(current?.activityLog) ? current.activityLog : [];
     const rows = [];
     for (const event of log) {
@@ -56,10 +80,15 @@
   }
 
   function pulse() {
+    pruneLocalAudit();
     void flush();
     timer = setTimeout(pulse, POLL_MS);
   }
 
-  window.addEventListener('pagehide', () => { void flush({ keepalive: true }); });
+  window.addEventListener('pagehide', () => {
+    pruneLocalAudit(true);
+    void flush({ keepalive: true });
+  });
+  pruneLocalAudit(true);
   timer = setTimeout(pulse, 1200);
 })();
