@@ -19,7 +19,7 @@ app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 
 
-RELEASE_MARKER = "v6.5-instagram-no-key"
+RELEASE_MARKER = "v6.5-instagram-research"
 
 
 @app.after_request
@@ -50,8 +50,8 @@ def api_verification_diagnostics():
     providers["socialscan"] = {
         "configured": True,
         "no_api_key": True,
-        "live_platforms": ["x", "instagram"],
-        "positive_only_platforms": ["instagram"],
+        "live_platforms": ["x"],
+        "benchmark_only_platforms": ["instagram"],
         "claimable_promoted": False,
     }
     providers["instagram_web_profile_info"] = {
@@ -60,7 +60,14 @@ def api_verification_diagnostics():
         "live": False,
         "benchmark_only": True,
         "authoritative_claimability": False,
-        "latest_benchmark_result": "rate_limited",
+    }
+    providers["meta_instagram_oembed"] = {
+        "configured": True,
+        "no_api_key": True,
+        "official_meta_endpoint": True,
+        "live": False,
+        "benchmark_only": True,
+        "authoritative_claimability": False,
     }
     return jsonify({
         "verification_engine": "v2",
