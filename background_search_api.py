@@ -6,6 +6,7 @@ import os
 
 from flask import jsonify, request
 
+from availability_hunter import HUNTER_KEY, MAX_TARGET_MATCHES, STRICT_MATCH_POLICY
 from background_jobs import JOB_STORE, MAX_BACKGROUND_TARGET, MAX_BATCH_SIZE
 from candidate_feed import CandidateFeedStore, MAX_FEED_PAGE
 from session_api import TOKEN_HEADER
@@ -23,7 +24,18 @@ def background_search_diagnostics():
         "worker_count": 0,
         "last_seen_at": None,
     }
-    return {**diagnostics, **heartbeat}
+    return {
+        **diagnostics,
+        **heartbeat,
+        "availability_hunter": {
+            "supported": True,
+            "target_matches_max": MAX_TARGET_MATCHES,
+            "max_checks_max": MAX_BACKGROUND_TARGET,
+            "strict_match_policy": STRICT_MATCH_POLICY,
+            "purchasable_counts_as_free_match": False,
+            "not_found_counts_as_free_match": False,
+        },
+    }
 
 
 def install_background_search_routes(app, app_module):
@@ -80,6 +92,32 @@ def install_background_search_routes(app, app_module):
             return jsonify({"error": f"target_count must be between 1 and {MAX_BACKGROUND_TARGET}"}), 400
         if batch_size < 1 or batch_size > MAX_BATCH_SIZE:
             return jsonify({"error": f"batch_size must be between 1 and {MAX_BATCH_SIZE}"}), 400
+
+        # R2 Availability Hunter is opt-in and backward-compatible. The existing
+        # target_count field becomes the hard verification budget only when the
+        # caller explicitly supplies target_matches. No SQL schema migration is
+        # required because the goal is stored in search_context JSON.
+        target_matches_raw = data.get("target_matches")
+        if target_matches_raw is not None:
+            try:
+                target_matches = int(target_matches_raw)
+                max_checks = int(data.get("max_checks", target_count))
+            except (TypeError, ValueError):
+                return jsonify({"error": "target_matches and max_checks must be integers"}), 400
+            if target_matches < 1 or target_matches > MAX_TARGET_MATCHES:
+                return jsonify({"error": f"target_matches must be between 1 and {MAX_TARGET_MATCHES}"}), 400
+            if max_checks < 1 or max_checks > MAX_BACKGROUND_TARGET:
+                return jsonify({"error": f"max_checks must be between 1 and {MAX_BACKGROUND_TARGET}"}), 400
+            if target_matches > max_checks:
+                return jsonify({"error": "target_matches cannot exceed max_checks"}), 400
+            search_context = dict(search_context or {})
+            search_context[HUNTER_KEY] = {
+                "enabled": True,
+                "target_matches": target_matches,
+                "max_checks": max_checks,
+                "match_policy": STRICT_MATCH_POLICY,
+            }
+            target_count = max_checks
 
         payload = {
             "run_id": str(data.get("run_id") or "")[:96],
