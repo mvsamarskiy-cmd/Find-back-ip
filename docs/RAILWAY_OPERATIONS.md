@@ -46,6 +46,37 @@ service IDs. It does not create infrastructure.
 Do not commit a series of file-by-file changes directly to `main`: every such
 commit is a separate Railway deployment.
 
+## Lightweight code backup and rollback
+
+Git history is the backup for application code. Because normal releases are
+squash-merged, one logical release is one commit on `main`. Do not create backup
+copies of the repository, permanent shadow branches, or duplicate Railway
+projects just to preserve code.
+
+If the newest release breaks production:
+
+1. In GitHub Actions run **Prepare production rollback PR**.
+2. The workflow checks out the current `main` and locally reverts exactly that
+   release.
+3. Before anything is pushed, it verifies that the reverted Git tree is exactly
+   the previous release tree and runs unit tests, inline-JavaScript validation,
+   and the Gunicorn config check. If any check fails, no rollback branch is
+   published.
+4. Only after verification does it push a temporary `agent/rollback-*` branch and
+   open a pull request. Review it and satisfy any repository-required checks.
+5. Never reset or force-push `main`. Merge the rollback normally so Railway gets
+   one auditable recovery commit.
+6. After Railway deploys it, run `python verification/railway_guard.py smoke`.
+7. Close/merge the PR normally; the existing branch-cleanup workflow removes the
+   temporary rollback branch.
+
+This deliberately uses a Git **revert**, not a history rewrite, so both the bad
+release and its recovery remain auditable and recoverable.
+
+This is only a code rollback. Git does **not** back up Railway secret values,
+databases, volumes, buckets, user data, or external-service state. Add separate
+backups before any such persistent state becomes production-critical.
+
 ## Verification without permanent clones
 
 Ordinary changes are verified by tests and GitHub Actions. When a live copy is
@@ -104,4 +135,3 @@ Official Railway references:
 - https://docs.railway.com/deployments/github-autodeploys
 - https://docs.railway.com/environments
 - https://docs.railway.com/config-as-code/reference
-

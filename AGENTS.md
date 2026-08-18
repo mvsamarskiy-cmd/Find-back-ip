@@ -36,13 +36,23 @@ values. A different Railway project is not a replacement production target.
    failed GitHub workflow skips deployment.
 8. After deployment, run `python verification/railway_guard.py smoke` and confirm
    Railway reports the same Git commit as GitHub `main`.
-9. Run `python verification/railway_guard.py audit` whenever Railway access is
-   established. It reports other projects attached to this repository but never
-   deletes them automatically.
-10. A duplicate may be deleted only after confirming that the canonical site is
+9. If the current release breaks production, restore code with Git history: use
+   the manual `Prepare production rollback PR` workflow. It reverts exactly the
+   current `main` release, proves that the restored tree equals the previous
+   release, runs the release verification commands, and only then pushes a
+   temporary `agent/rollback-*` branch and opens a PR. Never reset or force-push
+   `main`; merge the verified rollback normally and run the same production smoke
+   check after deployment.
+10. Run `python verification/railway_guard.py audit` whenever Railway access is
+    established. It reports other projects attached to this repository but never
+    deletes them automatically.
+11. A duplicate may be deleted only after confirming that the canonical site is
     healthy and that the duplicate has no unique variables, volumes, buckets, or
     custom domains.
 
+Git history is the lightweight backup for application code only. It does not
+back up Railway secret values, databases, volumes, buckets, or external-service
+state; those require separate backup once the project stores persistent data.
+
 Do not commit `.railway/` or credentials. Railway documents that the CLI link is
 local state, so every new session must recreate it with the exact canonical IDs.
-

@@ -1,0 +1,116 @@
+name: Prepare production rollback PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Optional reason for the rollback
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: production-rollback
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+
+      - name: Create a one-release revert locally
+        id: rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bad_sha="$(git rev-parse HEAD)"
+          parent_count="$(git rev-list --parents -n 1 HEAD | awk '{print NF-1}')"
+          if [[ "$parent_count" -ne 1 ]]; then
+            echo "Refusing rollback: current main must have exactly one parent." >&2
+            exit 1
+          fi
+
+          parent_sha="$(git rev-parse HEAD^)"
+          short="${bad_sha:0:8}"
+          branch="agent/rollback-${short}-${GITHUB_RUN_ID}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git revert --no-edit "$bad_sha"
+
+          restored_tree="$(git rev-parse HEAD^{tree})"
+          parent_tree="$(git rev-parse "${parent_sha}^{tree}")"
+          if [[ "$restored_tree" != "$parent_tree" ]]; then
+            echo "Refusing rollback: revert did not exactly restore the previous release tree." >&2
+            exit 1
+          fi
+
+          {
+            echo "branch=$branch"
+            echo "bad_sha=$bad_sha"
+            echo "parent_sha=$parent_sha"
+            echo "short=$short"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Verify restored release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m unittest discover -s tests -v
+          python verification/check_inline_js.py
+          gunicorn app:app --config gunicorn.conf.py --check-config
+
+      - name: Push verified rollback branch
+        env:
+          BRANCH: ${{ steps.rollback.outputs.branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin "$BRANCH"
+
+      - name: Open rollback PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.rollback.outputs.branch }}
+          BAD_SHA: ${{ steps.rollback.outputs.bad_sha }}
+          PARENT_SHA: ${{ steps.rollback.outputs.parent_sha }}
+          SHORT_SHA: ${{ steps.rollback.outputs.short }}
+          REASON: ${{ inputs.reason }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          reason="${REASON:-Not provided}"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "Rollback ${SHORT_SHA}" \
+            --body "Automated rollback candidate for the current production release.
+
+Bad release: \`$BAD_SHA\`
+Restores the exact code tree from: \`$PARENT_SHA\`
+Reason: $reason
+
+The rollback workflow already verified tree identity, unit tests, inline JavaScript, and Gunicorn config before pushing this branch. This does not rewrite Git history. Merge normally, then run the production smoke check after Railway deploys the revert commit."
