@@ -50,11 +50,15 @@ def _clean_prompt(row):
     if not text:
         return None
     feedback = row.get("feedback") if isinstance(row.get("feedback"), list) else []
-    return {
+    result = {
         "text": text,
         "at": str(row.get("at") or "")[:64],
         "feedback": feedback[:50],
     }
+    entry_mode = _text(row.get("entry_mode"), 32)
+    if entry_mode:
+        result["entry_mode"] = entry_mode
+    return result
 
 
 def _clean_run(row):
@@ -70,6 +74,9 @@ def _clean_run(row):
         "finished": str(row.get("finished") or "")[:64],
         "status": _text(row.get("status"), 24),
     }
+    entry_mode = _text(row.get("entry_mode"), 32)
+    if entry_mode:
+        allowed["entry_mode"] = entry_mode
     for key in ("startResultCount", "endResultCount", "startBatch", "endBatch"):
         try:
             allowed[key] = max(0, int(row.get(key) or 0))
@@ -120,13 +127,129 @@ def _clean_metadata(data, app_module):
     }
 
 
+def _clean_counts(value):
+    if not isinstance(value, dict):
+        return {}
+    result = {}
+    for key, raw in list(value.items())[:24]:
+        safe_key = _name(key, 48)
+        if not safe_key:
+            continue
+        try:
+            result[safe_key] = max(0, int(raw or 0))
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def _clean_source(value):
+    if not isinstance(value, dict):
+        return None
+    result = {}
+    for key, limit in (
+        ("market", 16), ("label", 100), ("url", 500), ("automation", 80),
+        ("notice", 300), ("coverage", 240), ("query", 120),
+    ):
+        clean = _text(value.get(key), limit)
+        if clean:
+            result[key] = clean
+    return result or None
+
+
+def _clean_brand_collision(value):
+    """Persist the useful collision summary, not a large raw provider result dump."""
+    if not isinstance(value, dict):
+        return None
+    result = {
+        "candidate": _text(value.get("candidate"), 80),
+        "collision_signal": _text(value.get("collision_signal"), 32),
+        "clearance_complete": bool(value.get("clearance_complete")),
+        "legal_clearance": bool(value.get("legal_clearance")),
+        "recommendation": _text(value.get("recommendation"), 80),
+        "notice": _text(value.get("notice"), 500),
+    }
+    coverage = value.get("coverage")
+    if isinstance(coverage, dict):
+        result["coverage"] = {
+            "web_automated": bool(coverage.get("web_automated")),
+            "companies_uk_automated": bool(coverage.get("companies_uk_automated")),
+            "companies_requested_markets": _bounded_list(
+                coverage.get("companies_requested_markets"), 8, lambda item: _text(item, 16)
+            ),
+            "trademarks_automated": bool(coverage.get("trademarks_automated")),
+            "trademark_territories": _bounded_list(
+                coverage.get("trademark_territories"), 8, lambda item: _text(item, 16)
+            ),
+            "nice_classes": _bounded_list(coverage.get("nice_classes"), 45),
+        }
+
+    web = value.get("web")
+    if isinstance(web, dict):
+        result["web"] = {
+            "provider": _text(web.get("provider"), 64),
+            "configured": bool(web.get("configured")),
+            "status": _text(web.get("status"), 32),
+            "signal": _text(web.get("signal"), 32),
+            "reason": _text(web.get("reason"), 300),
+            "counts": _clean_counts(web.get("counts")),
+            "manual_search": _text(web.get("manual_search"), 500),
+        }
+
+    companies = value.get("companies")
+    if isinstance(companies, dict):
+        clean_companies = {}
+        uk = companies.get("uk")
+        if isinstance(uk, dict):
+            clean_companies["uk"] = {
+                "provider": _text(uk.get("provider"), 64),
+                "coverage": _text(uk.get("coverage"), 160),
+                "configured": bool(uk.get("configured")),
+                "status": _text(uk.get("status"), 32),
+                "signal": _text(uk.get("signal"), 32),
+                "reason": _text(uk.get("reason"), 300),
+                "counts": _clean_counts(uk.get("counts")),
+            }
+        clean_companies["manual_sources"] = _bounded_list(
+            companies.get("manual_sources"), 8, _clean_source
+        )
+        result["companies"] = clean_companies
+
+    trademarks = value.get("trademarks")
+    if isinstance(trademarks, dict):
+        clean_sources = {}
+        raw_sources = trademarks.get("sources")
+        if isinstance(raw_sources, dict):
+            for raw_key, raw_source in list(raw_sources.items())[:12]:
+                key = _name(raw_key, 48)
+                source = _clean_source(raw_source)
+                if key and source:
+                    clean_sources[key] = source
+        result["trademarks"] = {
+            "candidate": _text(trademarks.get("candidate"), 80),
+            "risk": _text(trademarks.get("risk"), 32),
+            "assessment": _text(trademarks.get("assessment"), 64),
+            "territories": _bounded_list(
+                trademarks.get("territories"), 8, lambda item: _text(item, 16)
+            ),
+            "nice_classes": _bounded_list(trademarks.get("nice_classes"), 45),
+            "notice": _text(trademarks.get("notice"), 500),
+            "sources": clean_sources,
+            "criteria": _bounded_list(
+                trademarks.get("criteria"), 12, lambda item: _text(item, 80)
+            ),
+        }
+    return result
+
+
 _CANDIDATE_KEYS = {
     "name", "score", "length", "reason", "family", "availability", "verification",
     "bundle_state", "bundle_score", "required_resources", "selected_resources",
     "claimable_count", "purchasable_count", "not_found_count", "taken_count",
     "reserved_count", "invalid_count", "unknown_count", "unresolved_count",
     "trademark", "checked", "run_id", "batch_number", "received_seq", "received_at",
-    "_stream_id", "resource_progress",
+    "_stream_id", "resource_progress", "product_mode", "entry_mode", "pronunciation",
+    "language_risks", "verification_state", "lifecycle_event_seq",
+    "brand_collision", "brand_collision_checked_at",
 }
 
 
@@ -154,6 +277,34 @@ def _clean_candidate(row, app_module):
         }
     else:
         clean["verification"] = {}
+
+    if "product_mode" in clean:
+        clean["product_mode"] = _text(clean.get("product_mode"), 32)
+    if "entry_mode" in clean:
+        clean["entry_mode"] = _text(clean.get("entry_mode"), 32)
+    if "pronunciation" in clean:
+        clean["pronunciation"] = _text(clean.get("pronunciation"), 120)
+    if "language_risks" in clean:
+        clean["language_risks"] = _bounded_list(
+            clean.get("language_risks"), 8, lambda item: _text(item, 160)
+        )
+    if "verification_state" in clean:
+        state = _text(clean.get("verification_state"), 24)
+        clean["verification_state"] = state if state in {"checking", "complete", "interrupted"} else ""
+    if "lifecycle_event_seq" in clean:
+        try:
+            clean["lifecycle_event_seq"] = max(0, int(clean.get("lifecycle_event_seq") or 0))
+        except (TypeError, ValueError):
+            clean.pop("lifecycle_event_seq", None)
+    if "brand_collision_checked_at" in clean:
+        clean["brand_collision_checked_at"] = str(clean.get("brand_collision_checked_at") or "")[:64]
+    if "brand_collision" in clean:
+        collision = _clean_brand_collision(clean.get("brand_collision"))
+        if collision:
+            clean["brand_collision"] = collision
+        else:
+            clean.pop("brand_collision", None)
+
     encoded = json.dumps(clean, ensure_ascii=False, separators=(",", ":"))
     if len(encoded.encode("utf-8")) > MAX_CANDIDATE_BYTES:
         raise ValueError(f"Candidate {name} payload is too large")
