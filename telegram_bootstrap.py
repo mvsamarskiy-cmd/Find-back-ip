@@ -19,7 +19,7 @@ app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 
 
-RELEASE_MARKER = "v6.5-instagram-research"
+RELEASE_MARKER = "v6.5-instagram-meta-oembed"
 
 
 @app.after_request
@@ -65,8 +65,9 @@ def api_verification_diagnostics():
         "configured": True,
         "no_api_key": True,
         "official_meta_endpoint": True,
-        "live": False,
-        "benchmark_only": True,
+        "live": True,
+        "positive_only": True,
+        "can_confirm_occupancy": True,
         "authoritative_claimability": False,
     }
     return jsonify({
