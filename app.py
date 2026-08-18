@@ -136,10 +136,7 @@ def clean(s): return re.sub(r"[^a-z]", "", s.lower())
 def clean_preferences(value):
     """Bound browser-supplied feedback before it reaches the adaptive generator."""
     if not isinstance(value, dict):
-        return {
-            "liked": [], "disliked": [], "reasons": {}, "feedback": [],
-            "direction_anchors": [], "shortlist": [],
-        }
+        return {"liked": [], "disliked": [], "reasons": {}}
 
     def examples(key, limit=20):
         raw = value.get(key, [])
@@ -187,14 +184,20 @@ def clean_preferences(value):
                 "family": family or "unknown",
             })
 
-    return {
+    result = {
         "liked": examples("liked"),
         "disliked": examples("disliked"),
         "reasons": reasons,
-        "feedback": feedback,
-        "direction_anchors": examples("direction_anchors"),
-        "shortlist": examples("shortlist"),
     }
+    direction_anchors = examples("direction_anchors")
+    shortlist = examples("shortlist")
+    if feedback:
+        result["feedback"] = feedback
+    if direction_anchors:
+        result["direction_anchors"] = direction_anchors
+    if shortlist:
+        result["shortlist"] = shortlist
+    return result
 
 
 def generate_ai_with_context(
