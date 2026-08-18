@@ -9,6 +9,8 @@ from ai_engine import (
     _is_allowed_name,
     _phonetic_signature,
     _preference_context,
+    clean_search_context,
+    search_context_prompt,
     select_diverse_names,
 )
 
@@ -32,6 +34,37 @@ class PreferenceContextTests(unittest.TestCase):
         self.assertEqual(_generation_plan(5)[0], 13)
         self.assertEqual(_generation_plan(10)[0], 20)
         self.assertEqual(_generation_plan(20)[0], 40)
+
+    def test_search_context_defaults_to_new_brand(self):
+        self.assertEqual(
+            clean_search_context(None),
+            {"mode": "new_brand", "brand_name": "", "guidance": ""},
+        )
+
+    def test_existing_brand_search_requires_brand_name(self):
+        with self.assertRaises(ValueError):
+            clean_search_context({"mode": "existing_brand_fixed"})
+
+    def test_search_context_rejects_unknown_mode_and_long_guidance(self):
+        with self.assertRaises(ValueError):
+            clean_search_context({"mode": "surprise_me"})
+        with self.assertRaises(ValueError):
+            clean_search_context({"mode": "new_brand", "guidance": "x" * 501})
+
+    def test_fixed_brand_prompt_locks_brand_and_keeps_guidance(self):
+        data = json.loads(search_context_prompt({
+            "mode": "existing_brand_fixed",
+            "brand_name": "Lemon",
+            "guidance": "Не використовуй official",
+        }))
+        self.assertEqual(data["existing_brand"], "Lemon")
+        self.assertEqual(data["additional_guidance"], "Не використовуй official")
+        self.assertIn("Do not rename", data["task_rule"])
+
+    def test_existing_brand_variants_do_not_use_new_brand_blacklist(self):
+        context = {"mode": "existing_brand_fixed", "brand_name": "Tech", "guidance": ""}
+        self.assertTrue(_is_allowed_name("TechClub", context))
+        self.assertFalse(_is_allowed_name("TechClub2", context))
 
     def test_phonetic_signature_ignores_vowel_variants(self):
         self.assertEqual(_phonetic_signature("Pryvia"), _phonetic_signature("Pryvio"))
@@ -79,6 +112,7 @@ class PreferenceContextTests(unittest.TestCase):
 
     def test_prompt_requires_ascii_latin_names(self):
         self.assertIn("ASCII Latin letters A-Z", SYSTEM_PROMPT)
+        self.assertIn("existing brand is locked", SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":

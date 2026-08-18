@@ -1,7 +1,7 @@
 # NameMachine implementation status
 
-Updated for the Brand DNA v1 release prepared from GitHub `main` commit
-`12ab1188ea05cf0ab3842df3d4f79f2c888e67c7` on 2026-08-18.
+Updated for the intent-aware search release prepared from GitHub `main` commit
+`27c1c431bae70798512a85fa9beade0ff81c5a1c` on 2026-08-18.
 
 This file records what exists now. `PRODUCT_PLAN.md` remains the implementation
 order for unfinished work.
@@ -27,24 +27,30 @@ order for unfinished work.
 | Clear UI handling of HTML/5xx responses | PR #13 | Included |
 | Railway timeout-safe Gunicorn configuration and health check | commits `3a31297` through `0437175` | Included |
 | Lightweight Git-based production rollback | PR #19 | Included; verified revert workflow preserves normal Git history and CI |
-| Structured Brand DNA and safe public-website analysis contract | Brand DNA v1 release | Implemented for API and naming context; browser UI wiring remains pending |
+| Structured Brand DNA and safe public-website analysis contract | PR #20 | Included for API and naming context; browser DNA review UI remains pending |
+| Explicit search intent, natural-language guidance, and symmetric feedback reasons | Current intent-aware release | Implemented on release branch; requires green CI and merge before production |
 
 ## Product-plan status
 
-- Phase 1 is complete.
+- Phase 1 is functionally complete and now captures reasons on both likes and
+  dislikes. Feedback becomes signed reason weights, so a disliked sound/style is
+  negative evidence rather than an unexplained rejection.
 - Phase 2 is partially complete: the full evidence status vocabulary, metadata,
   conservative `not_found` handling, deterministic tests, optional official
   YouTube/X adapters, and the optional Name.com registration adapter exist.
   Production Name.com credentials and a live actionable proof are pending;
-  Telegram MTProto and Fragment classification are not implemented.
-- Phase 3 is partially complete: bounded multi-family generation, basic
-  deduplication, exact required-resource selection, a bounded Brand DNA schema,
+  Telegram MTProto/Fragment and automated trademark collision evidence are not
+  implemented.
+- Phase 3 is partially complete: resource selection, search intent, project-level
+  guidance, bounded multi-family generation, basic deduplication, Brand DNA,
   `/api/brand-dna`, safe public website extraction, and Brand-DNA-aware naming
-  exist. Browser controls for website/DNA review, the 20,000-candidate funnel,
-  and full availability-composition scoring remain pending.
-- Phase 4 is not implemented. Projects, history, preferences, and Brand DNA are
-  not yet durable server-side data; PostgreSQL, migrations, accounts,
-  idempotency, export, and server-side deletion are pending.
+  exist. Search can now distinguish a new brand from a locked/adaptable existing
+  brand. MUST HAVE vs optional resources, two-column result classification,
+  progressive adaptive search up to the external-check cap, browser DNA review,
+  the full generation funnel, and Identity Bundle scoring remain pending.
+- Phase 4 is not implemented. Projects, history, preferences, search intent,
+  guidance, and Brand DNA are not yet durable server-side data; PostgreSQL,
+  migrations, accounts, idempotency, export, and server-side deletion are pending.
 - Phase 5 is partially complete only at the web-process/release level: timeouts,
   health, bounded concurrency, rate limits, controlled errors, CI, branch cleanup,
   and Git-based rollback exist. The queue, resumable jobs, metrics, alerts, load
@@ -69,11 +75,16 @@ post-deploy smoke and commit match are confirmed.
 
 ## Next implementation order
 
-1. Wire website URL + Brand DNA review/edit into the browser project flow so the
+1. Add MUST HAVE vs optional resource requirements and split results into
+   `conflict` / `opportunity` / unresolved states with independent per-column
+   resource and evidence-status filters.
+2. Replace one-shot generation with feedback-aware batches that keep searching
+   until enough strong Identity Bundles are found or the 100-external-check safety
+   cap is reached; broaden semantic neighborhoods when repeated conflicts show a
+   naming family is saturated.
+3. Wire website URL + Brand DNA review/edit into the browser project flow so the
    compiled DNA is visible, reusable, and automatically sent with generation.
-2. Improve the evidence operator and external adapters for the selected social
-   platforms, starting with Telegram MTProto/Fragment classification.
-3. Add durable PostgreSQL history with idempotency before scaling generation.
-4. Implement the mathematical generation funnel in small, independently tested
-   releases.
-5. Add the queue, progressive jobs, metrics, and alerts.
+4. Improve evidence adapters, starting with Telegram MTProto/Fragment and a
+   legally careful trademark collision layer.
+5. Add durable PostgreSQL history with idempotency, then queue/progressive jobs,
+   metrics, alerts, and load tests.

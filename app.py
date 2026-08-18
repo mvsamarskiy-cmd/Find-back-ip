@@ -5,7 +5,15 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 from availability import RESOURCE_KEYS, check_all, check_many, normalize_resources
-from ai_engine import BANNED_ROOTS, BANNED_SUFFIXES, generate_ai_names, trademark_links
+from ai_engine import (
+    BANNED_ROOTS,
+    BANNED_SUFFIXES,
+    DEFAULT_SEARCH_CONTEXT,
+    SEARCH_MODES,
+    clean_search_context,
+    generate_ai_names,
+    trademark_links,
+)
 from brand_dna import WebsiteFetchError, build_brand_dna, clean_brand_dna, fetch_public_website
 
 app = Flask(__name__)
@@ -91,6 +99,13 @@ def resource_error(error):
     }), 400
 
 
+def search_context_error(error):
+    return jsonify({
+        "error": str(error),
+        "allowed_search_modes": list(SEARCH_MODES),
+    }), 400
+
+
 def query_resources():
     raw = request.args.get("resources")
     return normalize_resources(None if raw is None else raw)
@@ -134,13 +149,33 @@ def clean_preferences(value):
     return {"liked": examples("liked"), "disliked": examples("disliked"), "reasons": reasons}
 
 
-def generate_ai_with_context(brief, count, preferences, brand_dna):
-    """Keep legacy call shape when no Brand DNA exists, easing staged rollout."""
+def generate_ai_with_context(brief, count, preferences, brand_dna, search_context):
+    """Preserve legacy call shape when no optional generation context is present."""
+    kwargs = {}
     if brand_dna:
-        return generate_ai_names(
-            brief, count, preferences, brand_dna=brand_dna
-        )
+        kwargs["brand_dna"] = brand_dna
+    if search_context != DEFAULT_SEARCH_CONTEXT:
+        kwargs["search_context"] = search_context
+    if kwargs:
+        return generate_ai_names(brief, count, preferences, **kwargs)
     return generate_ai_names(brief, count, preferences)
+
+
+def validate_generation_input(data):
+    brand_dna = clean_brand_dna(data.get("brand_dna"))
+    try:
+        search_context = clean_search_context(data.get("search_context"))
+    except ValueError as error:
+        return None, None, None, search_context_error(error)
+
+    brief = " ".join(str(data.get("brief", "")).split())
+    if len(brief) > 500:
+        return None, None, None, (jsonify({"error": "Brief must contain at most 500 characters"}), 400)
+    if brief and len(brief) < 3:
+        return None, None, None, (jsonify({"error": "Brief must contain at least 3 characters"}), 400)
+    if search_context["mode"] == "new_brand" and not brief and not brand_dna:
+        return None, None, None, (jsonify({"error": "Brief or Brand DNA is required for a new brand"}), 400)
+    return brief, brand_dna, search_context, None
 
 
 def score_name(name):
@@ -262,10 +297,9 @@ def api_ai_names():
     data=json_object()
     if data is None:
         return jsonify({"error":"JSON body must be an object"}),400
-    brief=str(data.get("brief","")).strip()
-    if not 3<=len(brief)<=500:
-        return jsonify({"error":"Brief must contain 3-500 characters"}),400
-    brand_dna = clean_brand_dna(data.get("brand_dna"))
+    brief, brand_dna, search_context, error_response = validate_generation_input(data)
+    if error_response:
+        return error_response
     try:
         count=max(1,min(20,int(data.get("count",10))))
     except (ValueError,TypeError):
@@ -280,7 +314,11 @@ def api_ai_names():
         for attempt in range(3):
             try:
                 names=generate_ai_with_context(
-                    brief, count, clean_preferences(data.get("preferences")), brand_dna
+                    brief,
+                    count,
+                    clean_preferences(data.get("preferences")),
+                    brand_dna,
+                    search_context,
                 )
                 for row in names:
                     row["trademark"]=trademark_links(row["name"])
@@ -300,9 +338,9 @@ def api_ai_generate():
     data=json_object()
     if data is None:
         return jsonify({"error":"JSON body must be an object"}),400
-    brief=str(data.get("brief","")).strip()
-    if not 3<=len(brief)<=500: return jsonify({"error":"Brief must contain 3-500 characters"}),400
-    brand_dna = clean_brand_dna(data.get("brand_dna"))
+    brief, brand_dna, search_context, error_response = validate_generation_input(data)
+    if error_response:
+        return error_response
     try:
         resources=normalize_resources(data.get("resources"))
     except ValueError as error:
@@ -319,7 +357,11 @@ def api_ai_generate():
         for attempt in range(3):
             try:
                 names=generate_ai_with_context(
-                    brief, count, clean_preferences(data.get("preferences")), brand_dna
+                    brief,
+                    count,
+                    clean_preferences(data.get("preferences")),
+                    brand_dna,
+                    search_context,
                 )
                 break
             except Exception as error:

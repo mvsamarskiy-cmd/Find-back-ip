@@ -18,20 +18,32 @@ BANNED_SUFFIXES = {
     "works", "base", "hub", "flow", "labs",
 }
 
+SEARCH_MODES = (
+    "new_brand",
+    "existing_brand_fixed",
+    "existing_brand_adaptable",
+)
+DEFAULT_SEARCH_CONTEXT = {
+    "mode": "new_brand",
+    "brand_name": "",
+    "guidance": "",
+}
 
-SYSTEM_PROMPT = """You are a rigorous international naming strategist.
-Generate names for the exact entity, audience, market, language, and purpose in
-the user's brief and structured Brand DNA. Prefer distinctive, memorable,
-pronounceable names over random letter strings or generic descriptions. Treat
-project feedback as evidence of the user's taste: learn patterns from liked
-examples, avoid patterns from disliked examples, but do not merely mutate or copy
-them. Brand DNA is bounded context produced from user-supplied sources, not an
-availability claim. Never claim trademark, domain, company, website, or handle
-availability. Explain every candidate in Ukrainian and report possible negative
-meanings and pronunciation concerns honestly. Candidate names must contain only
-ASCII Latin letters A-Z: no spaces, hyphens, apostrophes, digits, diacritics, or
-Cyrillic. Never use a candidate containing any forbidden root or ending listed in
-the generation plan."""
+
+SYSTEM_PROMPT = """You are a rigorous international naming and digital-identity strategist.
+Generate candidates for the exact entity, audience, market, language, purpose,
+search task, and structured Brand DNA supplied by the user. Prefer distinctive,
+memorable, pronounceable candidates over random letter strings or generic
+mutations. Treat explicit user prohibitions and requirements as hard constraints.
+Treat project likes, dislikes, and reason weights as softer evidence of taste:
+learn patterns from them, but do not merely mutate or copy previous candidates.
+When an existing brand is locked, generate resource-identifier stems tied to that
+brand instead of inventing a replacement brand. Brand DNA is bounded context
+produced from user-supplied sources, not an availability claim. Never claim
+trademark, domain, company, website, or handle availability. Explain every
+candidate in Ukrainian and report possible negative meanings and pronunciation
+concerns honestly. Candidate names must contain only ASCII Latin letters A-Z: no
+spaces, hyphens, apostrophes, digits, diacritics, or Cyrillic."""
 
 
 GENERATION_FAMILIES = (
@@ -64,6 +76,66 @@ SCHEMA = {
     "required": ["names"],
     "additionalProperties": False,
 }
+
+
+def clean_search_context(value):
+    """Validate and bound the user's search intent before it reaches the model."""
+    if value is None:
+        return dict(DEFAULT_SEARCH_CONTEXT)
+    if not isinstance(value, dict):
+        raise ValueError("search_context must be an object")
+
+    mode = str(value.get("mode", "new_brand")).strip()
+    if mode not in SEARCH_MODES:
+        raise ValueError("Unknown search mode")
+
+    brand_name = " ".join(str(value.get("brand_name", "")).split())
+    guidance = " ".join(str(value.get("guidance", "")).split())
+    if len(brand_name) > 80:
+        raise ValueError("Brand name must contain at most 80 characters")
+    if len(guidance) > 500:
+        raise ValueError("Additional guidance must contain at most 500 characters")
+    if mode != "new_brand" and len(brand_name) < 2:
+        raise ValueError("Existing-brand modes require a brand name")
+    if mode == "new_brand":
+        brand_name = ""
+
+    return {
+        "mode": mode,
+        "brand_name": brand_name,
+        "guidance": guidance,
+    }
+
+
+def search_context_prompt(value):
+    context = clean_search_context(value)
+    mode = context["mode"]
+    if mode == "existing_brand_fixed":
+        task = (
+            "The brand name is locked. Do not rename the brand. Generate candidate "
+            "domain/handle stems that remain clearly tied to the existing brand. "
+            "The candidate name is a digital identity variant, not a new brand."
+        )
+    elif mode == "existing_brand_adaptable":
+        task = (
+            "An existing brand already exists. Preserve it whenever practical and "
+            "prefer close, recognizable identity variants; moderate adaptation is "
+            "allowed only when it improves the requested digital identity."
+        )
+    else:
+        task = (
+            "Create a new brand identity. The candidate name may be genuinely new "
+            "as long as it remains grounded in the brief and Brand DNA."
+        )
+    return json.dumps(
+        {
+            "mode": mode,
+            "existing_brand": context["brand_name"] or None,
+            "additional_guidance": context["guidance"] or None,
+            "task_rule": task,
+        },
+        ensure_ascii=False,
+    )
 
 
 def _preference_context(preferences):
@@ -124,11 +196,14 @@ def _too_similar(left, right):
     )
 
 
-def _is_allowed_name(value):
-    """Enforce the canonical candidate alphabet and blacklist."""
+def _is_allowed_name(value, search_context=None):
+    """Enforce the candidate alphabet and new-brand blacklist."""
     name = str(value).strip()
     if not re.fullmatch(r"[A-Za-z]{3,30}", name):
         return False
+    context = clean_search_context(search_context)
+    if context["mode"] != "new_brand":
+        return True
     normalized = name.lower()
     if any(root in normalized for root in BANNED_ROOTS):
         return False
@@ -137,14 +212,14 @@ def _is_allowed_name(value):
     return True
 
 
-def select_diverse_names(candidates, count):
+def select_diverse_names(candidates, count, search_context=None):
     """Keep valid candidates while removing exact and near duplicates."""
     selected = []
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
         name = str(candidate.get("name", "")).strip()
-        if not _is_allowed_name(name):
+        if not _is_allowed_name(name, search_context):
             continue
         if any(_too_similar(name, row["name"]) for row in selected):
             continue
@@ -156,32 +231,51 @@ def select_diverse_names(candidates, count):
     return selected
 
 
-def _generation_plan(count):
+def _generation_plan(count, search_context=None):
+    context = clean_search_context(search_context)
     pool_size = min(40, max(count + 8, count * 2))
-    families = "\n".join(f"- {family}" for family in GENERATION_FAMILIES)
-    return pool_size, (
-        "Diversify the pool evenly across these naming families:\n"
-        f"{families}\n"
-        "Avoid repeated suffixes, one-letter variants, and names with the same "
-        "consonant skeleton. Do not repeat a candidate in another spelling.\n"
-        f"Forbidden roots anywhere in a name: {', '.join(sorted(BANNED_ROOTS))}.\n"
-        f"Forbidden endings: {', '.join(sorted(BANNED_SUFFIXES))}."
-    )
+    if context["mode"] == "new_brand":
+        families = "\n".join(f"- {family}" for family in GENERATION_FAMILIES)
+        rules = (
+            "Diversify the pool evenly across these naming families:\n"
+            f"{families}\n"
+            "Avoid repeated suffixes, one-letter variants, and names with the same "
+            "consonant skeleton. Do not repeat a candidate in another spelling.\n"
+            f"Forbidden roots anywhere in a name: {', '.join(sorted(BANNED_ROOTS))}.\n"
+            f"Forbidden endings: {', '.join(sorted(BANNED_SUFFIXES))}."
+        )
+    else:
+        rules = (
+            "Generate diverse digital-identity variants for the existing brand. "
+            "Use meaningful prefixes, suffixes, compounds, or concise brand-linked "
+            "forms instead of one-letter mutations. Do not apply the new-brand "
+            "blacklist to words already present in an established brand. Avoid "
+            "repeated suffixes and near-duplicate spellings."
+        )
+    return pool_size, rules
 
 
-def generate_ai_names(brief, count=10, preferences=None, brand_dna=None):
+def generate_ai_names(
+    brief,
+    count=10,
+    preferences=None,
+    brand_dna=None,
+    search_context=None,
+):
     if not os.environ.get("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is not configured")
     from openai import OpenAI
 
+    context = clean_search_context(search_context)
     client = OpenAI()
-    pool_size, plan = _generation_plan(count)
+    pool_size, plan = _generation_plan(count, context)
     response = client.responses.create(
         model=os.environ.get("OPENAI_MODEL", "gpt-5.6-luna"),
         instructions=SYSTEM_PROMPT,
         input=(
             f"Generate exactly {pool_size} distinct candidates for a final shortlist of {count}.\n"
             f"Project brief: {brief}\n"
+            f"Search task: {search_context_prompt(context)}\n"
             f"Structured Brand DNA: {brand_dna_context(brand_dna)}\n"
             f"Project-specific feedback: {_preference_context(preferences)}\n"
             f"Generation plan:\n{plan}"
@@ -190,7 +284,7 @@ def generate_ai_names(brief, count=10, preferences=None, brand_dna=None):
         store=False,
     )
     data = json.loads(response.output_text)
-    selected = select_diverse_names(data["names"], count)
+    selected = select_diverse_names(data["names"], count, context)
     if len(selected) < count:
         raise ValueError(
             f"AI returned only {len(selected)} valid candidates; expected {count}"
