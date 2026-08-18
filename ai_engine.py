@@ -6,7 +6,7 @@ import unicodedata
 from difflib import SequenceMatcher
 
 from brand_dna import brand_dna_context
-from candidate_funnel import rank_candidate_pool
+from candidate_funnel import expand_local_families, rank_candidate_pool
 from trademark_risk import trademark_search_plan
 
 
@@ -424,15 +424,21 @@ def generate_ai_names(
         store=False,
     )
     data = json.loads(response.output_text)
+    local_pool = (
+        expand_local_families(brief, brand_dna, limit=180)
+        if context["mode"] == "new_brand"
+        else []
+    )
+    candidate_pool = list(data["names"]) + local_pool
     selected = select_diverse_names(
-        data["names"],
+        candidate_pool,
         count,
         context,
         exclude_names=adaptive["exclude_names"],
     )
     if len(selected) < count:
         raise ValueError(
-            f"AI returned only {len(selected)} valid candidates; expected {count}"
+            f"Generation funnel produced only {len(selected)} valid candidates; expected {count}"
         )
     return selected
 
