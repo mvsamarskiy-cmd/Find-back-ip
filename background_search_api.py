@@ -7,7 +7,9 @@ import os
 from flask import jsonify, request
 
 from background_jobs import JOB_STORE, MAX_BACKGROUND_TARGET, MAX_BATCH_SIZE
+from candidate_feed import CandidateFeedStore, MAX_FEED_PAGE
 from session_api import TOKEN_HEADER
+from worker_heartbeat import status as worker_status
 
 
 BACKGROUND_CREATE_RATE_LIMIT = os.environ.get("BACKGROUND_CREATE_RATE_LIMIT", "30 per minute")
@@ -15,7 +17,13 @@ BACKGROUND_READ_RATE_LIMIT = os.environ.get("BACKGROUND_READ_RATE_LIMIT", "180 p
 
 
 def background_search_diagnostics():
-    return JOB_STORE.diagnostics()
+    diagnostics = JOB_STORE.diagnostics()
+    heartbeat = worker_status(JOB_STORE.session_store) if JOB_STORE.configured else {
+        "worker_online": False,
+        "worker_count": 0,
+        "last_seen_at": None,
+    }
+    return {**diagnostics, **heartbeat}
 
 
 def install_background_search_routes(app, app_module):
@@ -34,9 +42,11 @@ def install_background_search_routes(app, app_module):
     @app.get("/api/background-search")
     def api_background_search_capabilities():
         diagnostics = background_search_diagnostics()
+        configured = bool(diagnostics["configured"])
         return jsonify({
             **diagnostics,
-            "enabled": bool(diagnostics["configured"]),
+            "enabled": configured,
+            "ready": configured and bool(diagnostics.get("worker_online")),
             "token_header": TOKEN_HEADER,
         })
 
@@ -143,6 +153,34 @@ def install_background_search_routes(app, app_module):
         if job is None:
             return jsonify({"error": "Job not found"}), 404
         return jsonify({"job": job})
+
+    @app.get("/api/sessions/<session_id>/candidate-feed")
+    @app_module.limiter.limit(BACKGROUND_READ_RATE_LIMIT)
+    def api_candidate_feed(session_id):
+        if not JOB_STORE.configured:
+            return unavailable()
+        try:
+            after_seq = int(request.args.get("after_seq", "0"))
+            limit = int(request.args.get("limit", "100"))
+        except ValueError:
+            return jsonify({"error": "after_seq and limit must be integers"}), 400
+        if after_seq < 0:
+            return jsonify({"error": "after_seq must be non-negative"}), 400
+        if limit < 1 or limit > MAX_FEED_PAGE:
+            return jsonify({"error": f"limit must be between 1 and {MAX_FEED_PAGE}"}), 400
+        try:
+            feed = CandidateFeedStore(JOB_STORE.session_store).since(
+                session_id,
+                token(),
+                after_seq=after_seq,
+                limit=limit,
+            )
+        except Exception as error:
+            app.logger.warning("Candidate feed read failed: %s", type(error).__name__)
+            return unavailable()
+        if feed is None:
+            return jsonify({"error": "Session not found"}), 404
+        return jsonify(feed)
 
 
 __all__ = ["background_search_diagnostics", "install_background_search_routes"]

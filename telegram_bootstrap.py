@@ -28,10 +28,11 @@ install_session_routes(app, app_module)
 install_background_search_routes(app, app_module)
 
 
-RELEASE_MARKER = "v7.3-large-feed-navigation"
+RELEASE_MARKER = "v7.4-background-search-ui"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js"></script>'
+BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
 FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js"></script>'
 
 
@@ -47,6 +48,8 @@ def prevent_stale_html(response):
             tags.append(RESOURCE_PROGRESS_TAG)
         if SESSION_SYNC_TAG not in body:
             tags.append(SESSION_SYNC_TAG)
+        if BACKGROUND_SEARCH_TAG not in body:
+            tags.append(BACKGROUND_SEARCH_TAG)
         if FEED_NAVIGATION_TAG not in body:
             tags.append(FEED_NAVIGATION_TAG)
         if tags and "</body>" in body:
@@ -133,6 +136,12 @@ def api_verification_diagnostics():
             "alphabetical_sort": False,
             "render_page_size": 60,
             "filters": ["all", "confirmed", "promising", "conflict", "unresolved"],
+        },
+        "background_search_ui": {
+            "enabled_when_worker_ready": True,
+            "candidate_delta_endpoint": "/api/sessions/<session_id>/candidate-feed",
+            "candidate_page_size": 100,
+            "targets": [500, 1000, 5000, 20000],
         },
         "session_storage": session_storage_diagnostics(),
         "background_search": background_search_diagnostics(),
