@@ -8,11 +8,17 @@ import json
 from pathlib import Path
 
 from verification.benchmark import KNOWN_FIXTURES, evaluate, summary
-from verification.providers import maigret_adapter, socialscan_adapter, whatsmyname_adapter
+from verification.providers import (
+    instagram_web_adapter,
+    maigret_adapter,
+    socialscan_adapter,
+    whatsmyname_adapter,
+)
 
 
 PROVIDERS = {
     "socialscan": socialscan_adapter.check_username,
+    "instagram_web": instagram_web_adapter.check_username,
     "whatsmyname": whatsmyname_adapter.check_username,
     "maigret": maigret_adapter.check_username,
 }
@@ -21,6 +27,8 @@ PROVIDERS = {
 def _eligible(fixtures, provider_name):
     if provider_name == "socialscan":
         allowed = {"instagram", "x"}
+    elif provider_name == "instagram_web":
+        allowed = {"instagram"}
     else:
         allowed = {"instagram", "telegram", "tiktok", "youtube", "facebook", "x"}
     return [fixture for fixture in fixtures if fixture.platform in allowed]
