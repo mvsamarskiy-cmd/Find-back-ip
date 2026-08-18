@@ -74,8 +74,9 @@ No estimated monetary value is shown without comparable market sales.
   visible-text extraction, and explicit prompt-injection isolation.
 - [x] Allow AI naming endpoints to consume sanitized Brand DNA without breaking
   legacy brief-only calls.
-- [ ] Add website URL and Brand DNA review/edit controls to the browser UI and
-  persist the resulting DNA inside the local project profile.
+- [x] Add website URL and Brand DNA review/edit controls to the browser UI, persist
+  the edited DNA and source metadata inside the local project profile and search
+  history, and send the current DNA into every adaptive generation batch.
 - [x] Split requirements into MUST HAVE and optional resources so a candidate is
   rejected when a required identity resource conflicts but may survive an
   optional conflict.
