@@ -28,6 +28,7 @@ jobs:
       - run: node --check static/resource_progress.js
       - run: node --check static/session_sync.js
       - run: node --check static/background_search.js
+      - run: node --check static/availability_hunter_ui.js
       - run: node --check static/audit_sync.js
       - run: node --check static/audit_report.js
       - run: node --check static/client_report.js
