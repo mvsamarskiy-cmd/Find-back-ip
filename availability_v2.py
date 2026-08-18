@@ -1,8 +1,9 @@
 """Compatibility wrapper that adds Verification Engine v2 verdicts.
 
-The legacy availability module remains the source of network checks during the
-migration. This wrapper is additive: callers keep receiving every legacy field,
-plus a ``verification`` map with deterministic v2 verdicts.
+The legacy availability module remains the source of primary network checks during
+the migration. Independent approved provider evidence is collected once, projected
+back into the legacy compatibility payload, and retained separately for central
+Verification v2 fusion.
 """
 
 from functools import partial
@@ -11,10 +12,10 @@ import os
 
 import availability as legacy
 from verification.collector import collect_verification_verdicts
-from verification.instagram_live import enrich_instagram
-from verification.socialscan_live import enrich_x
-from verification.telegram_live import enrich_telegram
-from verification.tiktok_live import enrich_tiktok
+from verification.live_provider_evidence import (
+    apply_compatibility_evidence,
+    collect_live_provider_evidence,
+)
 
 
 RESOURCE_KEYS = legacy.RESOURCE_KEYS
@@ -55,37 +56,34 @@ def _recount(result):
 def _augment(handle, payload):
     result = dict(payload or {})
     base_availability = dict(result.get("availability") or {})
+
+    # Collect each approved secondary provider once. The resulting rows are used
+    # both for compatibility projection and for the full Verification v2 trail.
+    extra_by_platform = collect_live_provider_evidence(handle, base_availability)
     availability = dict(base_availability)
-    changed = False
-    if "x" in availability:
-        availability["x"] = enrich_x(handle, availability.get("x"))
-        changed = True
-    if "instagram" in availability:
-        availability["instagram"] = enrich_instagram(handle, availability.get("instagram"))
-        changed = True
-    if "tiktok" in availability:
-        availability["tiktok"] = enrich_tiktok(handle, availability.get("tiktok"))
-        changed = True
-    if "telegram" in availability:
-        availability["telegram"] = enrich_telegram(handle, availability.get("telegram"))
-        changed = True
-    if changed:
+    for platform, row in base_availability.items():
+        availability[platform] = apply_compatibility_evidence(
+            handle,
+            platform,
+            row,
+            extra_by_platform.get(platform),
+        )
+
+    if availability != base_availability:
         result["availability"] = availability
         _recount(result)
 
-    # Verification v2 preserves the original legacy evidence and any stronger
-    # compatibility enrichment as separate rows. A later provider can no longer
-    # silently erase earlier evidence before fusion.
     result["verification"] = collect_verification_verdicts(
         handle,
         base_availability,
         availability,
+        extra_by_platform=extra_by_platform,
     )
     return result
 
 
 def check_all(name, resources=None):
-    """Run legacy checks, enrich benchmarked no-key evidence, and attach v2 verdicts."""
+    """Run primary checks, collect independent evidence, and attach v2 verdicts."""
     return _augment(name, legacy.check_all(name, resources=resources))
 
 
@@ -93,7 +91,7 @@ def check_many(names, max_workers=None, resources=None):
     """Check several names concurrently and return additive v2 payloads.
 
     We intentionally call this module's ``check_all`` instead of delegating to
-    legacy.check_many so every result is augmented consistently.
+    legacy.check_many so every result receives the same evidence collection path.
     """
     names = list(names)
     if not names:

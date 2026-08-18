@@ -35,6 +35,11 @@ def _best(rows):
     return max(rows, key=lambda row: (_authority(row), _confidence(row)))
 
 
+def _is_non_blocking(row):
+    metadata = row.get("metadata") if isinstance(row, dict) else None
+    return bool(isinstance(metadata, dict) and metadata.get("non_blocking"))
+
+
 def _verdict(platform, handle, verdict, confidence, rows, reason):
     return VerificationVerdict(
         platform=platform,
@@ -54,20 +59,23 @@ def fuse_evidence(platform, handle, evidence):
     - claimability plus occupancy conflict can never become AVAILABLE_VERIFIED;
     - INVALID input wins immediately;
     - contradictory positive evidence becomes UNKNOWN for re-check/manual review;
-    - weak negative evidence never beats direct positive occupancy evidence.
+    - weak negative evidence never beats direct positive occupancy evidence;
+    - evidence tagged ``metadata.non_blocking`` remains visible in the returned
+      evidence trail but cannot change the verdict.
     """
     rows = [dict(row) for row in evidence if isinstance(row, dict)]
-    if not rows:
+    decision_rows = [row for row in rows if not _is_non_blocking(row)]
+    if not decision_rows:
         return _verdict(
             platform,
             handle,
             "unknown",
             0.0,
             rows,
-            "No verification evidence is available.",
+            "No decisive verification evidence is available.",
         )
 
-    invalid = [row for row in rows if row.get("signal") == "invalid"]
+    invalid = [row for row in decision_rows if row.get("signal") == "invalid"]
     if invalid:
         best = _best(invalid)
         return _verdict(
@@ -79,8 +87,8 @@ def fuse_evidence(platform, handle, evidence):
             "At least one verifier determined that the identifier is invalid for this resource.",
         )
 
-    claimable = [row for row in rows if row.get("signal") in {"claimable", "purchasable"}]
-    occupied = [row for row in rows if row.get("signal") in {"exists", "reserved"}]
+    claimable = [row for row in decision_rows if row.get("signal") in {"claimable", "purchasable"}]
+    occupied = [row for row in decision_rows if row.get("signal") in {"exists", "reserved"}]
 
     # A registrar/provider saying "claimable" while another source says the same
     # identifier exists/reserved is a contradiction. Never show green in that case.
@@ -121,10 +129,10 @@ def fuse_evidence(platform, handle, evidence):
             "A provider explicitly confirmed a claimable or purchasable path and no contradictory occupancy evidence is present.",
         )
 
-    absent = [row for row in rows if row.get("signal") == "absent"]
+    absent = [row for row in decision_rows if row.get("signal") == "absent"]
     unresolved = [
         row
-        for row in rows
+        for row in decision_rows
         if row.get("signal") in {"blocked", "rate_limited", "unknown"}
     ]
 

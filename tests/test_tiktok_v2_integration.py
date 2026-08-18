@@ -21,21 +21,28 @@ class TikTokV2IntegrationTests(TestCase):
                 }
             }
         }
-        enriched = {
-            "status": "taken",
-            "detail": "exact TikTok profile",
-            "url": "https://www.tiktok.com/@mazomoto",
+        evidence = {
+            "platform": "tiktok",
+            "handle": "mazomoto",
             "source": "tiktok_oembed",
             "method": "official_creator_profile_oembed",
+            "signal": "exists",
             "confidence": 0.97,
-            "occupancy": "occupied",
-            "claimability": "not_claimable",
-            "checked_at": "2026-08-18T00:00:00Z",
+            "detail": "exact TikTok profile",
+            "url": "https://www.tiktok.com/@mazomoto",
+            "metadata": {},
         }
         with patch.object(availability_v2.legacy, "check_all", return_value=legacy_payload):
-            with patch.object(availability_v2, "enrich_tiktok", return_value=enriched):
+            with patch.object(
+                availability_v2,
+                "collect_live_provider_evidence",
+                return_value={"tiktok": [evidence]},
+            ):
                 result = availability_v2.check_all("mazomoto", resources=["tiktok"])
 
         self.assertEqual(result["taken_count"], 1)
         self.assertEqual(result["unknown_count"], 0)
         self.assertEqual(result["verification"]["tiktok"]["verdict"], "taken")
+        sources = {row["source"] for row in result["verification"]["tiktok"]["evidence"]}
+        self.assertIn("public_web", sources)
+        self.assertIn("tiktok_oembed", sources)
