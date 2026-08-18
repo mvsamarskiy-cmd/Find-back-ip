@@ -8,6 +8,7 @@
   const TOKEN_HEADER = 'X-NameMachine-Session-Token';
   const POLL_MS = 300;
   const MAX_POLLS = 200;
+  const NETWORK_TIMEOUT_MS = 2500;
   const inflightLoads = new Map();
   const inflightWrites = new Map();
 
@@ -27,6 +28,16 @@
       '/variant-expansions/' + encodeURIComponent(String(name || ''));
   }
 
+  async function fetchBounded(url, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   function localStore() {
     if (!current) return null;
     if (!current.variantExpansions || typeof current.variantExpansions !== 'object' || Array.isArray(current.variantExpansions)) {
@@ -42,7 +53,7 @@
     if (inflightLoads.has(key)) return inflightLoads.get(key);
     const task = (async () => {
       try {
-        const response = await fetch(path, { headers: { [TOKEN_HEADER]: creds.token } });
+        const response = await fetchBounded(path, { headers: { [TOKEN_HEADER]: creds.token } });
         if (!response.ok) return null;
         const payload = await response.json().catch(() => ({}));
         const expansion = payload?.expansion;
@@ -70,7 +81,7 @@
     if (inflightWrites.has(key)) return inflightWrites.get(key);
     const task = (async () => {
       try {
-        const response = await fetch(path, {
+        const response = await fetchBounded(path, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', [TOKEN_HEADER]: creds.token },
           body: JSON.stringify(expansion),
@@ -114,8 +125,6 @@
     setTimeout(tick, POLL_MS);
   }
 
-  // Capture candidate-card clicks before the base R9 listener so server state is
-  // loaded first. Failure to load never blocks the local workflow.
   document.addEventListener('click', event => {
     const button = event.target.closest('.variant-expand-open');
     if (!button) return;
@@ -124,8 +133,6 @@
     void openWithServerState(button.dataset.variantName || '');
   }, true);
 
-  // Do not stop the real run-button event. Merely remember the parent candidate
-  // and persist its local result after the visible workflow finishes.
   document.addEventListener('click', event => {
     if (!event.target.closest('#variantRunButton')) return;
     const name = modalName();
