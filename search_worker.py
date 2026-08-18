@@ -23,6 +23,7 @@ import app as app_module  # noqa: E402
 from availability_hunter import run_availability_hunter_job  # noqa: E402
 from availability_v2 import check_all as check_all_v2  # noqa: E402
 from background_jobs import JOB_STORE, search_jobs  # noqa: E402
+from procedural_search import prepare_procedural_context  # noqa: E402
 from session_store import _iso, _utcnow, candidates, feedback, sessions  # noqa: E402
 from streaming_search import _generate_candidates  # noqa: E402
 from worker_heartbeat import beat, remove  # noqa: E402
@@ -185,16 +186,48 @@ def _runtime_generation_state(job, generation_context):
     }
     preferences["_runtime"] = runtime
 
-    # Persist the worker-read snapshot so the authenticated job API can prove to
-    # the browser/report when feedback was actually consumed by the worker.
     with engine.begin() as conn:
         conn.execute(
             update(search_jobs)
             .where(search_jobs.c.id == job.get("id"))
             .values(preferences=preferences, updated_at=_utcnow())
         )
+    # Keep the in-process job snapshot synchronized too. Procedural planning writes
+    # another runtime block later in the same batch and must not erase this ACK.
+    job["preferences"] = preferences
 
     return preferences, context, runtime
+
+
+def _apply_procedural_focus(brief, search_context, generation_context, procedural):
+    if not isinstance(procedural, dict) or procedural.get("exhausted"):
+        return brief, search_context, generation_context
+    focus = str(procedural.get("current_root") or "").strip()
+    strategy = str(procedural.get("current_strategy") or "").strip()
+    context = dict(generation_context or {})
+    directive = context.get("procedural") if isinstance(context.get("procedural"), dict) else {}
+    supporting = [str(root) for root in directive.get("supporting_roots", []) if str(root)]
+    strategy_rule = str(directive.get("strategy_rule") or "").strip()
+    if not focus:
+        return brief, search_context, context
+
+    # For direct/compression/phonetic phases a single literal root disables the
+    # broad local combinatorial expander, preventing unrelated root mixtures.
+    # Blend/compound phases receive only a small supporting neighborhood.
+    if strategy in {"blend", "compound"}:
+        focused_brief = " ".join([focus, *supporting[:2]])
+    else:
+        focused_brief = focus
+
+    scoped = dict(search_context or {})
+    existing = str(scoped.get("guidance") or "").strip()
+    procedural_rule = (
+        f"Procedural search: stay on semantic root '{focus}'. "
+        f"Current transformation strategy: {strategy}. {strategy_rule} "
+        "Do not jump to another naming root in this batch."
+    )
+    scoped["guidance"] = " | ".join(part for part in [existing, procedural_rule] if part)[:500]
+    return focused_brief, scoped, context
 
 
 def generate_batch(job, count, generation_context):
@@ -211,17 +244,37 @@ def generate_batch(job, count, generation_context):
     if runtime.get("conflict_examples"):
         extra = (
             "Попередні перевірки показують зайнятий цифровий простір. "
-            "Підвищуй унікальність, змінюй корені й фонетичні структури, а не роби дрібні мутації зайнятих назв."
+            "Підвищуй унікальність без дрібних мутацій уже зайнятих назв."
         )
         existing_guidance = str(search_context.get("guidance") or "").strip()
         search_context["guidance"] = " ".join(part for part in [existing_guidance, extra] if part)[:500]
 
+    intelligence = None
     if os.environ.get("OPENAI_API_KEY"):
-        brief, search_context, _intelligence = app_module.apply_prompt_intelligence(
+        brief, search_context, intelligence = app_module.apply_prompt_intelligence(
             brief,
             resources,
             search_context,
         )
+
+    try:
+        generation_context, procedural = prepare_procedural_context(
+            JOB_STORE,
+            job,
+            generation_context,
+            intelligence=intelligence,
+        )
+        brief, search_context, generation_context = _apply_procedural_focus(
+            brief,
+            search_context,
+            generation_context,
+            procedural,
+        )
+    except Exception as error:
+        # Planner failure must not fabricate a search transition or kill a durable
+        # job. Generation safely falls back to the existing adaptive path.
+        print(f"NameMachine procedural planner refresh failed: {type(error).__name__}", flush=True)
+
     data = {"preferences": preferences}
     return _generate_candidates(
         app_module,
@@ -300,11 +353,18 @@ def main():
             if result is None:
                 STOP.wait(idle_seconds)
             else:
-                hunter = (result.get("preferences") or {}).get("_hunter_runtime") or {}
+                prefs = result.get("preferences") or {}
+                hunter = prefs.get("_hunter_runtime") or {}
+                procedural = prefs.get("_procedural_runtime") or {}
                 suffix = (
                     f" matches={hunter.get('matches', 0)}/{hunter.get('target_matches', 0)}"
                     if hunter else ""
                 )
+                if procedural and not procedural.get("exhausted"):
+                    suffix += (
+                        f" root={procedural.get('current_root', '')}"
+                        f" strategy={procedural.get('current_strategy', '')}"
+                    )
                 print(
                     "background job",
                     result.get("id"),

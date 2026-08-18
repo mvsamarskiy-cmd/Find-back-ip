@@ -58,6 +58,10 @@ class BackgroundSearchApiTests(unittest.TestCase):
         self.assertEqual(data["availability_hunter"]["strict_match_policy"], "claimable")
         self.assertFalse(data["availability_hunter"]["purchasable_counts_as_free_match"])
         self.assertFalse(data["availability_hunter"]["not_found_counts_as_free_match"])
+        self.assertTrue(data["procedural_search"]["supported"])
+        self.assertTrue(data["procedural_search"]["default_for_hunter"])
+        self.assertTrue(data["procedural_search"]["one_root_at_a_time"])
+        self.assertIn("phonetic", data["procedural_search"]["strategies"])
 
     def test_create_list_read_and_cancel_job(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
@@ -79,7 +83,7 @@ class BackgroundSearchApiTests(unittest.TestCase):
         self.assertEqual(cancelled.status_code, 200)
         self.assertEqual(cancelled.get_json()["job"]["state"], "cancelled")
 
-    def test_create_availability_hunter_uses_result_goal_and_check_budget(self):
+    def test_create_availability_hunter_defaults_to_procedural_result_search(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
         created = self.client.post(
             path,
@@ -94,8 +98,23 @@ class BackgroundSearchApiTests(unittest.TestCase):
         self.assertEqual(hunter["target_matches"], 3)
         self.assertEqual(hunter["max_checks"], 800)
         self.assertEqual(hunter["match_policy"], "claimable")
+        procedural = job["search_context"]["procedural_search"]
+        self.assertTrue(procedural["enabled"])
+        self.assertEqual(procedural["strategy"], "procedural")
 
-    def test_availability_hunter_bounds_are_enforced(self):
+    def test_hunter_can_explicitly_keep_old_adaptive_strategy(self):
+        path = f"/api/sessions/{self.session['session_id']}/search-jobs"
+        created = self.client.post(
+            path,
+            json=self.payload(target_matches=2, max_checks=100, search_strategy="adaptive"),
+            headers=self.headers,
+        )
+        self.assertEqual(created.status_code, 202)
+        job = created.get_json()["job"]
+        self.assertIn("availability_hunter", job["search_context"])
+        self.assertNotIn("procedural_search", job["search_context"])
+
+    def test_availability_hunter_bounds_and_strategy_are_enforced(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
         bad_goal = self.client.post(
             path,
@@ -115,6 +134,12 @@ class BackgroundSearchApiTests(unittest.TestCase):
             headers=self.headers,
         )
         self.assertEqual(too_large_budget.status_code, 400)
+        invalid_strategy = self.client.post(
+            path,
+            json=self.payload(target_matches=1, max_checks=100, search_strategy="random-chaos"),
+            headers=self.headers,
+        )
+        self.assertEqual(invalid_strategy.status_code, 400)
 
     def test_job_requires_capability_token(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"

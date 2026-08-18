@@ -18,6 +18,7 @@ from background_jobs import (
     run_one_job as run_legacy_job,
     search_jobs,
 )
+from procedural_search import record_procedural_batch
 from session_store import _iso, _utcnow, candidates
 
 
@@ -116,18 +117,12 @@ def run_availability_hunter_job(
     Jobs without an Availability Hunter configuration retain the legacy runner,
     which preserves compatibility with existing sessions and clients.
     """
-    # We must inspect the job after claiming it. To preserve the existing claim
-    # semantics, claim here for Hunter jobs and use a tiny pre-check against the
-    # oldest claimable job through the store. Legacy callers still use the old
-    # runner when no Hunter job is present.
     job = store.claim_next(worker_id)
     if not job:
         return None
 
     config = hunter_config(job)
     if config is None:
-        # Return this lease to pending, then let the proven legacy runner reclaim
-        # and execute it. This keeps one implementation of legacy semantics.
         store.release_to_pending(
             job["id"],
             worker_id,
@@ -214,6 +209,9 @@ def run_availability_hunter_job(
 
             inserted = store.append_candidates(job["id"], verified_rows, attempted)
             checked += inserted
+            # Procedural search learns from actual provider verdicts, never from
+            # guessed generation quality. This state is separate from taste feedback.
+            record_procedural_batch(store, job, verified_rows)
             matches = count_persisted_matches(store, job)
             _persist_runtime(store, job, checked=checked, matches=matches, config=config)
             job = store.checkpoint(job["id"], worker_id, attempted, checked) or job

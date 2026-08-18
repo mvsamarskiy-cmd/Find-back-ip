@@ -9,6 +9,7 @@ from flask import jsonify, request
 from availability_hunter import HUNTER_KEY, MAX_TARGET_MATCHES, STRICT_MATCH_POLICY
 from background_jobs import JOB_STORE, MAX_BACKGROUND_TARGET, MAX_BATCH_SIZE
 from candidate_feed import CandidateFeedStore, MAX_FEED_PAGE
+from procedural_search import PROCEDURAL_KEY, STRATEGIES
 from session_api import TOKEN_HEADER
 from worker_heartbeat import status as worker_status
 
@@ -34,6 +35,13 @@ def background_search_diagnostics():
             "strict_match_policy": STRICT_MATCH_POLICY,
             "purchasable_counts_as_free_match": False,
             "not_found_counts_as_free_match": False,
+        },
+        "procedural_search": {
+            "supported": True,
+            "default_for_hunter": True,
+            "one_root_at_a_time": True,
+            "strategies": list(STRATEGIES),
+            "uses_real_verification_yield": True,
         },
     }
 
@@ -93,10 +101,6 @@ def install_background_search_routes(app, app_module):
         if batch_size < 1 or batch_size > MAX_BATCH_SIZE:
             return jsonify({"error": f"batch_size must be between 1 and {MAX_BATCH_SIZE}"}), 400
 
-        # R2 Availability Hunter is opt-in and backward-compatible. The existing
-        # target_count field becomes the hard verification budget only when the
-        # caller explicitly supplies target_matches. No SQL schema migration is
-        # required because the goal is stored in search_context JSON.
         target_matches_raw = data.get("target_matches")
         if target_matches_raw is not None:
             try:
@@ -110,6 +114,11 @@ def install_background_search_routes(app, app_module):
                 return jsonify({"error": f"max_checks must be between 1 and {MAX_BACKGROUND_TARGET}"}), 400
             if target_matches > max_checks:
                 return jsonify({"error": "target_matches cannot exceed max_checks"}), 400
+
+            strategy = str(data.get("search_strategy") or "procedural").strip().lower()
+            if strategy not in {"procedural", "adaptive"}:
+                return jsonify({"error": "search_strategy must be procedural or adaptive"}), 400
+
             search_context = dict(search_context or {})
             search_context[HUNTER_KEY] = {
                 "enabled": True,
@@ -117,6 +126,11 @@ def install_background_search_routes(app, app_module):
                 "max_checks": max_checks,
                 "match_policy": STRICT_MATCH_POLICY,
             }
+            if strategy == "procedural":
+                search_context[PROCEDURAL_KEY] = {
+                    "enabled": True,
+                    "strategy": "procedural",
+                }
             target_count = max_checks
 
         payload = {
