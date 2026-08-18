@@ -138,10 +138,10 @@ class EntryModeUiTests(unittest.TestCase):
         self.assertIn("direction-btn", source)
         self.assertIn("shortlist-btn", source)
 
-    def test_entry_mode_script_loads_last(self):
+    def test_entry_mode_script_loads_after_feed_and_report_modes(self):
         body = app.test_client().get("/").get_data(as_text=True)
         self.assertIn('/static/entry_modes.js?v=1', body)
-        self.assertGreater(body.index('/static/entry_modes.js?v=1'), body.index('/static/feed_navigation.js?v=2'))
+        self.assertGreater(body.index('/static/entry_modes.js?v=1'), body.index('/static/feed_navigation.js?v=3'))
         self.assertGreater(body.index('/static/entry_modes.js?v=1'), body.index('/static/client_report_modes.js?v=1'))
 
     def test_streaming_uses_mode_specific_search_context(self):
