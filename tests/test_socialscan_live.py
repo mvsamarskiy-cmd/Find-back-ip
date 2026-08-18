@@ -57,3 +57,27 @@ class SocialscanLiveTests(TestCase):
             with patch.object(socialscan_live.socialscan_adapter, "check_username", return_value=evidence):
                 row = socialscan_live.enrich_x("example", legacy)
         self.assertIs(row, legacy)
+
+    def test_instagram_exists_can_promote_to_taken(self):
+        legacy = {"status": "unknown", "source": "public_web"}
+        evidence = {"signal": "exists", "confidence": 0.9, "detail": "occupied"}
+        with patch.object(socialscan_live.socialscan_adapter, "check_username", return_value=evidence) as socialscan:
+            row = socialscan_live.enrich_instagram("natgeo", legacy)
+        self.assertEqual(row["status"], "taken")
+        self.assertEqual(row["source"], "socialscan")
+        socialscan.assert_called_once_with("natgeo", "instagram")
+
+    def test_instagram_claimable_never_promotes_availability(self):
+        legacy = {"status": "unknown", "source": "public_web"}
+        evidence = {"signal": "claimable", "confidence": 0.86, "detail": "available"}
+        with patch.object(socialscan_live.socialscan_adapter, "check_username", return_value=evidence):
+            row = socialscan_live.enrich_instagram("rarehandle", legacy)
+        self.assertIs(row, legacy)
+        self.assertNotEqual(row.get("status"), "claimable")
+
+    def test_instagram_unknown_keeps_legacy_result(self):
+        legacy = {"status": "not_found", "source": "public_web"}
+        evidence = {"signal": "unknown", "confidence": 0.0, "detail": "blocked"}
+        with patch.object(socialscan_live.socialscan_adapter, "check_username", return_value=evidence):
+            row = socialscan_live.enrich_instagram("example", legacy)
+        self.assertIs(row, legacy)
