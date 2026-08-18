@@ -7,10 +7,19 @@ from telegram_integration import install
 
 install()
 
+# Keep the historical import shape because production tests assert that the
+# Telegram integration is installed before Flask app import. The module import
+# below lets Verification v2 replace checker globals used by existing routes.
 from app import app  # noqa: E402
+import app as app_module  # noqa: E402
+from availability_v2 import check_all as check_all_v2, check_many as check_many_v2  # noqa: E402
+from verification.diagnostics import provider_diagnostics  # noqa: E402
+
+app_module.check_all = check_all_v2
+app_module.check_many = check_many_v2
 
 
-RELEASE_MARKER = "v6.2"
+RELEASE_MARKER = "v6.3-verification-v2"
 
 
 @app.after_request
@@ -32,6 +41,15 @@ def api_version():
         or "unknown"
     )
     return jsonify({"release": RELEASE_MARKER, "git_commit": commit})
+
+
+@app.get("/api/verification/diagnostics")
+def api_verification_diagnostics():
+    """Expose only non-secret provider capability/configuration state."""
+    return jsonify({
+        "verification_engine": "v2",
+        "providers": provider_diagnostics(),
+    })
 
 
 __all__ = ["app"]
