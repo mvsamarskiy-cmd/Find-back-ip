@@ -17,6 +17,10 @@ from ai_engine import (
 )
 
 
+def alpha_name(prefix, index):
+    return prefix + chr(65 + ((index // 26) % 26)) + chr(65 + (index % 26))
+
+
 class PreferenceContextTests(unittest.TestCase):
     def test_preference_context_is_bounded_json(self):
         raw = {
@@ -66,9 +70,9 @@ class PreferenceContextTests(unittest.TestCase):
     def test_generation_context_is_bounded_and_sanitized(self):
         context = clean_generation_context({
             "batch_number": 99,
-            "exclude_names": [f"Name{i}" for i in range(120)] + ["bad-name"],
-            "conflict_names": [f"Conflict{i}" for i in range(50)],
-            "successful_names": [f"Good{i}" for i in range(30)],
+            "exclude_names": [alpha_name("Name", i) for i in range(120)] + ["bad-name"],
+            "conflict_names": [alpha_name("Conflict", i) for i in range(50)],
+            "successful_names": [alpha_name("Good", i) for i in range(30)],
         })
         self.assertEqual(context["batch_number"], 5)
         self.assertEqual(len(context["exclude_names"]), 100)
