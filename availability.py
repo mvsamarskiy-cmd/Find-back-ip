@@ -1,14 +1,25 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from functools import partial
 from urllib.parse import quote
 
 import requests
 
 HTTP_TIMEOUT = float(os.environ.get("HTTP_TIMEOUT", "6"))
-USER_AGENT = os.environ.get("HTTP_USER_AGENT", "Mozilla/5.0 (compatible; NameMachine/4.5)")
+USER_AGENT = os.environ.get("HTTP_USER_AGENT", "Mozilla/5.0 (compatible; NameMachine/4.6)")
 NAMECOM_CHECK_URL = "https://api.name.com/core/v1/domains:checkAvailability"
 NAMECOM_SEARCH_URL = "https://www.name.com/domain/search"
+
+RESOURCE_KEYS = (
+    "com",
+    "instagram",
+    "telegram",
+    "tiktok",
+    "youtube",
+    "facebook",
+    "x",
+)
 
 STATUS_VALUES = (
     "claimable",
@@ -22,6 +33,28 @@ STATUS_VALUES = (
 )
 ACTIONABLE_STATUSES = frozenset({"claimable", "purchasable"})
 UNRESOLVED_STATUSES = frozenset({"rate_limited", "unknown"})
+
+
+def normalize_resources(resources=None):
+    """Return a validated resource selection in the canonical display order."""
+    if resources is None:
+        return RESOURCE_KEYS
+    if isinstance(resources, str):
+        resources = resources.split(",")
+    if not isinstance(resources, (list, tuple, set, frozenset)):
+        raise ValueError("Resources must be a list or comma-separated string")
+
+    requested = {
+        str(resource).strip().lower()
+        for resource in resources
+        if str(resource).strip()
+    }
+    if not requested:
+        raise ValueError("Select at least one resource")
+    unknown = sorted(requested.difference(RESOURCE_KEYS))
+    if unknown:
+        raise ValueError(f"Unsupported resources: {', '.join(unknown)}")
+    return tuple(resource for resource in RESOURCE_KEYS if resource in requested)
 
 
 def _result(
@@ -471,8 +504,9 @@ def check_x(name):
     )
 
 
-def check_all(name):
-    checks = {
+def check_all(name, resources=None):
+    selected_resources = normalize_resources(resources)
+    all_checks = {
         "com": check_com,
         "instagram": check_instagram,
         "telegram": check_telegram,
@@ -481,6 +515,7 @@ def check_all(name):
         "facebook": check_facebook,
         "x": check_x,
     }
+    checks = {key: all_checks[key] for key in selected_resources}
     with ThreadPoolExecutor(max_workers=len(checks)) as executor:
         futures = {key: executor.submit(check, name) for key, check in checks.items()}
         result = {}
@@ -507,6 +542,7 @@ def check_all(name):
     unresolved_count = sum(status_counts[status] for status in UNRESOLVED_STATUSES)
     return {
         "availability": result,
+        "selected_resources": list(selected_resources),
         "status_counts": status_counts,
         "claimable_count": claimable_count,
         "purchasable_count": purchasable_count,
@@ -541,12 +577,14 @@ def _public_url(platform, name):
     }[platform]
 
 
-def check_many(names, max_workers=None):
+def check_many(names, max_workers=None, resources=None):
     """Check several names concurrently while keeping outbound load bounded."""
     names = list(names)
     if not names:
         return []
+    selected_resources = normalize_resources(resources)
     workers = max_workers or int(os.environ.get("AVAILABILITY_WORKERS", "8"))
     workers = max(1, min(workers, 12, len(names)))
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        return list(executor.map(check_all, names))
+        checker = partial(check_all, resources=selected_resources)
+        return list(executor.map(checker, names))

@@ -1,12 +1,14 @@
-# NameMachine v4.5
+# NameMachine v4.6
 
 Deploy-ready Flask application for generating and screening international brand-name candidates.
 
 ## Features
 
 - heuristic name generation with configurable blacklists and scoring
-- concurrent .com, Instagram, and Telegram checks
+- selectable concurrent checks for .com, Instagram, Telegram, TikTok, YouTube,
+  Facebook, and X
 - OpenAI-powered generation from a Ukrainian brand brief
+- mobile-friendly resource filters with a dynamic selected-resource denominator
 - project-specific likes, dislikes, and structured preference learning
 - persistent browser history and project profiles
 - language-risk notes and pronunciation guidance
@@ -27,6 +29,26 @@ purchase path becomes `purchasable`. Missing credentials retain the conservative
 
 The staged implementation and reliability requirements are documented in
 [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md).
+
+## Resource selection API
+
+Every availability endpoint defaults to all seven resources for backward
+compatibility. A client can request only the resources it needs:
+
+```text
+GET /api/check/veya?resources=telegram,youtube
+GET /api/generate?count=5&verify=1&resources=instagram,youtube
+```
+
+`POST /api/ai-generate` accepts the same selection as a JSON array:
+
+```json
+{"brief": "Український освітній бренд", "resources": ["telegram", "youtube"]}
+```
+
+Responses include `selected_resources` and a matching `total_resources`.
+Empty selections and unknown resource keys return HTTP 400 rather than silently
+running a different check.
 
 ## Local run
 

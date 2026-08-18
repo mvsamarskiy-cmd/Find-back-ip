@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
-from availability import check_all, check_many
+from availability import RESOURCE_KEYS, check_all, check_many, normalize_resources
 from ai_engine import BANNED_ROOTS, BANNED_SUFFIXES, generate_ai_names, trademark_links
 
 app = Flask(__name__)
@@ -82,6 +82,18 @@ def json_object():
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else None
 
+
+def resource_error(error):
+    return jsonify({
+        "error": str(error),
+        "allowed_resources": list(RESOURCE_KEYS),
+    }), 400
+
+
+def query_resources():
+    raw = request.args.get("resources")
+    return normalize_resources(None if raw is None else raw)
+
 ONSETS = ["v","n","m","r","l","s","t","k","d","f","z","b","p","c","g","h","br","cr","dr","fr","gr","kr","pr","tr","vr","st","sk","cl","fl","pl"]
 NUCLEI = ["a","e","i","o","u","ae","ai","ea","eo","oa","ui"]
 CODAS = ["","n","r","s","l","m","x","v","d","t","k"]
@@ -151,7 +163,7 @@ def availability_sort_key(row):
         row.get("name", "").lower(),
     )
 
-def generate(count=40, verify=False):
+def generate(count=40, verify=False, resources=None):
     seen=set(); rows=[]; attempts=0
     while len(rows)<count and attempts<20000:
         attempts+=1; n=candidate(); k=n.lower()
@@ -161,7 +173,7 @@ def generate(count=40, verify=False):
         row={"name":n,"score":sc,"length":len(k)}
         rows.append(row); seen.add(k)
     if verify and rows:
-        checks=check_many(row["name"] for row in rows)
+        checks=check_many((row["name"] for row in rows), resources=resources)
         for row, result in zip(rows, checks): row.update(result)
     return sorted(rows, key=availability_sort_key)
 
@@ -176,7 +188,11 @@ def health(): return {"status":"ok"}
 def api_check(name):
     n=clean(name)
     if not 3<=len(n)<=30: return jsonify({"error":"Name must contain 3-30 latin letters"}),400
-    row={"name":n.capitalize(),"score":score_name(n),"length":len(n)}; row.update(check_all(n)); return jsonify(row)
+    try:
+        resources=query_resources()
+    except ValueError as error:
+        return resource_error(error)
+    row={"name":n.capitalize(),"score":score_name(n),"length":len(n)}; row.update(check_all(n,resources)); return jsonify(row)
 
 @app.post("/api/ai-names")
 @limiter.limit(AI_RATE_LIMIT)
@@ -221,6 +237,10 @@ def api_ai_generate():
         return jsonify({"error":"JSON body must be an object"}),400
     brief=str(data.get("brief","")).strip()
     if not 3<=len(brief)<=500: return jsonify({"error":"Brief must contain 3-500 characters"}),400
+    try:
+        resources=normalize_resources(data.get("resources"))
+    except ValueError as error:
+        return resource_error(error)
     try: count=max(1,min(20,int(data.get("count",10))))
     except (ValueError,TypeError): count=10
     if not AI_REQUEST_SLOTS.acquire(blocking=False):
@@ -239,7 +259,7 @@ def api_ai_generate():
                 app.logger.warning("AI generation attempt %s failed: %s", attempt + 1, type(error).__name__)
         else:
             raise last_error
-        checks=check_many(row["name"] for row in names)
+        checks=check_many((row["name"] for row in names),resources=resources)
         for row, availability in zip(names, checks):
             row.update(availability)
             row["trademark"]=trademark_links(row["name"])
@@ -257,7 +277,13 @@ def api_generate():
     try: count=max(1,min(40,int(request.args.get("count",20))))
     except ValueError: count=20
     verify=request.args.get("verify","0").lower() in {"1","true","yes","on"}
-    return jsonify(generate(count,verify))
+    try:
+        resources=query_resources()
+    except ValueError as error:
+        return resource_error(error)
+    if request.args.get("resources") is None:
+        return jsonify(generate(count,verify))
+    return jsonify(generate(count,verify,resources))
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=int(os.environ.get("PORT",8080)))
