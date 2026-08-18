@@ -33,7 +33,7 @@ jobs:
         run: pip install -r requirements-verifiers.txt
 
       - name: Run live benchmark
-        run: python verification/run_live_benchmark.py
+        run: python -m verification.run_live_benchmark
 
       - name: Upload benchmark report
         if: always()
