@@ -1,19 +1,19 @@
-/* Report/share controls loaded after audit_report.js. */
+/* Client report/share controls loaded after client_report.js. */
 (() => {
   const menu = document.getElementById('saveMenu');
   if (menu) {
     menu.innerHTML = `
-      <button type="button" id="downloadReadableReport">Звіт TXT</button>
-      <button type="button" id="downloadTechnicalAudit">Технічний аудит TXT</button>
-      <button type="button" id="emailReadableReport">Надіслати на email</button>
+      <button type="button" id="downloadClientHtml">Клієнтський звіт HTML</button>
+      <button type="button" id="downloadClientTxt">Клієнтський звіт TXT</button>
+      <button type="button" id="emailClientReport">Надіслати на email</button>
     `;
-    menu.querySelector('#downloadReadableReport')?.addEventListener('click', () => { void window.exportTxt?.(); });
-    menu.querySelector('#downloadTechnicalAudit')?.addEventListener('click', () => { void window.exportTechnicalAudit?.(); });
-    menu.querySelector('#emailReadableReport')?.addEventListener('click', () => { void window.emailReport?.(); });
+    menu.querySelector('#downloadClientHtml')?.addEventListener('click', () => { void window.exportClientReportHtml?.(); });
+    menu.querySelector('#downloadClientTxt')?.addEventListener('click', () => { void window.exportClientReportTxt?.(); });
+    menu.querySelector('#emailClientReport')?.addEventListener('click', () => { void window.emailClientReport?.(); });
   }
 
   const note = document.querySelector('.session-note');
   if (note) {
-    note.textContent = 'Сесія лишається доступною в браузері; коли серверна сесія активна, background search і результати також зберігаються на сервері. У меню «Зберегти» є короткий читабельний звіт, окремий повний технічний аудит і підготовка звіту до відправки через поштовий застосунок пристрою.';
+    note.textContent = 'Робоча сесія зберігає результати, shortlist і фідбек для продовження пошуку. У меню «Зберегти» клієнту доступний тільки чистий підсумковий звіт; технічна телеметрія не змішується з клієнтським документом.';
   }
 })();

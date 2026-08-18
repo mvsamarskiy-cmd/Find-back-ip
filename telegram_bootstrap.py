@@ -12,6 +12,7 @@ install()
 # below lets Verification v2 replace checker globals used by existing routes.
 from app import app  # noqa: E402
 import app as app_module  # noqa: E402
+from audit_api import install_audit_routes  # noqa: E402
 from availability_v2 import check_all as check_all_v2, check_many as check_many_v2  # noqa: E402
 from background_search_api import (  # noqa: E402
     background_search_diagnostics,
@@ -25,16 +26,19 @@ app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 install_streaming_routes(app, app_module)
 install_session_routes(app, app_module)
+install_audit_routes(app, app_module)
 install_background_search_routes(app, app_module)
 
 
-RELEASE_MARKER = "v7.5-readable-report"
+RELEASE_MARKER = "v7.6-client-report"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
-SESSION_SYNC_TAG = '<script src="/static/session_sync.js"></script>'
+SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=5"></script>'
 BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
+AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'
 AUDIT_REPORT_TAG = '<script src="/static/audit_report.js?v=4"></script>'
-REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=4"></script>'
+CLIENT_REPORT_TAG = '<script src="/static/client_report.js?v=5"></script>'
+REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=5"></script>'
 FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js"></script>'
 
 
@@ -52,8 +56,12 @@ def prevent_stale_html(response):
             tags.append(SESSION_SYNC_TAG)
         if BACKGROUND_SEARCH_TAG not in body:
             tags.append(BACKGROUND_SEARCH_TAG)
+        if AUDIT_SYNC_TAG not in body:
+            tags.append(AUDIT_SYNC_TAG)
         if AUDIT_REPORT_TAG not in body:
             tags.append(AUDIT_REPORT_TAG)
+        if CLIENT_REPORT_TAG not in body:
+            tags.append(CLIENT_REPORT_TAG)
         if REPORT_CONTROLS_TAG not in body:
             tags.append(REPORT_CONTROLS_TAG)
         if FEED_NAVIGATION_TAG not in body:
