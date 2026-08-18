@@ -45,7 +45,7 @@ install_brand_collision_routes(app, app_module)
 install_variant_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.6-variant-api"
+RELEASE_MARKER = "v8.7-variant-expansion"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=6"></script>'
@@ -62,6 +62,7 @@ ENTRY_MODES_TAG = '<script src="/static/entry_modes.js?v=1"></script>'
 BRAND_COLLISION_UI_TAG = '<script src="/static/brand_collision_ui.js?v=1"></script>'
 DURABLE_LIVE_EVENTS_TAG = '<script src="/static/durable_live_events.js?v=1"></script>'
 UI_CLEANUP_TAG = '<script src="/static/ui_cleanup_r8.js?v=1"></script>'
+VARIANT_EXPANSION_UI_TAG = '<script src="/static/variant_expansion_ui.js?v=1"></script>'
 
 
 @app.after_request
@@ -94,8 +95,6 @@ def prevent_stale_html(response):
             tags.append(FEED_NAVIGATION_TAG)
         if CLAIMABILITY_UI_TAG not in body:
             tags.append(CLAIMABILITY_UI_TAG)
-        # Entry modes adapt the existing streaming/feed behavior; collision UI,
-        # durable lifecycle rendering and final UX cleanup load after those wrappers.
         if ENTRY_MODES_TAG not in body:
             tags.append(ENTRY_MODES_TAG)
         if BRAND_COLLISION_UI_TAG not in body:
@@ -104,6 +103,9 @@ def prevent_stale_html(response):
             tags.append(DURABLE_LIVE_EVENTS_TAG)
         if UI_CLEANUP_TAG not in body:
             tags.append(UI_CLEANUP_TAG)
+        # Load the variant card wrapper last so it composes with all prior card/UI wrappers.
+        if VARIANT_EXPANSION_UI_TAG not in body:
+            tags.append(VARIANT_EXPANSION_UI_TAG)
         if tags and "</body>" in body:
             response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
@@ -222,6 +224,7 @@ def api_verification_diagnostics():
             "telemetry_default": "compact",
             "technical_details_toggle": True,
             "report_preview_closable": True,
+            "variant_expansion_ui": True,
         },
         "session_storage": session_storage_diagnostics(),
         "background_search": background_search_diagnostics(),
