@@ -7,16 +7,16 @@ from telegram_integration import install
 
 install()
 
-# Production still imports the legacy Flask module, but Verification v2 replaces
-# its checker globals at bootstrap time. Existing routes therefore keep their
-# URLs and response compatibility while gaining the additive `verification` map.
+# Keep the historical import shape because production tests assert that the
+# Telegram integration is installed before Flask app import. The module import
+# below lets Verification v2 replace checker globals used by existing routes.
+from app import app  # noqa: E402
 import app as app_module  # noqa: E402
 from availability_v2 import check_all as check_all_v2, check_many as check_many_v2  # noqa: E402
 from verification.diagnostics import provider_diagnostics  # noqa: E402
 
 app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
-app = app_module.app
 
 
 RELEASE_MARKER = "v6.3-verification-v2"
