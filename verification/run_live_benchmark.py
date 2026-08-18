@@ -15,6 +15,7 @@ from verification.providers import (
     socialscan_adapter,
     tiktok_oembed_adapter,
     whatsmyname_adapter,
+    youtube_handle_adapter,
 )
 
 
@@ -23,6 +24,7 @@ PROVIDERS = {
     "instagram_web": instagram_web_adapter.check_username,
     "meta_instagram_oembed": meta_instagram_oembed_adapter.check_username,
     "tiktok_oembed": tiktok_oembed_adapter.check_username,
+    "youtube_public_handle": youtube_handle_adapter.check_username,
     "whatsmyname": whatsmyname_adapter.check_username,
     "maigret": maigret_adapter.check_username,
 }
@@ -35,6 +37,8 @@ def _eligible(fixtures, provider_name):
         allowed = {"instagram"}
     elif provider_name == "tiktok_oembed":
         allowed = {"tiktok"}
+    elif provider_name == "youtube_public_handle":
+        allowed = {"youtube"}
     else:
         allowed = {"instagram", "telegram", "tiktok", "youtube", "facebook", "x"}
     return [fixture for fixture in fixtures if fixture.platform in allowed]
