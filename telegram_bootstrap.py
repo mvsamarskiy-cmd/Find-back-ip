@@ -3,11 +3,9 @@ import os
 from flask import jsonify
 
 from telegram_integration import install
-from verification.socialscan_live import install as install_socialscan_x
 
 
 install()
-install_socialscan_x()
 
 # Keep the historical import shape because production tests assert that the
 # Telegram integration is installed before Flask app import. The module import
