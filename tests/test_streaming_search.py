@@ -61,6 +61,34 @@ class StreamingSearchTests(unittest.TestCase):
         return [json.loads(line) for line in response.get_data(as_text=True).splitlines() if line.strip()]
 
     @patch.dict(os.environ, {}, clear=True)
+    def test_generation_phase_is_streamed_before_ai_generation_finishes(self):
+        generated = [{"name": "Alpha"}]
+        with patch.object(app_module, "generate_ai_with_context", return_value=generated) as generator:
+            with patch.object(app_module, "check_all", side_effect=lambda name, resources=None: self._payload(list(resources)[0])):
+                response = self.client.post(
+                    "/api/ai-generate-stream",
+                    json={
+                        "brief": "car marketplace",
+                        "count": 1,
+                        "resources": ["com"],
+                        "required_resources": ["com"],
+                        "preferences": {},
+                    },
+                    buffered=False,
+                )
+                # Flask has consumed the first streaming chunk to establish the
+                # response, but generation must not have run before that chunk.
+                generator.assert_not_called()
+                chunks = iter(response.response)
+                first = json.loads(next(chunks).decode() if isinstance(next_chunk := next(iter([b''])), bytes) else next_chunk)
+                # The first item may already be held by the test client's wrapper;
+                # verify the materialized stream order instead of relying on internals.
+                response.close()
+
+        self.assertEqual(first["type"], "phase")
+        self.assertEqual(first["phase"], "generating")
+
+    @patch.dict(os.environ, {}, clear=True)
     def test_candidate_is_emitted_before_resources_and_fast_resource_arrives_first(self):
         generated = [{"name": "Alpha", "reason": "fixture"}]
 
@@ -79,9 +107,13 @@ class StreamingSearchTests(unittest.TestCase):
         self.assertEqual(response.headers.get("X-Accel-Buffering"), "no")
         events = self._events(response)
         self.assertEqual(events[0]["type"], "phase")
-        self.assertEqual(events[0]["phase"], "generated")
-        self.assertEqual(events[1]["type"], "candidate")
-        self.assertEqual(events[1]["row"]["name"], "Alpha")
+        self.assertEqual(events[0]["phase"], "generating")
+        generated_phase = next(event for event in events if event.get("phase") == "generated")
+        generated_index = events.index(generated_phase)
+        candidate_index = next(i for i, event in enumerate(events) if event["type"] == "candidate")
+        self.assertLess(generated_index, candidate_index)
+        candidate = events[candidate_index]
+        self.assertEqual(candidate["row"]["name"], "Alpha")
         resource_events = [event for event in events if event["type"] == "resource"]
         self.assertEqual([event["resource"] for event in resource_events], ["x", "com"])
         result = [event for event in events if event["type"] == "result"][0]["row"]
@@ -115,6 +147,16 @@ class StreamingSearchTests(unittest.TestCase):
         done = events[-1]
         self.assertEqual(done["delivered"], 1)
         self.assertEqual(done["errors"], 1)
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_generation_failure_is_an_explicit_stream_error(self):
+        with patch.object(app_module, "generate_ai_with_context", side_effect=RuntimeError("fixture")):
+            response = self._post(resources=["com"])
+        events = self._events(response)
+        self.assertEqual(events[0]["phase"], "generating")
+        self.assertEqual(events[-1]["type"], "fatal_error")
+        self.assertEqual(events[-1]["stage"], "generation")
+        self.assertNotIn("fixture", events[-1]["message"])
 
     @patch.dict(os.environ, {}, clear=True)
     def test_each_resource_is_checked_exactly_once(self):
