@@ -20,7 +20,8 @@ class AdaptiveSearchUiTests(unittest.TestCase):
         self.assertIn("exclude_names", self.body)
         self.assertIn("conflict_names", self.body)
         self.assertIn("successful_names", self.body)
-        self.assertIn("generation_context:adaptiveContext(batch)", self.body)
+        self.assertIn("batchCounter", self.body)
+        self.assertIn("generation_context:adaptiveContext(globalBatch)", self.body)
 
     def test_browser_uses_batched_checked_endpoint(self):
         self.assertIn("fetch('/api/ai-generate'", self.body)
