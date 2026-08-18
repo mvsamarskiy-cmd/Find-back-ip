@@ -1,0 +1,44 @@
+name: No-key verifier live benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'verification/**'
+      - 'requirements-verifiers.txt'
+      - '.github/workflows/no-key-live-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install app dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install optional no-key verifiers
+        run: pip install -r requirements-verifiers.txt
+
+      - name: Run live benchmark
+        run: python -m verification.run_live_benchmark
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: no-key-live-benchmark
+          path: artifacts/no-key-live-benchmark.json
+          if-no-files-found: warn
