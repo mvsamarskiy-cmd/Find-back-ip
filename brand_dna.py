@@ -188,11 +188,12 @@ def fetch_public_website(url, session=None):
             length = response.headers.get("Content-Length")
             if length:
                 try:
-                    if int(length) > MAX_WEBSITE_BYTES:
-                        response.close()
-                        raise WebsiteFetchError("Website response is too large")
+                    declared_length = int(length)
                 except ValueError:
-                    pass
+                    declared_length = None
+                if declared_length is not None and declared_length > MAX_WEBSITE_BYTES:
+                    response.close()
+                    raise WebsiteFetchError("Website response is too large")
             chunks = []
             total = 0
             for chunk in response.iter_content(chunk_size=16384):
