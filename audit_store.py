@@ -15,7 +15,7 @@ import os
 from sqlalchemy import Column, DateTime, ForeignKey, JSON, PrimaryKeyConstraint, String, Table, delete, insert, update
 from sqlalchemy.exc import IntegrityError
 
-from session_store import STORE, _parse_datetime, _utcnow, metadata, sessions
+from session_store import STORE, _parse_datetime, _utcnow, metadata
 
 
 def _retention_days():
@@ -78,7 +78,6 @@ class AuditStore:
     def upsert_events(self, session_id, token, rows):
         engine = self._ensure_table()
         now = _utcnow()
-        expires = now + timedelta(days=AUDIT_RETENTION_DAYS)
         accepted = 0
         with engine.begin() as conn:
             if not self.session_store._authorized(conn, session_id, token):
@@ -106,7 +105,7 @@ class AuditStore:
                     "event_type": event_type,
                     "job_id": job_id,
                     "payload": payload,
-                    "expires_at": expires,
+                    "expires_at": event_at + timedelta(days=AUDIT_RETENTION_DAYS),
                     "updated_at": now,
                 }
                 result = conn.execute(
