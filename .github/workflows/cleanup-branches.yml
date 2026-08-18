@@ -1,0 +1,33 @@
+name: Cleanup closed PR branches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-short-lived-branch:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.event.pull_request.head.ref, 'agent/') ||
+       startsWith(github.event.pull_request.head.ref, 'codex/') ||
+       startsWith(github.event.pull_request.head.ref, 'feature/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete closed PR branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const ref = `heads/${context.payload.pull_request.head.ref}`;
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref,
+              });
+            } catch (error) {
+              if (error.status !== 422) throw error;
+            }
+
