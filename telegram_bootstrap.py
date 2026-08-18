@@ -30,12 +30,12 @@ install_audit_routes(app, app_module)
 install_background_search_routes(app, app_module)
 
 
-RELEASE_MARKER = "v7.9-availability-hunter"
+RELEASE_MARKER = "v8.0-procedural-search"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=5"></script>'
 BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
-HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=1"></script>'
+HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=2"></script>'
 AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'
 AUDIT_REPORT_TAG = '<script src="/static/audit_report.js?v=4"></script>'
 CLIENT_REPORT_TAG = '<script src="/static/client_report.js?v=5"></script>'
@@ -170,6 +170,8 @@ def api_verification_diagnostics():
             "availability_hunter_api": True,
             "result_goal_field": "target_matches",
             "budget_field": "max_checks",
+            "default_search_strategy": "procedural",
+            "procedural_focus_visible": True,
         },
         "session_storage": session_storage_diagnostics(),
         "background_search": background_search_diagnostics(),
