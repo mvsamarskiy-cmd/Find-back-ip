@@ -1,0 +1,68 @@
+name: Production Chrome Click Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/production-chrome-click-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chrome-click:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install lightweight browser driver
+        run: npm install --no-save puppeteer-core@24.16.0
+      - name: Click production UI with system Chrome
+        env:
+          URL: https://web-production-04fec.up.railway.app
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          test -n "$CHROME"
+          export CHROME
+          node --input-type=module <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          const browser = await puppeteer.launch({executablePath: process.env.CHROME, headless: true, args:['--no-sandbox']});
+          const page = await browser.newPage();
+          await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+          const errors=[];
+          page.on('pageerror', e=>errors.push('pageerror: '+String(e.stack||e)));
+          page.on('console', m=>{if(m.type()==='error') errors.push('console: '+m.text())});
+          const response=await page.goto(process.env.URL,{waitUntil:'networkidle2',timeout:45000});
+          console.log('HTTP',response.status());
+          await new Promise(r=>setTimeout(r,800));
+          const state=await page.evaluate(()=>({
+            startDisabled:document.querySelector('#startBtn')?.disabled,
+            startType:typeof startSearch,
+            modeButtons:document.querySelectorAll('[data-entry-mode]').length,
+            bodyClasses:document.body.className,
+            reportHidden:document.querySelector('#clientReportPreview')?.hidden,
+            variantHidden:document.querySelector('#variantExpansionModal')?.hidden,
+          }));
+          console.log('STATE',JSON.stringify(state));
+          const hit=await page.$eval('#startBtn',el=>{const r=el.getBoundingClientRect();const h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {tag:h?.tagName,id:h?.id,cls:h?.className,text:h?.textContent?.trim().slice(0,80)}});
+          console.log('START_HIT',JSON.stringify(hit));
+          await page.click('#startBtn');
+          await new Promise(r=>setTimeout(r,150));
+          console.log('STATUS_AFTER_START',await page.$eval('#status',el=>el.textContent));
+          await page.click('#saveBtn');
+          console.log('SAVE_OPEN',await page.$eval('#saveMenu',el=>el.classList.contains('open')));
+          await page.click('.tab[data-tab="feed"]');
+          console.log('FEED_ACTIVE',await page.$eval('.tab[data-tab="feed"]',el=>el.classList.contains('active')));
+          if(await page.$('[data-entry-mode="generic_name"]')){
+            await page.click('[data-entry-mode="generic_name"]');
+            console.log('MODE_ACTIVE',await page.$eval('[data-entry-mode="generic_name"]',el=>el.classList.contains('active')));
+          }
+          console.log('ERRORS',JSON.stringify(errors));
+          const ok=hit.id==='startBtn' && (await page.$eval('#status',el=>el.textContent.includes('Опиши задачу'))) && (await page.$eval('#saveMenu',el=>el.classList.contains('open')))===true && errors.length===0;
+          await browser.close();
+          if(!ok) process.exit(1);
+          NODE
