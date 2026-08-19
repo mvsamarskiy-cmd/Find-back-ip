@@ -64,7 +64,7 @@ CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
 ENTRY_MODES_TAG = '<script src="/static/entry_modes.js?v=1"></script>'
 BRAND_COLLISION_UI_TAG = '<script src="/static/brand_collision_ui.js?v=1"></script>'
 DURABLE_LIVE_EVENTS_TAG = '<script src="/static/durable_live_events.js?v=1"></script>'
-UI_CLEANUP_TAG = '<script src="/static/ui_cleanup_r8.js?v=1"></script>'
+UI_CLEANUP_TAG = '<script src="/static/ui_cleanup_r8.js?v=2"></script>'
 VARIANT_EXPANSION_UI_TAG = '<script src="/static/variant_expansion_ui.js?v=1"></script>'
 VARIANT_EXPANSION_SYNC_TAG = '<script src="/static/variant_expansion_sync.js?v=1"></script>'
 
