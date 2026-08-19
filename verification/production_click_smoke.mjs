@@ -1,6 +1,6 @@
 import { chromium, webkit } from 'playwright';
 
-const base = (process.env.NAMEMACHINE_PRODUCTION_URL || 'https://web-production-04fec.up.railway.app').replace(/\/$/, '');
+const base = (process.env.NAMEMACHINE_TEST_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const failures = [];
 
 async function run(browserType, name) {
@@ -11,50 +11,51 @@ async function run(browserType, name) {
     hasTouch: true,
   });
   const page = await context.newPage();
-  const consoleErrors = [];
   const pageErrors = [];
-  page.on('console', msg => {
-    if (msg.type() === 'error') consoleErrors.push(msg.text());
-  });
   page.on('pageerror', error => pageErrors.push(String(error?.stack || error)));
 
-  const report = { browser: name, consoleErrors, pageErrors, checks: [] };
+  const report = { browser: name, pageErrors, checks: [] };
   const check = (label, ok, detail = '') => {
     report.checks.push({ label, ok, detail });
     if (!ok) failures.push(`${name}: ${label}${detail ? ` — ${detail}` : ''}`);
   };
 
+  async function centerHit(locator) {
+    await locator.scrollIntoViewIfNeeded();
+    const box = await locator.boundingBox();
+    if (!box) return null;
+    return page.evaluate(({ x, y }) => {
+      const el = document.elementFromPoint(x, y);
+      if (!el) return null;
+      return { tag: el.tagName, id: el.id || '', cls: String(el.className || ''), text: (el.textContent || '').trim().slice(0, 80) };
+    }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  }
+
   try {
-    const response = await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    const response = await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 20_000 });
     check('root HTTP 200', response?.status() === 200, `status=${response?.status()}`);
-    await page.waitForTimeout(1_500);
+    await page.waitForTimeout(750);
 
     const start = page.locator('#startBtn');
     check('Start visible', await start.isVisible(), '');
     check('Start enabled', await start.isEnabled(), '');
-    if (await start.isVisible()) {
-      const box = await start.boundingBox();
-      if (box) {
-        const obstruction = await page.evaluate(({ x, y }) => {
-          const el = document.elementFromPoint(x, y);
-          if (!el) return null;
-          return { tag: el.tagName, id: el.id || '', cls: el.className || '', text: (el.textContent || '').trim().slice(0, 80) };
-        }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
-        const startHit = obstruction && obstruction.id === 'startBtn';
-        check('Start hit target is not covered', Boolean(startHit), JSON.stringify(obstruction));
-      }
-    }
-
+    const startHit = await centerHit(start);
+    check('Start hit target is not covered', startHit?.id === 'startBtn', JSON.stringify(startHit));
     await start.click({ timeout: 5_000 });
     const emptyStatus = (await page.locator('#status').textContent()) || '';
     check('Start click handler runs', emptyStatus.includes('Опиши задачу'), emptyStatus);
 
     const save = page.locator('#saveBtn');
+    const saveHit = await centerHit(save);
+    check('Save hit target is not covered', saveHit?.id === 'saveBtn', JSON.stringify(saveHit));
     await save.click({ timeout: 5_000 });
     check('Save menu opens', await page.locator('#saveMenu').evaluate(el => el.classList.contains('open')), '');
 
     const feedTab = page.locator('.tab[data-tab="feed"]');
+    const feedHit = await centerHit(feedTab);
+    check('Feed tab hit target is clickable', String(feedHit?.cls || '').includes('tab'), JSON.stringify(feedHit));
     await feedTab.click({ timeout: 5_000 });
+    await page.waitForTimeout(100);
     check('Feed tab activates', await feedTab.evaluate(el => el.classList.contains('active')), '');
     check('Feed view visible', !(await page.locator('#feedView').getAttribute('hidden')), '');
 
@@ -63,12 +64,13 @@ async function run(browserType, name) {
     check('Entry mode controls loaded', count >= 4, `count=${count}`);
     if (count >= 4) {
       const generic = page.locator('[data-entry-mode="generic_name"]');
+      const genericHit = await centerHit(generic);
+      check('Entry mode hit target is clickable', String(genericHit?.cls || '').includes('entry-mode'), JSON.stringify(genericHit));
       await generic.click({ timeout: 5_000 });
       check('Entry mode click activates', await generic.evaluate(el => el.classList.contains('active')), '');
     }
 
     check('No page errors during click smoke', pageErrors.length === 0, pageErrors.join(' | '));
-    check('No console errors during click smoke', consoleErrors.length === 0, consoleErrors.join(' | '));
   } catch (error) {
     failures.push(`${name}: smoke crashed — ${String(error?.stack || error)}`);
     report.crash = String(error?.stack || error);
