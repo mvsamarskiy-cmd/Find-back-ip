@@ -1,0 +1,29 @@
+name: Production Button Click Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - 'verification/production_click_smoke.mjs'
+      - '.github/workflows/button-click-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  click-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium webkit
+      - name: Check production buttons in Chromium and WebKit mobile contexts
+        env:
+          NAMEMACHINE_PRODUCTION_URL: https://web-production-04fec.up.railway.app
+        run: node verification/production_click_smoke.mjs
