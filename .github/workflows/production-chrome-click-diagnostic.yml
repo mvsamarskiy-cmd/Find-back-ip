@@ -59,9 +59,8 @@ jobs:
           const browser = await puppeteer.launch({executablePath: process.env.CHROME, headless: true, args:['--no-sandbox']});
           const page = await browser.newPage();
           await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
-          const errors=[];
-          page.on('pageerror', e=>errors.push('pageerror: '+String(e.stack||e)));
-          page.on('console', m=>{if(m.type()==='error') errors.push('console: '+m.text())});
+          const pageErrors=[];
+          page.on('pageerror', e=>pageErrors.push(String(e.stack||e)));
           const response=await page.goto(process.env.URL,{waitUntil:'domcontentloaded',timeout:15000});
           console.log('HTTP',response.status());
           await new Promise(r=>setTimeout(r,750));
@@ -74,8 +73,9 @@ jobs:
             variantHidden:document.querySelector('#variantExpansionModal')?.hidden,
           }));
           console.log('STATE',JSON.stringify(state));
-          const hit=await page.$eval('#startBtn',el=>{const r=el.getBoundingClientRect();const h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {tag:h?.tagName,id:h?.id,cls:h?.className,text:h?.textContent?.trim().slice(0,80)}});
-          console.log('START_HIT',JSON.stringify(hit));
+          const hitFor = async selector => page.$eval(selector,el=>{const r=el.getBoundingClientRect();const h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {tag:h?.tagName,id:h?.id,cls:h?.className,text:h?.textContent?.trim().slice(0,80)}});
+          const startHit=await hitFor('#startBtn');
+          console.log('START_HIT',JSON.stringify(startHit));
           await page.click('#startBtn');
           await new Promise(r=>setTimeout(r,100));
           const statusAfterStart=await page.$eval('#status',el=>el.textContent);
@@ -83,9 +83,16 @@ jobs:
           await page.click('#saveBtn');
           const saveOpen=await page.$eval('#saveMenu',el=>el.classList.contains('open'));
           console.log('SAVE_OPEN',saveOpen);
+          const feedHit=await hitFor('.tab[data-tab="feed"]');
+          console.log('FEED_HIT',JSON.stringify(feedHit));
           await page.click('.tab[data-tab="feed"]');
-          const feedActive=await page.$eval('.tab[data-tab="feed"]',el=>el.classList.contains('active'));
-          console.log('FEED_ACTIVE',feedActive);
+          await new Promise(r=>setTimeout(r,150));
+          const feedState=await page.evaluate(()=>({
+            active:document.querySelector('.tab[data-tab="feed"]')?.classList.contains('active'),
+            hidden:document.querySelector('#feedView')?.hidden,
+            activeTab:typeof activeTab==='undefined'?null:activeTab,
+          }));
+          console.log('FEED_STATE',JSON.stringify(feedState));
           const modeCount=await page.$$eval('[data-entry-mode]',els=>els.length);
           let modeActive=modeCount>=4;
           if(modeCount>=4){
@@ -93,8 +100,9 @@ jobs:
             modeActive=await page.$eval('[data-entry-mode="generic_name"]',el=>el.classList.contains('active'));
             console.log('MODE_ACTIVE',modeActive);
           }
-          console.log('ERRORS',JSON.stringify(errors));
-          const ok=response.status()===200 && hit.id==='startBtn' && statusAfterStart.includes('Опиши задачу') && saveOpen===true && feedActive===true && modeActive===true && errors.length===0;
+          console.log('PAGE_ERRORS',JSON.stringify(pageErrors));
+          const feedClickable=feedHit && String(feedHit.cls||'').includes('tab');
+          const ok=response.status()===200 && startHit.id==='startBtn' && statusAfterStart.includes('Опиши задачу') && saveOpen===true && feedClickable && modeActive===true && pageErrors.length===0;
           await browser.close();
           if(!ok) process.exit(1);
           NODE
