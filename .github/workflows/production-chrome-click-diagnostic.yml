@@ -73,17 +73,23 @@ jobs:
             variantHidden:document.querySelector('#variantExpansionModal')?.hidden,
           }));
           console.log('STATE',JSON.stringify(state));
-          const hitFor = async selector => page.$eval(selector,el=>{const r=el.getBoundingClientRect();const h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {tag:h?.tagName,id:h?.id,cls:h?.className,text:h?.textContent?.trim().slice(0,80)}});
-          const startHit=await hitFor('#startBtn');
+          const centerHit = async selector => {
+            await page.$eval(selector,el=>el.scrollIntoView({block:'center',inline:'center'}));
+            await new Promise(r=>setTimeout(r,50));
+            return page.$eval(selector,el=>{const r=el.getBoundingClientRect();const h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {tag:h?.tagName||'',id:h?.id||'',cls:h?.className||'',text:h?.textContent?.trim().slice(0,80)||'',rect:{x:r.x,y:r.y,w:r.width,h:r.height}}});
+          };
+          const startHit=await centerHit('#startBtn');
           console.log('START_HIT',JSON.stringify(startHit));
           await page.click('#startBtn');
           await new Promise(r=>setTimeout(r,100));
           const statusAfterStart=await page.$eval('#status',el=>el.textContent);
           console.log('STATUS_AFTER_START',statusAfterStart);
+          const saveHit=await centerHit('#saveBtn');
+          console.log('SAVE_HIT',JSON.stringify(saveHit));
           await page.click('#saveBtn');
           const saveOpen=await page.$eval('#saveMenu',el=>el.classList.contains('open'));
           console.log('SAVE_OPEN',saveOpen);
-          const feedHit=await hitFor('.tab[data-tab="feed"]');
+          const feedHit=await centerHit('.tab[data-tab="feed"]');
           console.log('FEED_HIT',JSON.stringify(feedHit));
           await page.click('.tab[data-tab="feed"]');
           await new Promise(r=>setTimeout(r,150));
@@ -95,14 +101,20 @@ jobs:
           console.log('FEED_STATE',JSON.stringify(feedState));
           const modeCount=await page.$$eval('[data-entry-mode]',els=>els.length);
           let modeActive=modeCount>=4;
+          let modeHit={};
           if(modeCount>=4){
+            modeHit=await centerHit('[data-entry-mode="generic_name"]');
+            console.log('MODE_HIT',JSON.stringify(modeHit));
             await page.click('[data-entry-mode="generic_name"]');
             modeActive=await page.$eval('[data-entry-mode="generic_name"]',el=>el.classList.contains('active'));
             console.log('MODE_ACTIVE',modeActive);
           }
           console.log('PAGE_ERRORS',JSON.stringify(pageErrors));
-          const feedClickable=feedHit && String(feedHit.cls||'').includes('tab');
-          const ok=response.status()===200 && startHit.id==='startBtn' && statusAfterStart.includes('Опиши задачу') && saveOpen===true && feedClickable && modeActive===true && pageErrors.length===0;
+          const startClickable=startHit.id==='startBtn';
+          const saveClickable=saveHit.id==='saveBtn';
+          const feedClickable=String(feedHit.cls||'').includes('tab');
+          const modeClickable=modeCount<4 || String(modeHit.cls||'').includes('entry-mode');
+          const ok=response.status()===200 && startClickable && saveClickable && feedClickable && modeClickable && statusAfterStart.includes('Опиши задачу') && saveOpen===true && feedState.active===true && feedState.hidden===false && modeActive===true && pageErrors.length===0;
           await browser.close();
           if(!ok) process.exit(1);
           NODE
