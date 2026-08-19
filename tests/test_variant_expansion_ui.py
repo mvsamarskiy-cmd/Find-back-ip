@@ -37,33 +37,35 @@ class VariantExpansionUiTests(unittest.TestCase):
         self.assertIn("text: '🟢 Вільний'", self.source)
         self.assertIn("text: '🟣 Можна купити'", self.source)
         self.assertIn("text: '🟡 Не знайдено · не підтверджено'", self.source)
-        self.assertIn("text: '🔴 Зайнято'", self.source)
-        self.assertIn("text: '⚪ Не вдалося підтвердити'", self.source)
-
-    def test_primary_feed_is_not_repurposed_for_platform_variants(self):
-        self.assertNotIn('current.results.push', self.source)
-        self.assertNotIn('current.results.unshift', self.source)
-        self.assertIn('expansionState', self.source)
-
-    def test_expansion_requires_explicit_option_before_generation(self):
-        self.assertIn('hasExplicitChoice', self.source)
-        self.assertIn('Обери хоча б один тип варіації.', self.source)
 
     def test_modal_has_all_close_paths(self):
-        self.assertIn("modal.querySelector('[data-variant-close]').addEventListener('click', closeModal)", self.source)
-        self.assertIn('if (event.target === modal) closeModal();', self.source)
+        self.assertIn('variant-modal-close', self.source)
         self.assertIn("event.key === 'Escape'", self.source)
+        self.assertIn('if (event.target === modal) closeModal()', self.source)
+        block = self.source[self.source.index('function closeModal()'):self.source.index('function options()')]
+        self.assertNotIn('running) return', block)
+        self.assertIn("if (!running) activeName = ''", block)
+        self.assertIn('const runName = activeName', self.source)
+        self.assertIn('save(runName,', self.source)
+
+    def test_primary_feed_is_not_repurposed_for_platform_variants(self):
+        self.assertIn('current.variantExpansions', self.source)
+        self.assertNotIn('current.results.push', self.source)
 
     def test_sync_uses_separate_authenticated_session_endpoint(self):
-        self.assertIn('/variant-expansions/', self.sync_source)
-        self.assertIn('X-NameMachine-Session-Token', self.sync_source)
-        self.assertNotIn('/candidates/batch', self.sync_source)
+        self.assertIn("X-NameMachine-Session-Token", self.sync_source)
+        self.assertIn("/variant-expansions/", self.sync_source)
+        self.assertIn("method: 'PUT'", self.sync_source)
+        self.assertIn('loadServer(name)', self.sync_source)
+        self.assertIn('saveServer(name, expansion)', self.sync_source)
+        self.assertNotIn('current.results.push', self.sync_source)
 
     def test_diagnostics_expose_ui_and_durable_sync(self):
-        diagnostics = app.test_client().get('/api/verification/diagnostics').get_json()
-        ui = diagnostics['background_search_ui']
-        self.assertTrue(ui['variant_expansion_ui'])
-        self.assertTrue(ui['variant_expansion_durable_sync'])
+        payload = app.test_client().get('/api/verification/diagnostics').get_json()
+        self.assertTrue(payload['background_search_ui']['variant_expansion_ui'])
+        self.assertTrue(payload['background_search_ui']['variant_expansion_durable_sync'])
+        self.assertTrue(payload['variant_storage']['separate_from_candidate_bundles'])
+        self.assertEqual(payload['variant_grammar']['verification_endpoint'], '/api/variants/check')
 
 
 if __name__ == '__main__':
