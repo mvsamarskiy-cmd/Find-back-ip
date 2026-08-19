@@ -11,7 +11,7 @@ class VariantExpansionUiTests(unittest.TestCase):
 
     def test_ui_and_sync_are_loaded_in_order(self):
         body = app.test_client().get('/').get_data(as_text=True)
-        cleanup = '/static/ui_cleanup_r8.js?v=1'
+        cleanup = '/static/ui_cleanup_r8.js?v=2'
         variant = '/static/variant_expansion_ui.js?v=1'
         sync = '/static/variant_expansion_sync.js?v=1'
         for tag in (cleanup, variant, sync):

@@ -9,9 +9,9 @@ class UiCleanupR8Tests(unittest.TestCase):
         body = app.test_client().get("/").get_data(as_text=True)
         self.assertIn('/static/feed_navigation.js?v=3', body)
         self.assertIn('/static/durable_live_events.js?v=1', body)
-        self.assertIn('/static/ui_cleanup_r8.js?v=1', body)
-        self.assertLess(body.index('/static/feed_navigation.js?v=3'), body.index('/static/ui_cleanup_r8.js?v=1'))
-        self.assertLess(body.index('/static/durable_live_events.js?v=1'), body.index('/static/ui_cleanup_r8.js?v=1'))
+        self.assertIn('/static/ui_cleanup_r8.js?v=2', body)
+        self.assertLess(body.index('/static/feed_navigation.js?v=3'), body.index('/static/ui_cleanup_r8.js?v=2'))
+        self.assertLess(body.index('/static/durable_live_events.js?v=1'), body.index('/static/ui_cleanup_r8.js?v=2'))
         # This test protects the R8 layer, not one historical release string.
         self.assertTrue(RELEASE_MARKER.startswith('v8.'))
 
