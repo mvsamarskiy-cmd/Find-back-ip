@@ -36,9 +36,9 @@ jobs:
           const errors=[];
           page.on('pageerror', e=>errors.push('pageerror: '+String(e.stack||e)));
           page.on('console', m=>{if(m.type()==='error') errors.push('console: '+m.text())});
-          const response=await page.goto(process.env.URL,{waitUntil:'networkidle2',timeout:45000});
+          const response=await page.goto(process.env.URL,{waitUntil:'domcontentloaded',timeout:30000});
           console.log('HTTP',response.status());
-          await new Promise(r=>setTimeout(r,800));
+          await new Promise(r=>setTimeout(r,1500));
           const state=await page.evaluate(()=>({
             startDisabled:document.querySelector('#startBtn')?.disabled,
             startType:typeof startSearch,
@@ -52,17 +52,22 @@ jobs:
           console.log('START_HIT',JSON.stringify(hit));
           await page.click('#startBtn');
           await new Promise(r=>setTimeout(r,150));
-          console.log('STATUS_AFTER_START',await page.$eval('#status',el=>el.textContent));
+          const statusAfterStart=await page.$eval('#status',el=>el.textContent);
+          console.log('STATUS_AFTER_START',statusAfterStart);
           await page.click('#saveBtn');
-          console.log('SAVE_OPEN',await page.$eval('#saveMenu',el=>el.classList.contains('open')));
+          const saveOpen=await page.$eval('#saveMenu',el=>el.classList.contains('open'));
+          console.log('SAVE_OPEN',saveOpen);
           await page.click('.tab[data-tab="feed"]');
-          console.log('FEED_ACTIVE',await page.$eval('.tab[data-tab="feed"]',el=>el.classList.contains('active')));
+          const feedActive=await page.$eval('.tab[data-tab="feed"]',el=>el.classList.contains('active'));
+          console.log('FEED_ACTIVE',feedActive);
+          let modeActive=true;
           if(await page.$('[data-entry-mode="generic_name"]')){
             await page.click('[data-entry-mode="generic_name"]');
-            console.log('MODE_ACTIVE',await page.$eval('[data-entry-mode="generic_name"]',el=>el.classList.contains('active')));
+            modeActive=await page.$eval('[data-entry-mode="generic_name"]',el=>el.classList.contains('active'));
+            console.log('MODE_ACTIVE',modeActive);
           }
           console.log('ERRORS',JSON.stringify(errors));
-          const ok=hit.id==='startBtn' && (await page.$eval('#status',el=>el.textContent.includes('Опиши задачу'))) && (await page.$eval('#saveMenu',el=>el.classList.contains('open')))===true && errors.length===0;
+          const ok=hit.id==='startBtn' && statusAfterStart.includes('Опиши задачу') && saveOpen===true && feedActive===true && modeActive===true && errors.length===0;
           await browser.close();
           if(!ok) process.exit(1);
           NODE
