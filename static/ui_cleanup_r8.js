@@ -32,8 +32,10 @@
       `перспективні ${text('largeSearchPromising', '0')}`,
       `конфлікти ${text('largeSearchConflicts', '0')}`,
     ].filter(Boolean);
-    compact.querySelector('[data-compact-copy]').textContent = parts.join(' · ');
-    compact.hidden = panel.hidden;
+    const copy = compact.querySelector('[data-compact-copy]');
+    const nextText = parts.join(' · ');
+    if (copy && copy.textContent !== nextText) copy.textContent = nextText;
+    if (compact.hidden !== panel.hidden) compact.hidden = panel.hidden;
   }
 
   function attachTelemetryCleanup() {
@@ -58,7 +60,21 @@
 
     telemetryObserver?.disconnect();
     telemetryObserver = new MutationObserver(updateCompactTelemetry);
-    telemetryObserver.observe(panel, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+    // Observe only the telemetry subtree plus the panel's own hidden attribute.
+    // Observing the whole panel subtree caused a self-triggering MutationObserver:
+    // updateCompactTelemetry() mutates #largeSearchCompact, which is itself inside
+    // #largeSearchPanel, scheduling the observer forever and starving clicks/DCL.
+    telemetryObserver.observe(telemetry, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['hidden'],
+    });
+    telemetryObserver.observe(panel, {
+      attributes: true,
+      attributeFilter: ['hidden'],
+    });
     updateCompactTelemetry();
     return true;
   }
