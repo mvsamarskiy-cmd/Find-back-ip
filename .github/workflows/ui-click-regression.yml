@@ -1,0 +1,54 @@
+name: Cross-browser UI Click Regression
+
+on:
+  pull_request:
+    paths:
+      - 'static/**'
+      - 'templates/**'
+      - 'telegram_bootstrap.py'
+      - 'verification/ui_click_smoke.mjs'
+      - '.github/workflows/ui-click-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  click-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install application and Playwright browsers
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium webkit
+      - name: Start branch application
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=8080 gunicorn telegram_bootstrap:app --config gunicorn.conf.py >/tmp/namemachine.log 2>&1 &
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/namemachine.log
+          exit 1
+      - name: Check mobile buttons in Chromium and WebKit
+        env:
+          NAMEMACHINE_TEST_URL: http://127.0.0.1:8080
+        run: node verification/ui_click_smoke.mjs
+      - name: Dump server log on failure
+        if: failure()
+        run: cat /tmp/namemachine.log || true
