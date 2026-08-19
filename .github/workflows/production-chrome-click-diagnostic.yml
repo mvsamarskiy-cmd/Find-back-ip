@@ -1,8 +1,12 @@
-name: Production Chrome Click Diagnostic
+name: UI Click Regression
 
 on:
   pull_request:
     paths:
+      - 'static/**'
+      - 'templates/**'
+      - 'telegram_bootstrap.py'
+      - 'tests/test_ui_cleanup_event_loop.py'
       - '.github/workflows/production-chrome-click-diagnostic.yml'
   workflow_dispatch:
 
@@ -12,16 +16,38 @@ permissions:
 jobs:
   chrome-click:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Install lightweight browser driver
-        run: npm install --no-save puppeteer-core@24.16.0
-      - name: Click production UI with system Chrome
+      - name: Install app and browser driver
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install --no-save puppeteer-core@24.16.0
+      - name: Start branch application
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=8080 gunicorn telegram_bootstrap:app --config gunicorn.conf.py >/tmp/namemachine.log 2>&1 &
+          echo $! >/tmp/namemachine.pid
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/namemachine.log
+          exit 1
+      - name: Click branch UI with system Chrome
         env:
-          URL: https://web-production-04fec.up.railway.app
+          URL: http://127.0.0.1:8080
         shell: bash
         run: |
           set -euo pipefail
@@ -36,9 +62,9 @@ jobs:
           const errors=[];
           page.on('pageerror', e=>errors.push('pageerror: '+String(e.stack||e)));
           page.on('console', m=>{if(m.type()==='error') errors.push('console: '+m.text())});
-          const response=await page.goto(process.env.URL,{waitUntil:'domcontentloaded',timeout:30000});
+          const response=await page.goto(process.env.URL,{waitUntil:'domcontentloaded',timeout:15000});
           console.log('HTTP',response.status());
-          await new Promise(r=>setTimeout(r,1500));
+          await new Promise(r=>setTimeout(r,750));
           const state=await page.evaluate(()=>({
             startDisabled:document.querySelector('#startBtn')?.disabled,
             startType:typeof startSearch,
@@ -51,7 +77,7 @@ jobs:
           const hit=await page.$eval('#startBtn',el=>{const r=el.getBoundingClientRect();const h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {tag:h?.tagName,id:h?.id,cls:h?.className,text:h?.textContent?.trim().slice(0,80)}});
           console.log('START_HIT',JSON.stringify(hit));
           await page.click('#startBtn');
-          await new Promise(r=>setTimeout(r,150));
+          await new Promise(r=>setTimeout(r,100));
           const statusAfterStart=await page.$eval('#status',el=>el.textContent);
           console.log('STATUS_AFTER_START',statusAfterStart);
           await page.click('#saveBtn');
@@ -60,14 +86,18 @@ jobs:
           await page.click('.tab[data-tab="feed"]');
           const feedActive=await page.$eval('.tab[data-tab="feed"]',el=>el.classList.contains('active'));
           console.log('FEED_ACTIVE',feedActive);
-          let modeActive=true;
-          if(await page.$('[data-entry-mode="generic_name"]')){
+          const modeCount=await page.$$eval('[data-entry-mode]',els=>els.length);
+          let modeActive=modeCount>=4;
+          if(modeCount>=4){
             await page.click('[data-entry-mode="generic_name"]');
             modeActive=await page.$eval('[data-entry-mode="generic_name"]',el=>el.classList.contains('active'));
             console.log('MODE_ACTIVE',modeActive);
           }
           console.log('ERRORS',JSON.stringify(errors));
-          const ok=hit.id==='startBtn' && statusAfterStart.includes('Опиши задачу') && saveOpen===true && feedActive===true && modeActive===true && errors.length===0;
+          const ok=response.status()===200 && hit.id==='startBtn' && statusAfterStart.includes('Опиши задачу') && saveOpen===true && feedActive===true && modeActive===true && errors.length===0;
           await browser.close();
           if(!ok) process.exit(1);
           NODE
+      - name: Dump server log on failure
+        if: failure()
+        run: cat /tmp/namemachine.log || true
