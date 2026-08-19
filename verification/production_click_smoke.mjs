@@ -25,9 +25,9 @@ async function run(browserType, name) {
   };
 
   try {
-    const response = await page.goto(base + '/', { waitUntil: 'networkidle', timeout: 45_000 });
+    const response = await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
     check('root HTTP 200', response?.status() === 200, `status=${response?.status()}`);
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(1_500);
 
     const start = page.locator('#startBtn');
     check('Start visible', await start.isVisible(), '');
@@ -40,7 +40,7 @@ async function run(browserType, name) {
           if (!el) return null;
           return { tag: el.tagName, id: el.id || '', cls: el.className || '', text: (el.textContent || '').trim().slice(0, 80) };
         }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
-        const startHit = obstruction && (obstruction.id === 'startBtn' || String(obstruction.cls).includes('primary'));
+        const startHit = obstruction && obstruction.id === 'startBtn';
         check('Start hit target is not covered', Boolean(startHit), JSON.stringify(obstruction));
       }
     }
