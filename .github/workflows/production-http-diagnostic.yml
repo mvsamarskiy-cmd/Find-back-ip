@@ -1,0 +1,43 @@
+name: Production HTTP Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/production-http-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  http-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Fetch production shell and headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://web-production-04fec.up.railway.app'
+          curl -fsS --max-time 20 -D /tmp/headers -o /tmp/body "$base/"
+          echo '--- RESPONSE HEADERS ---'
+          cat /tmp/headers
+          echo '--- SCRIPT TAGS ---'
+          grep -oE '<script[^>]*>' /tmp/body || true
+          echo '--- TOP BUTTONS ---'
+          grep -oE '<button[^>]*(startBtn|saveBtn|data-entry-mode)[^>]*>' /tmp/body || true
+          echo '--- STATIC HTTP ---'
+          for path in \
+            '/static/streaming.js?v=2' \
+            '/static/feed_navigation.js?v=3' \
+            '/static/claimability_ui.js?v=1' \
+            '/static/entry_modes.js?v=1' \
+            '/static/ui_cleanup_r8.js?v=1' \
+            '/static/variant_expansion_ui.js?v=1'; do
+            code=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "$base$path")
+            echo "$code $path"
+            test "$code" = '200'
+          done
+          echo '--- VERSION ---'
+          curl -fsS --max-time 20 "$base/api/version"
+          echo
