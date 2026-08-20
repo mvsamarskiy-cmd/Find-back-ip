@@ -1,12 +1,14 @@
-/* NameMachine R8 UI cleanup.
+/* NameMachine R8 UI cleanup + UI v2 product shell.
  *
  * Keeps technical observability available without letting it dominate the main
- * workflow, and provides an in-app client-report preview that can always be
- * dismissed with ×, Escape, or the backdrop.
+ * workflow, provides a closable client-report preview, and layers a modern
+ * presentation system over the stable verification DOM without changing truth
+ * semantics or backend contracts.
  */
 (() => {
   let telemetryObserver = null;
   let bodyObserver = null;
+  let searchStateObserver = null;
   let reportOpen = false;
 
   function text(id, fallback = '—') {
@@ -140,6 +142,101 @@
     return true;
   }
 
+  function installUiV2Styles() {
+    if (document.getElementById('nameMachineUiV2Styles')) return;
+    const link = document.createElement('link');
+    link.id = 'nameMachineUiV2Styles';
+    link.rel = 'stylesheet';
+    link.href = '/static/ui_v2.css?v=1';
+    document.head.appendChild(link);
+  }
+
+  function ensureProductIntro() {
+    const shell = document.querySelector('.shell');
+    const composer = document.querySelector('.composer');
+    if (!shell || !composer || document.getElementById('nameMachineIntro')) return Boolean(shell && composer);
+    const intro = document.createElement('section');
+    intro.id = 'nameMachineIntro';
+    intro.className = 'nm-intro';
+    intro.setAttribute('aria-label', 'NameMachine');
+    intro.innerHTML = `
+      <div class="nm-intro-kicker">AI naming & identity intelligence</div>
+      <h1>Знайди назву, домен і нікнейми в одному пошуку</h1>
+      <p>Опиши задачу. NameMachine генерує сильні варіанти, перевіряє цифрову присутність і поступово підсилює докази у фоні.</p>`;
+    shell.insertBefore(intro, composer);
+    return true;
+  }
+
+  function ensureComposerLabel() {
+    const composer = document.querySelector('.composer');
+    if (!composer || document.getElementById('nameMachineComposerLabel')) return Boolean(composer);
+    const label = document.createElement('div');
+    label.id = 'nameMachineComposerLabel';
+    label.className = 'nm-composer-label';
+    label.innerHTML = '<span>Пошукове завдання</span><span>AI → перевірка → докази → рейтинг</span>';
+    composer.insertBefore(label, composer.firstChild);
+    return true;
+  }
+
+  function ensureTruthLegend() {
+    const tabs = document.querySelector('.tabs');
+    if (!tabs || document.getElementById('nameMachineTruthLegend')) return Boolean(tabs);
+    const legend = document.createElement('div');
+    legend.id = 'nameMachineTruthLegend';
+    legend.className = 'nm-truth-legend';
+    legend.setAttribute('aria-label', 'Статуси перевірки');
+    legend.innerHTML = `
+      <span class="strict"><i></i>вільне — підтверджено</span>
+      <span class="paid"><i></i>можна купити</span>
+      <span class="promising"><i></i>перспективне</span>
+      <span class="conflict"><i></i>зайняте</span>`;
+    tabs.insertAdjacentElement('afterend', legend);
+    return true;
+  }
+
+  function updateSearchState() {
+    const start = document.getElementById('startBtn');
+    const stop = document.getElementById('stopBtn');
+    const active = Boolean(start?.disabled && stop && !stop.disabled);
+    document.body.classList.toggle('nm-search-active', active);
+  }
+
+  function installSearchStateObserver() {
+    const start = document.getElementById('startBtn');
+    const stop = document.getElementById('stopBtn');
+    if (!start || !stop || searchStateObserver) return Boolean(start && stop);
+    searchStateObserver = new MutationObserver(updateSearchState);
+    searchStateObserver.observe(start, { attributes: true, attributeFilter: ['disabled'] });
+    searchStateObserver.observe(stop, { attributes: true, attributeFilter: ['disabled'] });
+    updateSearchState();
+    return true;
+  }
+
+  function decorateProductShell() {
+    document.body.classList.add('nm-ui-v2');
+    installUiV2Styles();
+    ensureProductIntro();
+    ensureComposerLabel();
+    ensureTruthLegend();
+    installSearchStateObserver();
+
+    const status = document.getElementById('status');
+    if (status) {
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-live', 'polite');
+    }
+    document.querySelectorAll('.resource input[name="resource"]').forEach(input => {
+      const label = input.closest('.resource');
+      if (!label) return;
+      label.dataset.platform = input.value;
+      label.title = `Перевіряти ${input.value === 'com' ? '.com' : input.value}`;
+    });
+    const sessionNote = document.querySelector('.session-note');
+    if (sessionNote) {
+      sessionNote.textContent = 'Сесія, результати та відгуки зберігаються автоматично. Пошук можна зупинити й продовжити без втрати вже отриманих результатів.';
+    }
+  }
+
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && reportOpen) closeReportPreview();
   });
@@ -177,6 +274,7 @@
   function install() {
     const telemetryReady = attachTelemetryCleanup();
     const reportReady = installPreviewAction();
+    decorateProductShell();
     ensureReportModal();
     if (telemetryReady && reportReady) {
       bodyObserver?.disconnect();
@@ -194,5 +292,7 @@
     openReportPreview,
     closeReportPreview,
     updateCompactTelemetry,
+    decorateProductShell,
+    version: 'ui-v2',
   };
 })();
