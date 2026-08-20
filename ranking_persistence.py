@@ -16,6 +16,7 @@ NUMERIC_FIELDS = (
     "linguistic_quality_score",
     "name_quality_score",
     "user_fit_score",
+    "adaptive_relevance_score",
     "identity_relevance_score",
     "availability_opportunity_score",
     "availability_evidence_confidence_score",
