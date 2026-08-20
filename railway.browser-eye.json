@@ -1,0 +1,14 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.browser-eye"
+  },
+  "deploy": {
+    "startCommand": "gunicorn browser_eye_service:app --bind 0.0.0.0:8080 --workers 1 --threads 8 --timeout 30",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 30,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
