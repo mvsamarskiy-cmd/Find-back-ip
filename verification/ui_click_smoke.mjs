@@ -3,12 +3,12 @@ import { chromium, webkit } from 'playwright';
 const base = (process.env.NAMEMACHINE_TEST_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const failures = [];
 
-async function run(browserType, name) {
+async function run(browserType, name, device = {}) {
   const browser = await browserType.launch({ headless: true });
   const context = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    isMobile: true,
-    hasTouch: true,
+    viewport: device.viewport || { width: 390, height: 844 },
+    isMobile: device.isMobile ?? true,
+    hasTouch: device.hasTouch ?? true,
   });
   const page = await context.newPage();
   const pageErrors = [];
@@ -41,7 +41,24 @@ async function run(browserType, name) {
   try {
     const response = await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 20_000 });
     check('root HTTP 200', response?.status() === 200, `status=${response?.status()}`);
-    await page.waitForTimeout(750);
+    await page.waitForTimeout(900);
+
+    const uiShell = await page.evaluate(() => ({
+      uiV2: document.body.classList.contains('nm-ui-v2'),
+      stylesheet: document.getElementById('nameMachineUiV2Styles')?.getAttribute('href') || '',
+      introVisible: Boolean(document.getElementById('nameMachineIntro')?.getBoundingClientRect().height),
+      introText: document.querySelector('#nameMachineIntro h1')?.textContent?.trim() || '',
+      composerRight: Math.round(document.querySelector('.composer')?.getBoundingClientRect().right || 0),
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      titleSize: parseFloat(getComputedStyle(document.querySelector('#nameMachineIntro h1')).fontSize || '0'),
+    }));
+    check('UI v2 product shell is active', uiShell.uiV2, JSON.stringify(uiShell));
+    check('UI v2 stylesheet is attached', uiShell.stylesheet.includes('/static/ui_v2.css'), uiShell.stylesheet);
+    check('Product intro is visible', uiShell.introVisible && uiShell.introText.includes('Знайди назву'), uiShell.introText);
+    check('Hero typography is prominent', uiShell.titleSize >= 32, `fontSize=${uiShell.titleSize}`);
+    check('Composer stays inside viewport', uiShell.composerRight <= uiShell.clientWidth + 2, JSON.stringify(uiShell));
+    check('UI v2 creates no document overflow', uiShell.scrollWidth <= uiShell.clientWidth + 2, JSON.stringify(uiShell));
 
     const start = page.locator('#startBtn');
     check('Start visible', await start.isVisible(), '');
@@ -84,6 +101,11 @@ async function run(browserType, name) {
     check('Feed tab activates', await feedTab.evaluate(el => el.classList.contains('active')), '');
     check('Feed view visible', await page.locator('#feedView').isVisible(), '');
 
+    const legend = page.locator('#nameMachineTruthLegend');
+    check('Truth-status legend is visible', await legend.isVisible(), '');
+    const legendText = (await legend.textContent()) || '';
+    check('Truth-status legend distinguishes strict and promising', legendText.includes('вільне — підтверджено') && legendText.includes('перспективне'), legendText);
+
     const modeButtons = page.locator('[data-entry-mode]');
     const count = await modeButtons.count();
     check('Entry mode controls loaded', count >= 4, `count=${count}`);
@@ -111,7 +133,7 @@ async function run(browserType, name) {
         scrollWidth: document.documentElement.scrollWidth,
         panelRight: Math.round(document.getElementById('largeSearchPanel')?.getBoundingClientRect().right || 0),
       }));
-      check('Large-search panel stays inside mobile viewport', dimensions.panelRight <= dimensions.clientWidth + 2, JSON.stringify(dimensions));
+      check('Large-search panel stays inside viewport', dimensions.panelRight <= dimensions.clientWidth + 2, JSON.stringify(dimensions));
       check('Large-search panel does not create document overflow', dimensions.scrollWidth <= dimensions.clientWidth + 2, JSON.stringify(dimensions));
     }
 
@@ -128,6 +150,11 @@ async function run(browserType, name) {
 
 await run(chromium, 'chromium-mobile');
 await run(webkit, 'webkit-mobile');
+await run(chromium, 'chromium-desktop', {
+  viewport: { width: 1440, height: 1000 },
+  isMobile: false,
+  hasTouch: false,
+});
 
 if (failures.length) {
   console.error('\nBUTTON SMOKE FAILED');

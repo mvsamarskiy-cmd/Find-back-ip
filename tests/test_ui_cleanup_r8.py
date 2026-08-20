@@ -9,9 +9,9 @@ class UiCleanupR8Tests(unittest.TestCase):
         body = app.test_client().get("/").get_data(as_text=True)
         self.assertIn('/static/feed_navigation.js?v=3', body)
         self.assertIn('/static/durable_live_events.js?v=2', body)
-        self.assertIn('/static/ui_cleanup_r8.js?v=3', body)
-        self.assertLess(body.index('/static/feed_navigation.js?v=3'), body.index('/static/ui_cleanup_r8.js?v=3'))
-        self.assertLess(body.index('/static/durable_live_events.js?v=2'), body.index('/static/ui_cleanup_r8.js?v=3'))
+        self.assertIn('/static/ui_cleanup_r8.js?v=4', body)
+        self.assertLess(body.index('/static/feed_navigation.js?v=3'), body.index('/static/ui_cleanup_r8.js?v=4'))
+        self.assertLess(body.index('/static/durable_live_events.js?v=2'), body.index('/static/ui_cleanup_r8.js?v=4'))
         self.assertTrue(RELEASE_MARKER.startswith('v8.'))
 
     def test_large_telemetry_is_collapsed_by_default_but_not_deleted(self):

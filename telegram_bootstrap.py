@@ -85,7 +85,7 @@ install_variant_routes(app, app_module)
 install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.11.2-creative-lexicon"
+RELEASE_MARKER = "v8.11.3-ui-v2"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
@@ -101,7 +101,7 @@ CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
 ENTRY_MODES_TAG = '<script src="/static/entry_modes.js?v=1"></script>'
 BRAND_COLLISION_UI_TAG = '<script src="/static/brand_collision_ui.js?v=1"></script>'
 DURABLE_LIVE_EVENTS_TAG = '<script src="/static/durable_live_events.js?v=2"></script>'
-UI_CLEANUP_TAG = '<script src="/static/ui_cleanup_r8.js?v=3"></script>'
+UI_CLEANUP_TAG = '<script src="/static/ui_cleanup_r8.js?v=4"></script>'
 VARIANT_EXPANSION_UI_TAG = '<script src="/static/variant_expansion_ui.js?v=1"></script>'
 VARIANT_EXPANSION_SYNC_TAG = '<script src="/static/variant_expansion_sync.js?v=1"></script>'
 
