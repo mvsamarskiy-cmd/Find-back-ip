@@ -211,9 +211,10 @@ class BrowserEnrichmentPersistenceTests(unittest.TestCase):
 
 
 class VerificationPipelineContractTests(unittest.TestCase):
-    def test_worker_installs_browser_enrichment_after_fast_runner(self):
+    def test_worker_queues_browser_enrichment_after_fast_runner(self):
         source = Path("worker_entry.py").read_text(encoding="utf-8")
-        self.assertIn("install_live_background_enrichment(live_background)", source)
+        self.assertIn("install_live_background_queue(live_background)", source)
+        self.assertIn("BROWSER_PIPELINE_WORKERS", source)
         self.assertIn("run_live_background_job", source)
 
     def test_browser_event_ui_and_cache_bust_are_live(self):
@@ -225,10 +226,11 @@ class VerificationPipelineContractTests(unittest.TestCase):
     def test_diagnostics_expose_nonblocking_v3_order(self):
         diagnostics = app.test_client().get("/api/verification/diagnostics").get_json()
         pipeline = diagnostics["verification_pipeline"]
-        self.assertEqual(pipeline["version"], "v3")
+        self.assertEqual(pipeline["version"], "v3.1")
+        self.assertTrue(pipeline["foreground_and_background_share_browser_pipe"])
         self.assertFalse(pipeline["fast_results_blocked_by_browser"])
         self.assertFalse(pipeline["browser_intelligence"]["browser_absence_can_decide_claimability"])
-        self.assertTrue(RELEASE_MARKER.startswith("v8.10."))
+        self.assertTrue(RELEASE_MARKER.startswith("v8.11."))
 
 
 if __name__ == "__main__":
