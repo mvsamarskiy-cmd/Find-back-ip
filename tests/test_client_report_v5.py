@@ -11,10 +11,10 @@ class ClientReportV5Tests(unittest.TestCase):
     def test_client_report_loads_before_controls_and_mode_overlay_is_cache_busted(self):
         body = app.test_client().get("/").get_data(as_text=True)
         self.assertIn('/static/client_report.js?v=6', body)
-        self.assertIn('/static/client_report_modes.js?v=1', body)
+        self.assertIn('/static/client_report_modes.js?v=2', body)
         self.assertIn('/static/report_controls.js?v=5', body)
-        self.assertLess(body.index('/static/client_report.js?v=6'), body.index('/static/client_report_modes.js?v=1'))
-        self.assertLess(body.index('/static/client_report_modes.js?v=1'), body.index('/static/report_controls.js?v=5'))
+        self.assertLess(body.index('/static/client_report.js?v=6'), body.index('/static/client_report_modes.js?v=2'))
+        self.assertLess(body.index('/static/client_report_modes.js?v=2'), body.index('/static/report_controls.js?v=5'))
         self.assertTrue(RELEASE_MARKER.startswith('v8.'))
 
     def test_normal_menu_is_client_facing_not_technical_dump(self):
@@ -38,9 +38,10 @@ class ClientReportV5Tests(unittest.TestCase):
     def test_generic_report_never_pretends_ideas_were_verified(self):
         source = Path('static/client_report_modes.js').read_text(encoding='utf-8')
         self.assertIn('ЗВІТ ГЕНЕРАЦІЇ НАЗВ', source)
-        self.assertIn('Перевірки доменів і соцмереж не запускаються', Path('static/entry_modes.js').read_text(encoding='utf-8'))
-        self.assertIn('не перевіряє домени, соцмережі, компанії чи торгові марки', source)
+        self.assertIn('у цьому запуску ресурси не перевірялися', source)
+        self.assertIn('Перепровірити результати', source)
         self.assertIn("row?.product_mode === 'generic_name'", source)
+        self.assertIn('hasAvailabilityEvidence', source)
 
     def test_audit_sync_is_separate_and_prunes_browser_copy(self):
         audit_source = Path('static/audit_sync.js').read_text(encoding='utf-8')
