@@ -45,9 +45,9 @@ class SearchActionsV2Tests(unittest.TestCase):
         self.assertIn('current_bid_ton', actions)
         self.assertIn('nm-fragment-offer', actions)
         self.assertIn('TON', actions)
-        self.assertIn("status === 'purchasable'", claimability)
-        self.assertIn("status === 'claimable'", claimability)
-        self.assertNotIn("statusOf((row.availability || {})[key]) === 'purchasable'", claimability)
+        self.assertIn("if (status === 'purchasable') return { cls: 'purchase'", claimability)
+        self.assertIn("key => statusOf((row.availability || {})[key]) === 'claimable'", claimability)
+        self.assertNotIn("key => statusOf((row.availability || {})[key]) === 'purchasable',", claimability)
 
     def test_diagnostics_advertise_turbo_default_and_zero_resource_generation(self):
         diagnostics = app.test_client().get('/api/verification/diagnostics').get_json()
