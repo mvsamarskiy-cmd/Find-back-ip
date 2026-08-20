@@ -2,15 +2,14 @@
 
 Fast public sensors and Browser Intelligence answer a different question from
 claimability: they can prove that an identity exists or that no public identity was
-observed, but they cannot manufacture a registration guarantee.  This module is
+observed, but they cannot manufacture a registration guarantee. This module is
 the final, sparse stage that may promote a resource to strict green (`claimable`)
 only when an authoritative provider explicitly confirms assignment/registration.
 
-The stage is intentionally overlay-based so the existing fast verifier stays
-stable.  In production `STRICT_CLAIMABILITY_DEFERRED=1` moves expensive registrar
-and Telegram assignment checks out of the foreground critical path and lets the
-durable Browser Intelligence queue run them after cheap evidence has already
-screened a candidate.
+In production `STRICT_CLAIMABILITY_DEFERRED=1` moves expensive registrar and
+Telegram assignment checks out of the foreground critical path and lets the
+durable Browser Intelligence queue run them after cheap evidence has screened a
+candidate.
 """
 from __future__ import annotations
 
@@ -33,6 +32,29 @@ STRICT_RESOURCES = ("com", "telegram")
 DECISIVE_STRICT_STATUSES = frozenset({"claimable", "purchasable", "taken", "reserved", "invalid"})
 PROBEABLE_STATUSES = frozenset({"not_found", "unknown", "rate_limited"})
 HARD_CONFLICT = frozenset({"taken", "reserved", "invalid"})
+STRICT_SERVER_KEYS = (
+    "strict_claimability",
+    "strict_claimability_state",
+    "strict_claimability_unprovable_required",
+    "bundle_state",
+    "bundle_score",
+    "bundle_availability_state",
+    "bundle_claimable",
+    "bundle_purchasable",
+    "structural_quality_score",
+    "linguistic_quality_score",
+    "name_quality_score",
+    "user_fit_score",
+    "adaptive_relevance_score",
+    "identity_relevance_score",
+    "availability_opportunity_score",
+    "availability_evidence_confidence_score",
+    "verification_coverage_score",
+    "final_score",
+    "availability_state",
+    "ranking_model",
+    "ranking_reason",
+)
 
 
 def _truthy(value: Any) -> bool:
@@ -97,16 +119,6 @@ def _status(payload: Any) -> str:
     if not isinstance(payload, dict):
         return "unknown"
     return str(payload.get("status") or "unknown").lower()
-
-
-def _candidate_score(row: dict[str, Any]) -> float:
-    for key in ("final_score", "identity_relevance_score", "name_quality_score", "local_quality_score"):
-        try:
-            if row.get(key) is not None:
-                return float(row.get(key))
-        except (TypeError, ValueError):
-            pass
-    return 50.0
 
 
 def strict_resources_to_probe(row: dict[str, Any], required_resources=None) -> list[str]:
@@ -198,11 +210,13 @@ def probe_strict_resource(name: str, resource: str):
 def _compact_probe(row: Any) -> dict[str, Any]:
     if not isinstance(row, dict):
         return {"status": "unknown", "authoritative": False}
-    return {
+    compact = {
         key: row.get(key)
         for key in ("status", "detail", "source", "method", "confidence", "occupancy", "claimability", "checked_at", "url", "offer")
         if key in row
-    } | {"authoritative": _status(row) in DECISIVE_STRICT_STATUSES}
+    }
+    compact["authoritative"] = _status(row) in DECISIVE_STRICT_STATUSES
+    return compact
 
 
 def _bundle_fields(row: dict[str, Any], required_resources) -> dict[str, Any]:
@@ -221,7 +235,7 @@ def _bundle_fields(row: dict[str, Any], required_resources) -> dict[str, Any]:
 def apply_strict_claimability(row: dict[str, Any], required_resources=None) -> dict[str, Any]:
     """Run sparse authoritative probes and refresh the candidate ranking.
 
-    Provider failure never erases already useful absence evidence.  Only a
+    Provider failure never erases already useful absence evidence. Only a
     decisive authoritative result may rewrite availability; unknown/rate-limit
     outcomes are kept as audit metadata and the candidate stays non-green.
     """
@@ -271,6 +285,12 @@ def apply_strict_claimability(row: dict[str, Any], required_resources=None) -> d
     return result
 
 
+def _same_run(existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
+    existing_run = str(existing.get("run_id") or "")
+    incoming_run = str(incoming.get("run_id") or "")
+    return not (existing_run and incoming_run and existing_run != incoming_run)
+
+
 def install_runtime_overlay() -> None:
     """Attach strict claimability after Browser Intelligence without editing its hot path."""
     import browser_enrichment
@@ -295,8 +315,33 @@ def install_runtime_overlay() -> None:
         candidate._strict_claimability_wrapper = True
         browser_queue._browser_candidate = candidate
 
+    # Completed strict provider facts are server-side evidence just like Browser
+    # Eye facts. A stale same-run localStorage mirror must never erase a green
+    # registrar/Telegram result after it has been persisted.
+    base_merge = browser_queue.BrowserJobQueue._merge_existing_browser
+    if not getattr(base_merge, "_strict_claimability_wrapper", False):
+        def merge_server_facts(existing, incoming):
+            merged = base_merge(existing, incoming)
+            if not isinstance(existing, dict) or not isinstance(incoming, dict):
+                return merged
+            if not _same_run(existing, incoming):
+                return merged
+            strict_state = str(existing.get("strict_claimability_state") or "")
+            strict_meta = existing.get("strict_claimability")
+            if strict_state not in {"complete", "partial"} or not isinstance(strict_meta, dict) or not strict_meta:
+                return merged
+            protected = dict(merged) if isinstance(merged, dict) else dict(incoming)
+            if isinstance(existing.get("availability"), dict):
+                protected["availability"] = existing["availability"]
+            for key in STRICT_SERVER_KEYS:
+                if key in existing:
+                    protected[key] = existing[key]
+            return protected
+        merge_server_facts._strict_claimability_wrapper = True
+        browser_queue.BrowserJobQueue._merge_existing_browser = staticmethod(merge_server_facts)
+
     # Every browser persistence now passes through strict claimability first. This
-    # makes the browser evidence + authoritative probe one durable final update.
+    # makes browser evidence + authoritative probe one durable final update.
     base_persist = browser_enrichment.persist_browser_enrichment
     if not getattr(base_persist, "_strict_claimability_wrapper", False):
         def strict_persist(event_store, job, enriched_row, stage="browser_v3"):
