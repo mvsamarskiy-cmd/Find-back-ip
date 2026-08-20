@@ -1,8 +1,9 @@
 /* Durable true-live candidate lifecycle consumer.
  *
- * Background workers persist candidate_generated before external verification and
- * candidate_completed after final verification. This client only renders those
- * real server events; it does not fabricate names or progress animation.
+ * Background workers persist candidate_generated before external verification,
+ * candidate_completed after the fast verifier, and candidate_enriched after the
+ * asynchronous Browser Intelligence layer. This client renders only real server
+ * events; it does not fabricate names or progress animation.
  */
 (() => {
   const ACTIVE_POLL_MS = 900;
@@ -63,7 +64,19 @@
       if (status) {
         if (allGreen(row)) status.textContent = `${row.name} · 🟢 підтверджено вільне`;
         else if (hasConflict(row)) status.textContent = `${row.name} · перевірено, є конфлікт`;
-        else status.textContent = `${row.name} · перевірено`;
+        else status.textContent = `${row.name} · швидка перевірка завершена`;
+      }
+    } else if (event.event_type === 'candidate_enriched') {
+      // Browser Intelligence is an additive post-fast layer. The candidate has
+      // already completed normal verification; this event refreshes evidence,
+      // bundle state and final ranking without moving it back to "checking".
+      row.checked = true;
+      row.verification_state = 'complete';
+      delete row.resource_progress;
+      if (status) {
+        if (allGreen(row)) status.textContent = `${row.name} · 🟢 браузерна переперевірка завершена`;
+        else if (hasConflict(row)) status.textContent = `${row.name} · браузер знайшов конфлікт`;
+        else status.textContent = `${row.name} · подвійна браузерна перевірка завершена`;
       }
     }
     return true;
