@@ -5,7 +5,12 @@ from __future__ import annotations
 import threading
 
 from audit_store import AUDIT_STORE
-from browser_enrichment import BROWSER_ENRICHMENT, install_live_background_enrichment
+from browser_enrichment import BROWSER_ENRICHMENT
+from browser_pipeline_worker import (
+    BROWSER_PIPELINE_WORKERS,
+    install_live_background_queue,
+    pump_main,
+)
 from durable_candidate_events import LIVE_CANDIDATES
 from entry_mode_backend import install_entry_mode_intelligence
 import live_background
@@ -23,10 +28,11 @@ install_entry_mode_intelligence(search_worker.app_module)
 # implementation without duplicating the worker process lifecycle.
 search_worker.run_availability_hunter_job = run_live_background_job
 
-# Verification v3 keeps the fast API/RDAP/oEmbed path authoritative and immediate.
-# Completed fast rows are then submitted to Browser Eye asynchronously; Chromium,
-# WebKit and sparse search corroboration run while the next naming batch proceeds.
-install_live_background_enrichment(live_background)
+# Verification v3.1 uses one durable Browser Intelligence queue for both search
+# modes. The fast verifier persists first; browser work is queued after that
+# boundary and therefore never blocks generation, NDJSON delivery, or the next
+# background batch.
+install_live_background_queue(live_background)
 
 
 def _telemetry_cleanup_loop():
@@ -55,11 +61,30 @@ def main():
         daemon=True,
     )
     sweeper.start()
+
+    browser_threads = []
+    for index in range(BROWSER_PIPELINE_WORKERS):
+        thread = threading.Thread(
+            target=pump_main,
+            args=(
+                search_worker.STOP,
+                BROWSER_ENRICHMENT,
+                LIVE_CANDIDATES,
+                f"browser-pump-{index + 1}",
+            ),
+            name=f"namemachine-browser-pump-{index + 1}",
+            daemon=True,
+        )
+        thread.start()
+        browser_threads.append(thread)
+
     try:
         return search_worker.main()
     finally:
         search_worker.STOP.set()
         sweeper.join(timeout=2.0)
+        for thread in browser_threads:
+            thread.join(timeout=2.0)
         BROWSER_ENRICHMENT.shutdown(wait=False)
 
 
