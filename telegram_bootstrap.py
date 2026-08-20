@@ -22,6 +22,7 @@ from background_search_api import (  # noqa: E402
 from brand_collision import brand_collision_diagnostics  # noqa: E402
 from brand_collision_api import install_brand_collision_routes  # noqa: E402
 from browser_enrichment import browser_enrichment_diagnostics  # noqa: E402
+from browser_queue import BROWSER_JOBS, install_candidate_enqueue  # noqa: E402
 from candidate_events_api import install_candidate_event_routes  # noqa: E402
 from durable_candidate_events import LIVE_CANDIDATES  # noqa: E402
 from entry_mode_backend import install_entry_mode_intelligence  # noqa: E402
@@ -43,6 +44,10 @@ app_module.check_many = check_many_v2
 install_entry_mode_intelligence(app_module)
 install_session_provenance(session_api_module)
 install_ranking_persistence(session_api_module)
+# Candidate persistence happens asynchronously after the foreground NDJSON result
+# is already visible. Attach the durable browser queue at that boundary so adding
+# Chromium/WebKit can never extend the search response critical path.
+install_candidate_enqueue(session_api_module.STORE)
 # Install ranking before route closures are created. This keeps one ranking
 # contract across JSON generation, generic naming, and streamed final rows.
 install_final_ranking(
@@ -62,7 +67,7 @@ install_variant_routes(app, app_module)
 install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.10.0-verification-pipeline"
+RELEASE_MARKER = "v8.11.0-fast-browser-pipeline"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
@@ -195,11 +200,12 @@ def api_verification_diagnostics():
     return jsonify({
         "verification_engine": "v2",
         "verification_pipeline": {
-            "version": "v3",
+            "version": "v3.1",
             "order": [
                 "generation",
                 "local_filters",
                 "fast_network_sensors",
+                "durable_candidate_boundary",
                 "async_chromium_eye",
                 "selective_webkit_eye",
                 "sparse_search_eye",
@@ -207,6 +213,8 @@ def api_verification_diagnostics():
                 "final_ranking",
             ],
             "browser_intelligence": browser_enrichment_diagnostics(),
+            "browser_queue": BROWSER_JOBS.diagnostics(),
+            "foreground_and_background_share_browser_pipe": True,
             "fast_results_blocked_by_browser": False,
         },
         "final_ranking": {
@@ -248,6 +256,7 @@ def api_verification_diagnostics():
             "resource_progress_events": True,
             "pre_generation_phase_events": True,
             "operational_activity_only": True,
+            "browser_enrichment_after_persist": True,
         },
         "durable_candidate_events": LIVE_CANDIDATES.diagnostics(),
         "large_feed_navigation": {
