@@ -24,6 +24,7 @@ from entry_mode_backend import install_entry_mode_intelligence
 import live_background
 from live_background import run_live_background_job
 import search_worker
+from strict_claimability import install_strict_claimability
 
 
 # The web bootstrap installs the same wrapper for foreground/HTTP generation.
@@ -36,10 +37,16 @@ install_entry_mode_intelligence(search_worker.app_module)
 # implementation without duplicating the worker process lifecycle.
 search_worker.run_availability_hunter_job = run_live_background_job
 
-# Verification v3.1 uses one durable Browser Intelligence queue for both search
-# modes. The fast verifier persists first; browser work is queued after that
-# boundary and therefore never blocks generation, NDJSON delivery, or the next
-# background batch.
+# Verification v4 keeps public/API/browser checks fast and lets only the sparse
+# authoritative claimability stage turn a candidate strict green. Installing this
+# before queue workers start also expands queue admission for strict-only .com or
+# Telegram work when a corresponding provider is configured.
+install_strict_claimability()
+
+# Verification v3.1+ uses one durable Browser Intelligence queue for both search
+# modes. The fast verifier persists first; browser and strict claimability work
+# are queued after that boundary and therefore never block generation, NDJSON
+# delivery, or the next background batch.
 install_live_background_queue(live_background)
 
 
