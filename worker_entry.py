@@ -13,12 +13,14 @@ from session_store_threadsafe import install_threadsafe_session_store
 install_threadsafe_session_store()
 
 from audit_store import AUDIT_STORE
+import ai_engine as ai_engine_module
 from browser_enrichment import BROWSER_ENRICHMENT
 from browser_pipeline_worker import (
     BROWSER_PIPELINE_WORKERS,
     install_live_background_queue,
     pump_main,
 )
+from creative_generation import install_creative_generation
 from durable_candidate_events import LIVE_CANDIDATES
 from entry_mode_backend import install_entry_mode_intelligence
 import live_background
@@ -26,6 +28,11 @@ from live_background import run_live_background_job
 import search_worker
 from strict_claimability import install_strict_claimability
 
+
+# app.py imports the generator by value, so install the creative overlay in both
+# ai_engine and the worker's app module before the first job can generate a batch.
+# Retrieval is local/deterministic and adds no network or extra model call.
+install_creative_generation(ai_engine_module, search_worker.app_module)
 
 # The web bootstrap installs the same wrapper for foreground/HTTP generation.
 # Background generation imports app directly, so install it here as well before
