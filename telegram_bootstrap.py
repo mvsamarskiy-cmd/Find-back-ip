@@ -75,7 +75,7 @@ install_variant_routes(app, app_module)
 install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.12.1-flow-clarity"
+RELEASE_MARKER = "v8.13.0-mathematical-report"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
@@ -83,8 +83,10 @@ BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
 HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=5"></script>'
 AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'
 AUDIT_REPORT_TAG = '<script src="/static/audit_report.js?v=4"></script>'
+REPORT_MATH_TAG = '<script src="/static/report_math_v6.js?v=1"></script>'
 CLIENT_REPORT_TAG = '<script src="/static/client_report.js?v=6"></script>'
 CLIENT_REPORT_MODES_TAG = '<script src="/static/client_report_modes.js?v=2"></script>'
+REPORT_MATH_OVERLAY_TAG = '<script src="/static/report_math_overlay.js?v=1"></script>'
 REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=5"></script>'
 FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=4"></script>'
 CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
@@ -114,8 +116,10 @@ def prevent_stale_html(response):
             HUNTER_UI_TAG,
             AUDIT_SYNC_TAG,
             AUDIT_REPORT_TAG,
+            REPORT_MATH_TAG,
             CLIENT_REPORT_TAG,
             CLIENT_REPORT_MODES_TAG,
+            REPORT_MATH_OVERLAY_TAG,
             REPORT_CONTROLS_TAG,
             FEED_NAVIGATION_TAG,
             CLAIMABILITY_UI_TAG,
@@ -246,6 +250,16 @@ def api_verification_diagnostics():
             "absence_only_state": "promising",
             "availability_can_rewrite_semantic_truth": False,
             "durable_scores": True,
+        },
+        "client_report_math": {
+            "enabled": True,
+            "version": "report-math-v6",
+            "wilson_interval": 0.95,
+            "explicit_feedback_confidence_formula": "1-exp(-n/5)",
+            "ranking_equations_visible": True,
+            "run_delta_visible": True,
+            "strict_free_status": "claimable",
+            "status_truth_rewritten_by_math": False,
         },
         "entry_modes": {
             "supported": True,
