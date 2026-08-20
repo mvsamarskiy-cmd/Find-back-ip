@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 import unittest
 
-from creative_generation import PRIVATE_PALETTE_KEY, install_creative_generation
+from creative_generation import install_creative_generation
 from creative_lexicon import (
     creative_lexicon_diagnostics,
     creative_palette,
@@ -78,7 +78,10 @@ class CreativeGenerationOverlayTests(unittest.TestCase):
         module.expand_local_families = expand
 
         def generate(brief, count=10, preferences=None, brand_dna=None, search_context=None, generation_context=None):
-            seen["private_palette"] = brand_dna.get(PRIVATE_PALETTE_KEY)
+            # The creative palette is intentionally request-local and must not be
+            # injected into Brand DNA. Observe its two consumers instead: model
+            # context and local expansion.
+            seen["base_brand_dna"] = brand_dna
             seen["model_context"] = module.brand_dna_context(brand_dna)
             seen["local_rows"] = module.expand_local_families(brief, brand_dna, limit=10)
             return [{
@@ -103,7 +106,9 @@ class CreativeGenerationOverlayTests(unittest.TestCase):
             generation_context={"batch_number": 1},
         )
         self.assertIn("Internal creative semantic palette", seen["model_context"])
-        self.assertIn("mobility", seen["private_palette"]["matched_clusters"])
+        self.assertIn("mobility", seen["model_context"])
+        self.assertIsNone(seen["base_brand_dna"])
+        self.assertIn("mobility", seen["expanded_dna"]["themes"])
         self.assertTrue(seen["local_rows"][0]["creative_lexicon_used"])
         self.assertTrue(rows[0]["creative_lexicon_used"])
 
@@ -119,9 +124,9 @@ class CreativeGenerationOverlayTests(unittest.TestCase):
                 "guidance": "Не використовувати слова: road | коротка назва",
             },
         )
-        palette = seen["private_palette"]
-        self.assertNotIn("road", palette["local_roots"])
-        self.assertNotIn("road", palette["direct_words"])
+        self.assertNotIn("road", seen["model_context"].lower())
+        expanded_keywords = [str(value).lower() for value in seen["expanded_dna"].get("keywords", [])]
+        self.assertNotIn("road", expanded_keywords)
 
 
 class CreativeLexiconDiagnosticsTests(unittest.TestCase):
