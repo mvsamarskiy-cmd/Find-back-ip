@@ -1,11 +1,14 @@
 /* Availability Hunter search-mode UI.
  *
- * Procedural mode exposes the real root/strategy being explored. Turbo mode
- * deliberately hides non-claimable mass from the primary feed while keeping all
- * verifier rows durable for audit and learning. Entry workflow context, when
- * present, is supplied by static/entry_modes.js at click time.
+ * Turbo is a broad generation+verification engine, not a hidden strict-green
+ * list. Every checked row remains in Results for feedback. The stop goal is
+ * explicit and can be strict-all, no-conflict, or any selected-channel
+ * opportunity; verdict colors themselves are never rewritten.
  */
 (() => {
+  if (window.__nameMachineHunterUiV5) return;
+  window.__nameMachineHunterUiV5 = true;
+
   const POLL_MS = 2200;
   let installed = false;
   let pollTimer = null;
@@ -50,18 +53,63 @@
     return payload;
   }
 
+  async function waitForServerSession(timeoutMs = 8000) {
+    if (creds()?.id && creds()?.token) return creds();
+    if (typeof window.nameMachineEnsureServerSession === 'function') {
+      try {
+        const ready = await window.nameMachineEnsureServerSession(timeoutMs);
+        if (ready?.id && ready?.token) return ready;
+      } catch (_) {}
+    }
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      if (creds()?.id && creds()?.token) return creds();
+      await new Promise(resolve => setTimeout(resolve, 160));
+    }
+    return creds();
+  }
+
   function selectedStrategy(panel) {
     const value = String(panel?.querySelector('#hunterSearchStrategy')?.value || 'procedural');
     return value === 'turbo' ? 'turbo' : 'procedural';
+  }
+
+  function selectedMatchPolicy(panel) {
+    const value = String(panel?.querySelector('#hunterMatchPolicy')?.value || 'strict_all');
+    return ['strict_all', 'no_conflict', 'any_opportunity'].includes(value) ? value : 'strict_all';
+  }
+
+  function policyLabel(policy) {
+    if (policy === 'any_opportunity') return 'має хоча б 1 канал без знайденої зайнятості';
+    if (policy === 'no_conflict') return 'без жорсткого конфлікту на всіх вибраних каналах';
+    return '100% підтверджено вільний на всіх вибраних каналах';
+  }
+
+  function shortPolicyLabel(policy) {
+    if (policy === 'any_opportunity') return 'можливостей';
+    if (policy === 'no_conflict') return 'без конфлікту';
+    return 'strict-green';
+  }
+
+  function updateGoalCopy(panel) {
+    if (current?.backgroundSearch?.id) return;
+    const target = Math.max(1, Number(panel?.querySelector('#hunterTargetMatches')?.value) || 3);
+    const policy = selectedMatchPolicy(panel);
+    const goal = panel?.querySelector('#hunterGoalStatus');
+    if (goal) goal.textContent = `Ціль: ${target} · ${policyLabel(policy)}.`;
   }
 
   function updateModeHint(panel) {
     const mode = selectedStrategy(panel);
     const focus = panel?.querySelector('#proceduralFocusStatus');
     if (!focus || current?.backgroundSearch?.id) return;
+    const policy = panel?.querySelector('#hunterMatchPolicy');
+    if (mode === 'turbo' && policy && policy.dataset.userTouched !== '1') policy.value = 'any_opportunity';
+    if (mode === 'procedural' && policy && policy.dataset.userTouched !== '1') policy.value = 'strict_all';
     focus.textContent = mode === 'turbo'
-      ? 'Turbo: показуватиму насамперед тільки підтверджено вільні результати.'
+      ? 'Turbo: широко генерую й паралельно перевіряю; усі кандидати залишаються в «Результатах».'
       : 'Процедурно: один корінь за раз, доки його стратегії не вичерпано.';
+    updateGoalCopy(panel);
   }
 
   function ensureHunterControls() {
@@ -81,6 +129,15 @@
       <option value="turbo">Turbo</option>`;
     heading?.insertAdjacentElement('afterend', strategy);
 
+    const policy = document.createElement('select');
+    policy.id = 'hunterMatchPolicy';
+    policy.setAttribute('aria-label', 'Що вважати знахідкою');
+    policy.innerHTML = `
+      <option value="strict_all" selected>100% вільне всюди</option>
+      <option value="no_conflict">Без конфліктів всюди</option>
+      <option value="any_opportunity">Хоч 1 канал без зайнятості</option>`;
+    strategy.insertAdjacentElement('afterend', policy);
+
     const budget = panel.querySelector('#largeSearchTarget');
     if (budget) {
       budget.setAttribute('aria-label', 'Максимум перевірок');
@@ -92,9 +149,9 @@
 
     const target = document.createElement('select');
     target.id = 'hunterTargetMatches';
-    target.setAttribute('aria-label', 'Скільки підтверджено вільних знайти');
+    target.setAttribute('aria-label', 'Скільки знахідок знайти');
     target.innerHTML = [1, 3, 5, 10]
-      .map(value => `<option value="${value}"${value === 3 ? ' selected' : ''}>${value} вільних</option>`)
+      .map(value => `<option value="${value}"${value === 3 ? ' selected' : ''}>${value} знахідок</option>`)
       .join('');
     budget?.insertAdjacentElement('afterend', target);
 
@@ -104,7 +161,7 @@
     const goal = document.createElement('span');
     goal.id = 'hunterGoalStatus';
     goal.className = 'hunter-goal-status';
-    goal.textContent = 'Ціль: 3 підтверджено вільних.';
+    goal.textContent = 'Ціль: 3 · 100% підтверджено вільний на всіх вибраних каналах.';
     const status = panel.querySelector('#largeSearchStatus');
     status?.insertAdjacentElement('afterend', goal);
 
@@ -119,7 +176,7 @@
       style.id = 'availabilityHunterStyle';
       style.textContent = `
         .hunter-label{font-size:11px;color:var(--muted)}
-        #hunterTargetMatches,#hunterSearchStrategy{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 9px;font:inherit}
+        #hunterTargetMatches,#hunterSearchStrategy,#hunterMatchPolicy{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 9px;font:inherit;min-width:0}
         .hunter-goal-status,.procedural-focus-status{width:100%;font-size:12px;color:var(--muted)}
         .hunter-goal-status strong{color:var(--ok)}
         .procedural-focus-status b{color:var(--text)}
@@ -127,10 +184,10 @@
       document.head.appendChild(style);
     }
 
-    target.addEventListener('change', () => {
-      if (!current?.backgroundSearch?.id) {
-        goal.textContent = `Ціль: ${Number(target.value) || 3} підтверджено вільних.`;
-      }
+    target.addEventListener('change', () => updateGoalCopy(panel));
+    policy.addEventListener('change', () => {
+      policy.dataset.userTouched = '1';
+      updateGoalCopy(panel);
     });
     strategy.addEventListener('change', () => updateModeHint(panel));
 
@@ -158,24 +215,31 @@
 
   async function startHunterSearch(panel) {
     if (startBusy) return;
-    const session = creds();
     const prompt = document.getElementById('prompt')?.value?.trim() || '';
     const resources = typeof selectedResources === 'function' ? selectedResources() : [];
     const start = panel?.querySelector('#largeSearchStart');
     const goal = panel?.querySelector('#hunterGoalStatus');
     const focus = panel?.querySelector('#proceduralFocusStatus');
     const strategy = selectedStrategy(panel);
+    const matchPolicy = selectedMatchPolicy(panel);
     const targetMatches = Math.max(1, Number(panel?.querySelector('#hunterTargetMatches')?.value) || 3);
     const maxChecks = Math.max(targetMatches, Number(panel?.querySelector('#largeSearchTarget')?.value) || 500);
 
-    if (!session?.id || !session?.token) {
-      document.getElementById('status').textContent = 'Серверна сесія ще не готова.';
-      return;
-    }
     if (prompt.length < 3 || !resources.length) {
       document.getElementById('status').textContent = prompt.length < 3
         ? 'Опиши задачу хоча б кількома словами.'
         : 'Обери хоча б один ресурс.';
+      return;
+    }
+
+    startBusy = true;
+    if (start) start.disabled = true;
+    document.getElementById('status').textContent = 'Готую серверну сесію…';
+    const session = await waitForServerSession();
+    if (!session?.id || !session?.token) {
+      document.getElementById('status').textContent = 'Серверна сесія не піднялась. Спробуй ще раз через кілька секунд.';
+      if (start) start.disabled = false;
+      startBusy = false;
       return;
     }
 
@@ -184,15 +248,15 @@
       entrySearchContext = searchContextForPrompt(prompt);
     } catch (error) {
       document.getElementById('status').textContent = error.message || 'Уточни задачу.';
+      if (start) start.disabled = false;
+      startBusy = false;
       return;
     }
 
-    startBusy = true;
-    if (start) start.disabled = true;
-    if (goal) goal.textContent = `Запускаю: знайти ${targetMatches} вільних, максимум ${maxChecks} перевірок…`;
+    if (goal) goal.textContent = `Запускаю: ${targetMatches} ${shortPolicyLabel(matchPolicy)}, максимум ${maxChecks} перевірок…`;
     if (focus) {
       focus.textContent = strategy === 'turbo'
-        ? 'Turbo: запускаю широке паралельне дослідження naming-простору…'
+        ? 'Turbo: запускаю широке паралельне дослідження; результати не ховаються…'
         : 'Будую послідовний план коренів…';
     }
     try {
@@ -212,6 +276,7 @@
           target_matches: targetMatches,
           max_checks: maxChecks,
           search_strategy: strategy,
+          match_policy: matchPolicy,
           batch_size: 20,
         }),
       });
@@ -223,6 +288,7 @@
         target_count: maxChecks,
         target_matches: targetMatches,
         search_strategy: strategy,
+        match_policy: matchPolicy,
         entry_mode: typeof window.nameMachineEntryMode === 'function' ? window.nameMachineEntryMode() : (current?.entryMode || 'other'),
         started_at: new Date().toISOString(),
       };
@@ -232,19 +298,21 @@
         target_matches: targetMatches,
         max_checks: maxChecks,
         search_strategy: strategy,
+        match_policy: matchPolicy,
         entry_mode: current.backgroundSearch.entry_mode,
         resources: [...resources],
         prompt,
       });
-      if (goal) goal.textContent = `Ціль: ${targetMatches} вільних · бюджет ${maxChecks} перевірок.`;
+      if (goal) goal.textContent = `Ціль: ${targetMatches} ${shortPolicyLabel(matchPolicy)} · бюджет ${maxChecks}.`;
       document.getElementById('status').textContent = strategy === 'turbo'
-        ? `Turbo запущено: шукаю ${targetMatches} підтверджено вільних.`
-        : `Процедурний пошук запущено: ціль ${targetMatches} підтверджено вільних.`;
+        ? `Turbo запущено: шукаю ${targetMatches} ${shortPolicyLabel(matchPolicy)}; усі перевірені кандидати лишаються у Результатах.`
+        : `Процедурний пошук запущено: ціль ${targetMatches} ${shortPolicyLabel(matchPolicy)}.`;
       try { render(); } catch (_) {}
       schedulePoll(250);
     } catch (error) {
       appendActivity('availability_hunter_start_error', { message: error.message || 'unknown' });
       if (goal) goal.textContent = error.message || 'Не вдалося запустити пошук.';
+      document.getElementById('status').textContent = error.message || 'Не вдалося запустити пошук.';
       if (start) start.disabled = false;
     } finally {
       startBusy = false;
@@ -279,6 +347,7 @@
       const targetMatches = Number(runtime.target_matches || config.target_matches) || 0;
       const checked = Number(runtime.checked ?? job.delivered_count) || 0;
       const maxChecks = Number(runtime.max_checks || config.max_checks || job.target_count) || 0;
+      const matchPolicy = String(runtime.match_policy || config.match_policy || 'strict_all');
       const done = ['completed', 'cancelled', 'failed'].includes(job.state);
       const entryMode = inferEntryModeFromJob(job);
 
@@ -290,6 +359,7 @@
           target_count: maxChecks,
           target_matches: targetMatches,
           search_strategy: strategy,
+          match_policy: matchPolicy,
           entry_mode: entryMode,
           started_at: job.started_at || job.created_at || current?.backgroundSearch?.started_at || '',
         };
@@ -300,13 +370,15 @@
 
       const selector = panel.querySelector('#hunterSearchStrategy');
       if (selector && ['procedural', 'turbo'].includes(strategy)) selector.value = strategy;
+      const policySelector = panel.querySelector('#hunterMatchPolicy');
+      if (policySelector && ['strict_all', 'no_conflict', 'any_opportunity'].includes(matchPolicy)) policySelector.value = matchPolicy;
       if (goal) {
-        goal.innerHTML = `<strong>${matches}/${targetMatches}</strong> вільних · перевірено ${checked}/${maxChecks}` +
+        goal.innerHTML = `<strong>${matches}/${targetMatches}</strong> ${shortPolicyLabel(matchPolicy)} · перевірено ${checked}/${maxChecks}` +
           (done && job.stop_reason ? ` · ${job.stop_reason}` : '');
       }
       if (focus) {
         if (strategy === 'turbo') {
-          focus.textContent = `Turbo · широке дослідження · ${matches} підтверджено вільних знайдено`;
+          focus.textContent = `Turbo · широке дослідження · ${matches} ${shortPolicyLabel(matchPolicy)} знайдено · усі ${checked} перевірок лишаються в результатах`;
         } else if (plan.exhausted) {
           focus.textContent = 'Процедурний простір поточного плану вичерпано.';
         } else if (plan.current_root) {
