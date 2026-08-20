@@ -21,6 +21,7 @@ from background_search_api import (  # noqa: E402
 )
 from brand_collision import brand_collision_diagnostics  # noqa: E402
 from brand_collision_api import install_brand_collision_routes  # noqa: E402
+from browser_enrichment import browser_enrichment_diagnostics  # noqa: E402
 from candidate_events_api import install_candidate_event_routes  # noqa: E402
 from durable_candidate_events import LIVE_CANDIDATES  # noqa: E402
 from entry_mode_backend import install_entry_mode_intelligence  # noqa: E402
@@ -61,7 +62,7 @@ install_variant_routes(app, app_module)
 install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.9.0-final-ranking"
+RELEASE_MARKER = "v8.10.0-verification-pipeline"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
@@ -76,7 +77,7 @@ FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=3"></script>'
 CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
 ENTRY_MODES_TAG = '<script src="/static/entry_modes.js?v=1"></script>'
 BRAND_COLLISION_UI_TAG = '<script src="/static/brand_collision_ui.js?v=1"></script>'
-DURABLE_LIVE_EVENTS_TAG = '<script src="/static/durable_live_events.js?v=1"></script>'
+DURABLE_LIVE_EVENTS_TAG = '<script src="/static/durable_live_events.js?v=2"></script>'
 UI_CLEANUP_TAG = '<script src="/static/ui_cleanup_r8.js?v=3"></script>'
 VARIANT_EXPANSION_UI_TAG = '<script src="/static/variant_expansion_ui.js?v=1"></script>'
 VARIANT_EXPANSION_SYNC_TAG = '<script src="/static/variant_expansion_sync.js?v=1"></script>'
@@ -193,6 +194,21 @@ def api_verification_diagnostics():
     }
     return jsonify({
         "verification_engine": "v2",
+        "verification_pipeline": {
+            "version": "v3",
+            "order": [
+                "generation",
+                "local_filters",
+                "fast_network_sensors",
+                "async_chromium_eye",
+                "selective_webkit_eye",
+                "sparse_search_eye",
+                "evidence_fusion",
+                "final_ranking",
+            ],
+            "browser_intelligence": browser_enrichment_diagnostics(),
+            "fast_results_blocked_by_browser": False,
+        },
         "final_ranking": {
             "enabled": True,
             "model": "final-v1",
