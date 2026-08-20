@@ -134,8 +134,19 @@ def install_browser_eye_hardening(service_module) -> None:
         if str(platform).lower() == "telegram" and exact_meta and (canonical_match or final_url_match):
             sources.append("telegram_exact_title_and_path")
 
+        # Structured/network identity outranks decorative metadata.  If it names a
+        # different account, retain that observed username for audit and discard any
+        # weaker title/canonical coincidence so the profile fails closed.
+        if structured_mismatch:
+            sources = []
+            observed_username = observed[0] if len(observed) == 1 else ""
+        elif sources:
+            observed_username = clean_handle
+        else:
+            observed_username = observed[0] if len(observed) == 1 else ""
+
         result["requested_handle"] = clean_handle
-        result["observed_username"] = clean_handle if sources else (observed[0] if len(observed) == 1 else "")
+        result["observed_username"] = observed_username
         result["identity_sources"] = sources
         result["final_url_match"] = final_url_match
         result["identity_gate"] = "exact"
