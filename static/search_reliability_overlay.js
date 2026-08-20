@@ -33,16 +33,20 @@
     return clean(document.getElementById('prompt')?.value || current?.promptHistory?.at?.(-1)?.text || '', 600);
   }
 
-  function backgroundPromptForRun(runId) {
-    const id = String(runId || '');
-    if (!id) return '';
+  function backgroundPromptForRun(runId, jobId = '') {
+    const runKey = String(runId || '');
+    const jobKey = String(jobId || '');
+    if (!runKey && !jobKey) return '';
     const log = current?.activityLog || [];
     for (let index = log.length - 1; index >= 0; index -= 1) {
       const item = log[index];
-      if (item?.type !== 'job_started') continue;
+      if (!['job_started', 'availability_hunter_started'].includes(item?.type)) continue;
       const details = item?.details || {};
-      if (String(details.run_id || '') !== id) continue;
-      return clean(details.prompt || '', 600);
+      const runMatches = runKey && String(details.run_id || '') === runKey;
+      const jobMatches = jobKey && String(item?.job_id || '') === jobKey;
+      if (!runMatches && !jobMatches) continue;
+      const prompt = clean(details.prompt || '', 600);
+      if (prompt) return prompt;
     }
     return '';
   }
@@ -52,11 +56,11 @@
     for (const run of current?.runs || []) {
       if (run?.id && sameIntent(run?.prompt || '', prompt)) ids.add(String(run.id));
     }
-    // backgroundSearch itself intentionally stores only compact job metadata. Use
-    // the immutable job_started audit event for its originating prompt. Never
-    // assume that a missing prompt means "same as what is currently in textarea".
+    // backgroundSearch itself intentionally stores compact job metadata. Resolve
+    // the originating prompt from its immutable activity event; never assume that
+    // a missing old prompt means "same as what is currently in textarea".
     const bg = current?.backgroundSearch;
-    const bgPrompt = bg?.run_id ? backgroundPromptForRun(bg.run_id) : '';
+    const bgPrompt = bg?.run_id ? backgroundPromptForRun(bg.run_id, bg.id) : '';
     if (bg?.run_id && bgPrompt && sameIntent(bgPrompt, prompt)) ids.add(String(bg.run_id));
     return ids;
   }
