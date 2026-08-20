@@ -7,9 +7,9 @@ from telegram_bootstrap import app
 class LargeFeedNavigationUiTests(unittest.TestCase):
     def test_navigation_client_loads_after_sync_and_progress_layers(self):
         body = app.test_client().get("/").get_data(as_text=True)
-        self.assertIn('/static/feed_navigation.js?v=3', body)
-        self.assertLess(body.index('/static/resource_progress.js'), body.index('/static/feed_navigation.js?v=3'))
-        self.assertLess(body.index('/static/session_sync.js'), body.index('/static/feed_navigation.js?v=3'))
+        self.assertIn('/static/feed_navigation.js?v=4', body)
+        self.assertLess(body.index('/static/resource_progress.js'), body.index('/static/feed_navigation.js?v=4'))
+        self.assertLess(body.index('/static/session_sync.js'), body.index('/static/feed_navigation.js?v=4'))
 
     def test_feed_is_newest_first_paginated_and_not_alphabetical(self):
         source = Path("static/feed_navigation.js").read_text(encoding="utf-8")
