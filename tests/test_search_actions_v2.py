@@ -37,6 +37,16 @@ class SearchActionsV2Tests(unittest.TestCase):
         self.assertIn("strategy.value = 'turbo'", source)
         self.assertIn("policy.value = 'any_opportunity'", source)
 
+    def test_fragment_purchase_offer_is_visible_but_not_green(self):
+        source = Path('static/claimability_ui.js').read_text(encoding='utf-8')
+        self.assertIn("status === 'purchasable'", source)
+        self.assertIn('purchaseLabel(row)', source)
+        self.assertIn('minimum_bid_ton', source)
+        self.assertIn('current_bid_ton', source)
+        self.assertIn('TON', source)
+        self.assertIn("status === 'claimable'", source)
+        self.assertNotIn("statusOf((row.availability || {})[key]) === 'purchasable'", source)
+
     def test_diagnostics_advertise_turbo_default_and_zero_resource_generation(self):
         diagnostics = app.test_client().get('/api/verification/diagnostics').get_json()
         self.assertTrue(diagnostics['generation_intelligence']['zero_resource_generation'])
