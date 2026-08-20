@@ -82,7 +82,7 @@ class LiveProviderEvidenceTests(unittest.TestCase):
         self.assertEqual(compatibility["status"], "taken")
         self.assertEqual(compatibility["source"], "fragment_public_web")
 
-    def test_fragment_marketplace_path_is_normalized_to_reserved(self):
+    def test_fragment_marketplace_path_is_purchasable_with_offer_but_never_green(self):
         with patch(
             "verification.live_provider_evidence.fragment_username_adapter.check_username",
             return_value={
@@ -92,7 +92,13 @@ class LiveProviderEvidenceTests(unittest.TestCase):
                 "method": "fragment_username_status",
                 "signal": "purchasable",
                 "confidence": 0.9,
-                "metadata": {},
+                "url": "https://fragment.com/username/premiumname",
+                "metadata": {
+                    "marketplace_url": "https://fragment.com/username/premiumname",
+                    "marketplace_status": "available",
+                    "minimum_bid_ton": 1250.0,
+                    "price_label": "Minimum bid 1,250 TON",
+                },
             },
         ):
             with patch(
@@ -112,13 +118,16 @@ class LiveProviderEvidenceTests(unittest.TestCase):
                 )
 
         fragment = next(row for row in rows["telegram"] if row["source"] == "fragment_public_web")
-        self.assertEqual(fragment["signal"], "reserved")
+        self.assertEqual(fragment["signal"], "purchasable")
         self.assertEqual(fragment["metadata"]["raw_signal"], "purchasable")
         compatibility = apply_compatibility_evidence(
             "premiumname", "telegram", dict(LEGACY_UNKNOWN), rows["telegram"]
         )
-        self.assertEqual(compatibility["status"], "reserved")
-        self.assertNotIn(compatibility["status"], {"claimable", "purchasable"})
+        self.assertEqual(compatibility["status"], "purchasable")
+        self.assertNotEqual(compatibility["status"], "claimable")
+        self.assertEqual(compatibility["claimability"], "purchase_available")
+        self.assertEqual(compatibility["offer"]["provider"], "fragment")
+        self.assertEqual(compatibility["offer"]["minimum_bid_ton"], 1250.0)
 
     def test_terminal_legacy_telegram_skips_secondary_providers(self):
         taken = dict(LEGACY_UNKNOWN)
