@@ -24,6 +24,10 @@
     return document.querySelectorAll('.resources input[name="resource"]:checked').length;
   }
 
+  function setText(node, value) {
+    if (node && node.textContent !== value) node.textContent = value;
+  }
+
   function syncResourceCopy(count, currentFlow) {
     const head = document.getElementById('nmResourcesHead');
     if (!head) return;
@@ -39,25 +43,24 @@
     const identity = document.querySelector('[data-nm-flow="identity"]');
     const brandHint = brand?.querySelector('span:last-child');
     const identityHint = identity?.querySelector('span:last-child');
-    if (brandHint) {
-      brandHint.textContent = count
-        ? 'генерація + перевірка вибраних каналів'
-        : 'без каналів — просто генеруємо назви';
-    }
-    if (identityHint) identityHint.textContent = 'готова назва + перевірка вибраних каналів';
+    setText(
+      brandHint,
+      count ? 'генерація + перевірка вибраних каналів' : 'без каналів — просто генеруємо назви',
+    );
+    setText(identityHint, 'готова назва + перевірка вибраних каналів');
 
     const extra = document.querySelector('#nmFlowPicker .nm-flow-extra > span');
-    if (extra) {
-      if (currentFlow === 'identity') {
-        extra.textContent = count
-          ? `Перевіримо готову назву у ${count} вибраних каналах.`
-          : 'Для перевірки готової назви вибери хоча б один канал.';
-      } else {
-        extra.textContent = count
-          ? `Згенеруємо назви й перевіримо їх у ${count} вибраних каналах.`
-          : 'Нічого не вибрано — NameMachine просто генеруватиме назви без перевірки.';
-      }
+    let copy = '';
+    if (currentFlow === 'identity') {
+      copy = count
+        ? `Перевіримо готову назву у ${count} вибраних каналах.`
+        : 'Для перевірки готової назви вибери хоча б один канал.';
+    } else {
+      copy = count
+        ? `Згенеруємо назви й перевіримо їх у ${count} вибраних каналах.`
+        : 'Нічого не вибрано — NameMachine просто генеруватиме назви без перевірки.';
     }
+    setText(extra, copy);
   }
 
   function syncDeepSearch(count, currentFlow) {
@@ -76,17 +79,13 @@
     const policy = document.getElementById('hunterMatchPolicy');
     if (!strategy || !policy) return;
 
-    if (!strategy.dataset.nmUserTouched) {
-      if (strategy.value !== 'turbo') {
-        strategy.value = 'turbo';
-        strategy.dispatchEvent(new Event('change', { bubbles: true }));
-      }
+    if (!strategy.dataset.nmUserTouched && strategy.value !== 'turbo') {
+      strategy.value = 'turbo';
+      strategy.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    if (!policy.dataset.nmUserTouched) {
-      if (policy.value !== 'any_opportunity') {
-        policy.value = 'any_opportunity';
-        policy.dispatchEvent(new Event('change', { bubbles: true }));
-      }
+    if (!policy.dataset.nmUserTouched && policy.value !== 'any_opportunity') {
+      policy.value = 'any_opportunity';
+      policy.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
 
@@ -134,6 +133,8 @@
     if (event.target?.closest?.('[data-nm-flow]')) scheduleSync();
   }, true);
 
+  // Child-list changes are enough to notice dynamically installed result/search
+  // widgets. sync() itself is idempotent, so it never creates an observer loop.
   const observer = new MutationObserver(scheduleSync);
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
