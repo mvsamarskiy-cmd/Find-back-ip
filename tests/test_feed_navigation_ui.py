@@ -36,7 +36,7 @@ class LargeFeedNavigationUiTests(unittest.TestCase):
         self.assertEqual(navigation["render_page_size"], 25)
         self.assertEqual(navigation["views_paginated"], ["feed", "recommended", "shortlist"])
 
-    def test_normal_filters_do_not_promote_unverified_names_to_free(self):
+    def test_filters_preserve_truth_and_turbo_does_not_hide_feedback_rows(self):
         source = Path("static/feed_navigation.js").read_text(encoding="utf-8")
         self.assertIn("allGreen(row)", source)
         self.assertIn("hasConflict(row)", source)
@@ -44,7 +44,9 @@ class LargeFeedNavigationUiTests(unittest.TestCase):
         self.assertIn("unresolved", source)
         self.assertNotIn("likely available", source.lower())
         self.assertIn("return !allGreen(row) && !hasConflict(row)", source)
-        self.assertIn("turboRunRows(rows).filter(allGreen)", source)
+        self.assertIn("return turboRunRows(rows);", source)
+        self.assertIn("activeRows.filter(allGreen)", source)
+        self.assertNotIn("turboRunRows(rows).filter(allGreen)", source)
 
 
 if __name__ == "__main__":
