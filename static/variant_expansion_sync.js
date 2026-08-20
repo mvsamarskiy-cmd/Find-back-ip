@@ -140,4 +140,15 @@
   }, true);
 
   window.nameMachineVariantSync = { load: loadServer, save: saveServer };
+
+  // This file is the last stable browser overlay in telegram_bootstrap.py.
+  // Load the presentation-only clarity layer here so entry modes, live events,
+  // R8 safety cleanup, and variant controls are already installed first.
+  if (!document.getElementById('nameMachineUiV3Script')) {
+    const script = document.createElement('script');
+    script.id = 'nameMachineUiV3Script';
+    script.src = '/static/ui_v3_clarity.js?v=2';
+    script.async = false;
+    document.body.appendChild(script);
+  }
 })();
