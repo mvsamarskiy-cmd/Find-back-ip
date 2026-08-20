@@ -147,19 +147,30 @@
   const style = document.createElement('style');
   style.id = 'uiCleanupR8Style';
   style.textContent = `
-    .large-search-compact{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:var(--panel2);font-size:12px;color:var(--muted)}
-    .large-search-compact button{padding:6px 9px;font-size:11px;white-space:nowrap}
+    #startBtn,#stopBtn,#saveBtn{min-height:44px}
+    .entry-mode-button{min-height:44px;padding:10px 12px}
+    .large-search-compact{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-width:0;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:var(--panel2);font-size:12px;color:var(--muted)}
+    .large-search-compact [data-compact-copy]{min-width:0;overflow-wrap:anywhere}
+    .large-search-compact button{padding:6px 9px;font-size:11px;white-space:nowrap;flex:0 0 auto}
     #largeSearchPanel.nm-telemetry-collapsed:not(.nm-telemetry-open) #largeSearchTelemetry{display:none!important}
     #largeSearchPanel.nm-telemetry-open #largeSearchTelemetry{display:grid!important}
     body.report-preview-open{overflow:hidden}
     .report-preview[hidden]{display:none!important}.report-preview{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:18px}
-    .report-preview-card{width:min(920px,100%);height:min(88vh,900px);background:var(--panel);border:1px solid var(--line);border-radius:20px;overflow:hidden;display:grid;grid-template-rows:auto 1fr;box-shadow:0 24px 80px rgba(0,0,0,.45)}
-    .report-preview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel2)}
-    .report-preview-head>div{display:grid;gap:2px}.report-preview-head strong{font-size:14px}.report-preview-head span{font-size:11px;color:var(--muted)}
-    .report-preview-close{width:38px;height:38px;padding:0;border-radius:50%;font-size:26px;line-height:1;display:grid;place-items:center}
+    .report-preview-card{position:relative;z-index:1;width:min(920px,100%);height:min(88vh,900px);background:var(--panel);border:1px solid var(--line);border-radius:20px;overflow:hidden;display:grid;grid-template-rows:auto 1fr;box-shadow:0 24px 80px rgba(0,0,0,.45)}
+    .report-preview-head{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel2)}
+    .report-preview-head>div{display:grid;gap:2px;min-width:0}.report-preview-head strong{font-size:14px}.report-preview-head span{font-size:11px;color:var(--muted)}
+    .report-preview-close{position:relative;z-index:5;flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;font-size:26px;line-height:1;display:grid;place-items:center;pointer-events:auto;touch-action:manipulation}
     .report-preview-body{overflow:auto;background:#f4f5f7;color:#17191d;padding:22px}
     .report-preview-body pre{margin:0 auto;max-width:820px;white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#fff;border:1px solid #e1e4e8;border-radius:16px;padding:20px;color:#17191d}
-    @media(max-width:640px){.report-preview{padding:0}.report-preview-card{height:100dvh;border-radius:0;border-left:0;border-right:0}.report-preview-body{padding:12px}.report-preview-body pre{padding:15px;font-size:13px}.large-search-compact{align-items:flex-start}}
+    @media(max-width:640px){
+      .report-preview{padding:0}.report-preview-card{height:100dvh;border-radius:0;border-left:0;border-right:0}.report-preview-body{padding:12px}.report-preview-body pre{padding:15px;font-size:13px}.large-search-compact{align-items:center}
+      #largeSearchPanel.large-search{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;width:100%;max-width:100%;min-width:0}
+      #largeSearchPanel.large-search>*{min-width:0;max-width:100%}
+      #largeSearchPanel>strong,#largeSearchPanel>#hunterSearchStrategy,#largeSearchPanel>.hunter-label,#largeSearchPanel>#largeSearchStart,#largeSearchPanel>#largeSearchCancel,#largeSearchPanel>#largeSearchStatus,#largeSearchPanel>#hunterGoalStatus,#largeSearchPanel>#proceduralFocusStatus,#largeSearchPanel>#largeSearchCompact,#largeSearchPanel>#largeSearchTelemetry{grid-column:1/-1;width:100%}
+      #largeSearchPanel>#largeSearchTarget{grid-column:1;width:100%}
+      #largeSearchPanel>#hunterTargetMatches{grid-column:2;width:100%}
+      #largeSearchPanel>#largeSearchStart,#largeSearchPanel>#largeSearchCancel{min-height:44px}
+    }
   `;
   document.head.appendChild(style);
 

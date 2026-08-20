@@ -25,6 +25,17 @@ class SessionSyncUiTests(unittest.TestCase):
         self.assertIn("X-NameMachine-Session-Token", source)
         self.assertNotIn("session_token:", source)
 
+    def test_remote_feedback_shortlist_and_batch_changes_trigger_repaint(self):
+        source = Path("static/session_sync.js").read_text(encoding="utf-8")
+        self.assertIn("const mergeUniqueStrings", source)
+        self.assertIn("mergedFeedback[key] = value", source)
+        self.assertIn("current.shortlist = mergeUniqueStrings", source)
+        self.assertIn("current.directionAnchors = mergeUniqueStrings", source)
+        self.assertIn("if (remoteBatch > localBatch)", source)
+        self.assertIn("changed = true", source)
+        self.assertIn("if (mergeRemote(response?.session))", source)
+        self.assertIn("render();", source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,16 +26,47 @@ class ProductionConfigTests(TestCase):
         self.assertEqual(config.bind, "0.0.0.0:8080")
         self.assertGreaterEqual(config.timeout, 120)
 
-    def test_timeout_and_port_can_be_overridden(self):
+    def test_default_web_runtime_is_threaded_for_long_streams(self):
+        with patch.dict(os.environ, {}, clear=True):
+            config = load_gunicorn_config()
+
+        self.assertEqual(config.workers, 1)
+        self.assertEqual(config.worker_class, "gthread")
+        self.assertGreaterEqual(config.threads, 4)
+
+    def test_timeout_port_threads_and_workers_can_be_overridden(self):
         with patch.dict(
             os.environ,
-            {"PORT": "9000", "GUNICORN_TIMEOUT": "240"},
+            {
+                "PORT": "9000",
+                "GUNICORN_TIMEOUT": "240",
+                "GUNICORN_THREADS": "8",
+                "WEB_CONCURRENCY": "2",
+            },
             clear=True,
         ):
             config = load_gunicorn_config()
 
         self.assertEqual(config.bind, "0.0.0.0:9000")
         self.assertEqual(config.timeout, 240)
+        self.assertEqual(config.threads, 8)
+        self.assertEqual(config.workers, 2)
+
+    def test_invalid_runtime_integers_fall_back_or_are_bounded(self):
+        with patch.dict(
+            os.environ,
+            {
+                "GUNICORN_TIMEOUT": "bad",
+                "GUNICORN_THREADS": "999",
+                "WEB_CONCURRENCY": "0",
+            },
+            clear=True,
+        ):
+            config = load_gunicorn_config()
+
+        self.assertEqual(config.timeout, 180)
+        self.assertEqual(config.threads, 16)
+        self.assertEqual(config.workers, 1)
 
     def test_railway_uses_the_checked_in_gunicorn_config(self):
         railway = json.loads((ROOT / "railway.json").read_text())
