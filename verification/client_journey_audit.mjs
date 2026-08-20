@@ -195,18 +195,26 @@ async function setResources(page, browserName, resources) {
 }
 
 async function snapshot(page, browserName, label) {
-  const state = await page.evaluate(() => ({
-    sessionId: current?.id || null,
-    title: current?.title || '',
-    mode: current?.entryMode || current?.uiFlow || '',
-    resources: typeof selectedResources === 'function' ? selectedResources() : [],
-    results: current?.results?.length || 0,
-    shortlist: current?.shortlist?.length || 0,
-    directions: current?.directionAnchors?.length || 0,
-    feedback: Object.values(current?.feedback || {}).filter(v => v?.vote || v?.comment).length,
-    runs: (current?.runs || []).map(run => ({ id: run.id, status: run.status, prompt: run.prompt, start: run.startResultCount, end: run.endResultCount })),
-    status: document.getElementById('status')?.textContent?.trim() || '',
-  }));
+  const state = await page.evaluate(() => {
+    const rows = current?.results || [];
+    const feedbackCount = rows.filter(row => {
+      const fallback = current?.feedback?.[String(row?.name || '').toLowerCase()] || { vote: 0, comment: '' };
+      const fb = typeof sessionFeedback === 'function' ? sessionFeedback(row?.name) : fallback;
+      return Number(fb?.vote || 0) !== 0 || Boolean(String(fb?.comment || '').trim());
+    }).length;
+    return {
+      sessionId: current?.id || null,
+      title: current?.title || '',
+      mode: current?.entryMode || current?.uiFlow || '',
+      resources: typeof selectedResources === 'function' ? selectedResources() : [],
+      results: rows.length,
+      shortlist: current?.shortlist?.length || 0,
+      directions: current?.directionAnchors?.length || 0,
+      feedback: feedbackCount,
+      runs: (current?.runs || []).map(run => ({ id: run.id, status: run.status, prompt: run.prompt, start: run.startResultCount, end: run.endResultCount })),
+      status: document.getElementById('status')?.textContent?.trim() || '',
+    };
+  });
   line(browserName, 'SNAPSHOT ' + label, JSON.stringify(state));
   return state;
 }
@@ -245,9 +253,16 @@ async function feedbackClicks(page, browserName) {
   }
   await comment.click();
   const box = page.locator('[data-commentbox="GrainGlow"]').first();
-  await box.locator('input').fill('Подобається зв’язок із зерном, але хочу ще сильніше відчуття хліба й випічки.');
+  await box.locator('.comment-input').fill('Подобається зв’язок із зерном, але хочу ще сильніше відчуття хліба й випічки.');
   await box.locator('.save-comment').click();
   line(browserName, 'FEEDBACK COMMENT', 'GrainGlow -> semantic bread/bakery guidance');
+  await page.waitForTimeout(50);
+  const feedbackCount = await page.evaluate(() => (current?.results || []).filter(row => {
+    const fallback = current?.feedback?.[String(row?.name || '').toLowerCase()] || { vote: 0, comment: '' };
+    const fb = typeof sessionFeedback === 'function' ? sessionFeedback(row?.name) : fallback;
+    return Number(fb?.vote || 0) !== 0 || Boolean(String(fb?.comment || '').trim());
+  }).length);
+  if (feedbackCount < 3) failures.push(`${browserName}: feedback interactions were not reflected in client state (count=${feedbackCount})`);
 }
 
 async function run(browserType, browserName, device) {
