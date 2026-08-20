@@ -37,6 +37,14 @@ class SearchActionsV2Tests(unittest.TestCase):
         self.assertIn("strategy.value = 'turbo'", source)
         self.assertIn("policy.value = 'any_opportunity'", source)
 
+    def test_flow_clarity_observer_updates_are_idempotent(self):
+        source = Path('static/flow_clarity_v4.js').read_text(encoding='utf-8')
+        self.assertIn('function setText(node, value)', source)
+        self.assertIn("if (node && node.textContent !== value) node.textContent = value;", source)
+        self.assertIn('new MutationObserver(scheduleSync)', source)
+        self.assertNotIn('brandHint.textContent =', source)
+        self.assertNotIn('identityHint.textContent =', source)
+
     def test_fragment_purchase_offer_is_visible_but_not_green(self):
         actions = Path('static/search_actions_v2.js').read_text(encoding='utf-8')
         claimability = Path('static/claimability_ui.js').read_text(encoding='utf-8')
