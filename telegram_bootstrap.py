@@ -34,6 +34,10 @@ import session_api as session_api_module  # noqa: E402
 from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
 from session_provenance import install_session_provenance  # noqa: E402
 import streaming_search as streaming_search_module  # noqa: E402
+from strict_claimability import (  # noqa: E402
+    install_strict_claimability,
+    strict_claimability_capabilities,
+)
 from variant_api import install_variant_routes, variant_diagnostics  # noqa: E402
 from variant_session_api import install_variant_session_routes  # noqa: E402
 from variant_store import VARIANT_STORE  # noqa: E402
@@ -44,9 +48,14 @@ app_module.check_many = check_many_v2
 install_entry_mode_intelligence(app_module)
 install_session_provenance(session_api_module)
 install_ranking_persistence(session_api_module)
+# Verification v4 keeps expensive authoritative assignment/registration checks
+# outside the foreground critical path when production enables deferred mode.
+# Browser absence can strengthen evidence, but this layer is the only stage that
+# may turn a resource strict green.
+install_strict_claimability()
 # Candidate persistence happens asynchronously after the foreground NDJSON result
-# is already visible. Attach the durable browser queue at that boundary so adding
-# Chromium/WebKit can never extend the search response critical path.
+# is already visible. Attach the durable browser/claimability queue at that
+# boundary so Chromium/WebKit/strict providers cannot extend search latency.
 install_candidate_enqueue(session_api_module.STORE)
 # Install ranking before route closures are created. This keeps one ranking
 # contract across JSON generation, generic naming, and streamed final rows.
@@ -67,7 +76,7 @@ install_variant_routes(app, app_module)
 install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.11.0-fast-browser-pipeline"
+RELEASE_MARKER = "v8.12.0-strict-claimability"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
@@ -200,7 +209,7 @@ def api_verification_diagnostics():
     return jsonify({
         "verification_engine": "v2",
         "verification_pipeline": {
-            "version": "v3.1",
+            "version": "v4",
             "order": [
                 "generation",
                 "local_filters",
@@ -210,12 +219,15 @@ def api_verification_diagnostics():
                 "selective_webkit_eye",
                 "sparse_search_eye",
                 "evidence_fusion",
+                "authoritative_claimability",
                 "final_ranking",
             ],
             "browser_intelligence": browser_enrichment_diagnostics(),
+            "strict_claimability": strict_claimability_capabilities(),
             "browser_queue": BROWSER_JOBS.diagnostics(),
             "foreground_and_background_share_browser_pipe": True,
             "fast_results_blocked_by_browser": False,
+            "fast_results_blocked_by_claimability": False,
         },
         "final_ranking": {
             "enabled": True,
@@ -246,6 +258,8 @@ def api_verification_diagnostics():
             "green_status": "claimable",
             "purchasable_is_green": False,
             "not_found_is_green": False,
+            "double_browser_absence_is_green": False,
+            "authoritative_provider_required": True,
         },
         "streaming_feed": {
             "enabled": True,
@@ -257,6 +271,7 @@ def api_verification_diagnostics():
             "pre_generation_phase_events": True,
             "operational_activity_only": True,
             "browser_enrichment_after_persist": True,
+            "strict_claimability_after_browser": True,
         },
         "durable_candidate_events": LIVE_CANDIDATES.diagnostics(),
         "large_feed_navigation": {
