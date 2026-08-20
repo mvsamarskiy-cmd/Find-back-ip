@@ -12,6 +12,7 @@ install()
 # below lets Verification v2 replace checker globals used by existing routes.
 from app import app  # noqa: E402
 import app as app_module  # noqa: E402
+import ai_engine as ai_engine_module  # noqa: E402
 from audit_api import install_audit_routes  # noqa: E402
 from availability_v2 import check_all as check_all_v2, check_many as check_many_v2  # noqa: E402
 from background_search_api import (  # noqa: E402
@@ -23,11 +24,14 @@ from brand_collision_api import install_brand_collision_routes  # noqa: E402
 from candidate_events_api import install_candidate_event_routes  # noqa: E402
 from durable_candidate_events import LIVE_CANDIDATES  # noqa: E402
 from entry_mode_backend import install_entry_mode_intelligence  # noqa: E402
+from final_ranking import install_final_ranking  # noqa: E402
+import generic_naming_api as generic_naming_module  # noqa: E402
 from generic_naming_api import install_generic_naming_routes  # noqa: E402
+from ranking_persistence import install_ranking_persistence  # noqa: E402
 import session_api as session_api_module  # noqa: E402
 from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
 from session_provenance import install_session_provenance  # noqa: E402
-from streaming_search import install_streaming_routes  # noqa: E402
+import streaming_search as streaming_search_module  # noqa: E402
 from variant_api import install_variant_routes, variant_diagnostics  # noqa: E402
 from variant_session_api import install_variant_session_routes  # noqa: E402
 from variant_store import VARIANT_STORE  # noqa: E402
@@ -37,7 +41,16 @@ app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 install_entry_mode_intelligence(app_module)
 install_session_provenance(session_api_module)
-install_streaming_routes(app, app_module)
+install_ranking_persistence(session_api_module)
+# Install ranking before route closures are created. This keeps one ranking
+# contract across JSON generation, generic naming, and streamed final rows.
+install_final_ranking(
+    app_module,
+    ai_module=ai_engine_module,
+    generic_module=generic_naming_module,
+    streaming_module=streaming_search_module,
+)
+streaming_search_module.install_streaming_routes(app, app_module)
 install_session_routes(app, app_module)
 install_audit_routes(app, app_module)
 install_background_search_routes(app, app_module)
@@ -48,10 +61,10 @@ install_variant_routes(app, app_module)
 install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.8.0-full-stack-hardening"
+RELEASE_MARKER = "v8.9.0-final-ranking"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
-SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=6"></script>'
+SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
 BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
 HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=4"></script>'
 AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'
@@ -180,6 +193,22 @@ def api_verification_diagnostics():
     }
     return jsonify({
         "verification_engine": "v2",
+        "final_ranking": {
+            "enabled": True,
+            "model": "final-v1",
+            "dimensions": [
+                "name_quality_score",
+                "user_fit_score",
+                "availability_opportunity_score",
+                "availability_evidence_confidence_score",
+            ],
+            "semantic_state_field": "bundle_availability_state",
+            "strict_free_state": "claimable",
+            "paid_state": "purchasable",
+            "absence_only_state": "promising",
+            "availability_can_rewrite_semantic_truth": False,
+            "durable_scores": True,
+        },
         "entry_modes": {
             "supported": True,
             "modes": ["brand", "identity", "generic_name", "other"],

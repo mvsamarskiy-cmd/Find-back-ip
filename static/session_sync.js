@@ -22,6 +22,15 @@
     return token ? { 'X-NameMachine-Session-Token': token } : {};
   };
 
+  const rankingScalarKeys = [
+    'structural_quality_score', 'linguistic_quality_score', 'name_quality_score',
+    'user_fit_score', 'adaptive_relevance_score', 'identity_relevance_score',
+    'availability_opportunity_score', 'availability_evidence_confidence_score',
+    'verification_coverage_score', 'final_score', 'availability_state',
+    'bundle_availability_state', 'ranking_model', 'ranking_reason',
+  ];
+  const rankingListKeys = ['bundle_claimable', 'bundle_purchasable'];
+
   function metadataPayload() {
     return {
       client_session_id: current?.id || null,
@@ -63,6 +72,22 @@
         lifecycle_event_seq: row?.lifecycle_event_seq,
         brand_collision: row?.brand_collision,
         brand_collision_checked_at: row?.brand_collision_checked_at,
+        structural_quality_score: row?.structural_quality_score,
+        linguistic_quality_score: row?.linguistic_quality_score,
+        name_quality_score: row?.name_quality_score,
+        user_fit_score: row?.user_fit_score,
+        adaptive_relevance_score: row?.adaptive_relevance_score,
+        identity_relevance_score: row?.identity_relevance_score,
+        availability_opportunity_score: row?.availability_opportunity_score,
+        availability_evidence_confidence_score: row?.availability_evidence_confidence_score,
+        verification_coverage_score: row?.verification_coverage_score,
+        final_score: row?.final_score,
+        availability_state: row?.availability_state,
+        bundle_availability_state: row?.bundle_availability_state,
+        ranking_model: row?.ranking_model,
+        ranking_reason: row?.ranking_reason,
+        bundle_claimable: row?.bundle_claimable,
+        bundle_purchasable: row?.bundle_purchasable,
       });
     } catch (_) {
       return String(Date.now());
@@ -111,12 +136,21 @@
     const simpleKeys = [
       'product_mode', 'entry_mode', 'pronunciation', 'language_risks',
       'verification_state', 'lifecycle_event_seq', 'brand_collision_checked_at',
+      ...rankingScalarKeys,
     ];
     for (const key of simpleKeys) {
       const localMissing = local?.[key] === undefined || local?.[key] === null || local?.[key] === '';
       const remotePresent = remote?.[key] !== undefined && remote?.[key] !== null && remote?.[key] !== '';
       if (localMissing && remotePresent) {
         local[key] = remote[key];
+        changed = true;
+      }
+    }
+    for (const key of rankingListKeys) {
+      const localMissing = !Array.isArray(local?.[key]) || local[key].length === 0;
+      const remotePresent = Array.isArray(remote?.[key]);
+      if (localMissing && remotePresent) {
+        local[key] = [...remote[key]];
         changed = true;
       }
     }
