@@ -34,7 +34,13 @@ async function run(browserType, name, device = {}) {
     return page.evaluate(({ x, y }) => {
       const el = document.elementFromPoint(x, y);
       if (!el) return null;
-      return { id: el.id || '', cls: String(el.className || ''), text: (el.textContent || '').trim().slice(0, 80) };
+      const clickable = el.closest?.('.nm-flow-option,button,a,[role="button"]');
+      return {
+        id: el.id || '',
+        cls: String(el.className || ''),
+        text: (el.textContent || '').trim().slice(0, 80),
+        clickableCls: String(clickable?.className || ''),
+      };
     }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
   }
 
@@ -66,7 +72,7 @@ async function run(browserType, name, device = {}) {
       check(`${flow} flow visible`, await button.isVisible(), '');
       check(`${flow} touch target >= 44px`, await touchHeight(button) >= 44, `height=${await touchHeight(button)}`);
       const hit = await centerHit(button);
-      check(`${flow} hit target clickable`, String(hit?.cls || '').includes('nm-flow'), JSON.stringify(hit));
+      check(`${flow} hit target clickable`, String(hit?.clickableCls || hit?.cls || '').includes('nm-flow-option'), JSON.stringify(hit));
     }
     await page.locator('[data-nm-flow="identity"]').click();
     check('Identity flow activates', await page.locator('[data-nm-flow="identity"]').evaluate(el => el.classList.contains('active')), '');
