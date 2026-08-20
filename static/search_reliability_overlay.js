@@ -33,13 +33,31 @@
     return clean(document.getElementById('prompt')?.value || current?.promptHistory?.at?.(-1)?.text || '', 600);
   }
 
+  function backgroundPromptForRun(runId) {
+    const id = String(runId || '');
+    if (!id) return '';
+    const log = current?.activityLog || [];
+    for (let index = log.length - 1; index >= 0; index -= 1) {
+      const item = log[index];
+      if (item?.type !== 'job_started') continue;
+      const details = item?.details || {};
+      if (String(details.run_id || '') !== id) continue;
+      return clean(details.prompt || '', 600);
+    }
+    return '';
+  }
+
   function intentRunIds(prompt = activePrompt()) {
     const ids = new Set();
     for (const run of current?.runs || []) {
       if (run?.id && sameIntent(run?.prompt || '', prompt)) ids.add(String(run.id));
     }
+    // backgroundSearch itself intentionally stores only compact job metadata. Use
+    // the immutable job_started audit event for its originating prompt. Never
+    // assume that a missing prompt means "same as what is currently in textarea".
     const bg = current?.backgroundSearch;
-    if (bg?.run_id && sameIntent(bg?.prompt || prompt, prompt)) ids.add(String(bg.run_id));
+    const bgPrompt = bg?.run_id ? backgroundPromptForRun(bg.run_id) : '';
+    if (bg?.run_id && bgPrompt && sameIntent(bgPrompt, prompt)) ids.add(String(bg.run_id));
     return ids;
   }
 
@@ -244,7 +262,6 @@
   function installReport() {
     if (installed.report || typeof window.clientReportTxt !== 'function') return;
     const baseBuilder = window.clientReportTxt;
-    const baseEmail = window.emailClientReport;
     window.clientReportTxt = () => baseBuilder() + '\n' + reliabilityAppendix();
     window.exportClientReportTxt = () => download(
       window.clientReportTxt(),
@@ -264,7 +281,6 @@
       const body = report.length > 12000 ? report.slice(0, 12000) + '\n\n[Повний TXT містить усі прямі лінки та хронологію.]' : report;
       window.location.href = 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
     };
-    window.__nmBaseEmailBeforeReliability = baseEmail;
     installed.report = true;
   }
 
