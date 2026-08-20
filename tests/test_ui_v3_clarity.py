@@ -3,14 +3,14 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-UI = (ROOT / "static" / "ui_cleanup_r8.js").read_text(encoding="utf-8")
+UI = (ROOT / "static" / "ui_v3_clarity.js").read_text(encoding="utf-8")
 CSS = (ROOT / "static" / "ui_v3_clarity.css").read_text(encoding="utf-8")
 
 
 class UiV3ClarityTests(unittest.TestCase):
     def test_old_generic_mode_no_longer_silently_disables_verification(self):
-        self.assertIn("current.entryMode === 'generic_name'", UI)
-        self.assertIn("current.entryMode = 'brand'", UI)
+        self.assertIn("mode === 'generic_name'", UI)
+        self.assertIn("applyLegacyMode('brand')", UI)
         self.assertIn("current.uiIdeaOnly !== true", UI)
         self.assertIn("Лише ідеї, без перевірки", UI)
 
@@ -22,8 +22,8 @@ class UiV3ClarityTests(unittest.TestCase):
         self.assertIn('#entryModePanel{display:none!important}', CSS)
 
     def test_results_open_on_ranked_feed_instead_of_empty_green_gate(self):
-        self.assertIn("setLabel(feed, 'Результати')", UI)
-        self.assertIn("setLabel(recommended, 'Підтверджені')", UI)
+        self.assertIn("label(feed, 'Результати')", UI)
+        self.assertIn("label(recommended, 'Підтверджені')", UI)
         self.assertIn("switchTab('feed')", UI)
         self.assertIn('підтверджено вільних', UI)
         self.assertIn('без явного конфлікту', UI)
@@ -45,6 +45,12 @@ class UiV3ClarityTests(unittest.TestCase):
         self.assertNotIn("status = 'claimable'", UI)
         self.assertNotIn("status='claimable'", UI)
         self.assertIn('Зелений з’являється лише після авторитетного підтвердження', UI)
+
+    def test_dynamic_result_observer_is_scoped_and_idempotent(self):
+        self.assertIn("observer.observe(grid, { childList: true, subtree: true })", UI)
+        self.assertNotIn("observe(document.body", UI)
+        self.assertIn("summary.innerHTML !== nextHtml", UI)
+        self.assertIn("head.innerHTML !== nextHtml", UI)
 
 
 if __name__ == '__main__':
