@@ -1,0 +1,13 @@
+FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
+
+WORKDIR /app
+
+COPY requirements-browser-eye.txt ./
+RUN pip install --no-cache-dir -r requirements-browser-eye.txt
+
+COPY browser_eye_service.py ./
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["gunicorn", "browser_eye_service:app", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "30"]
