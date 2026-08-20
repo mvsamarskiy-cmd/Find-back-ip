@@ -76,9 +76,10 @@ def _normalize_positive_only(row):
 def _normalize_fragment(row):
     signal = str((row or {}).get("signal") or "unknown")
     if signal == "purchasable":
-        # Fragment marketplace availability is not a free Telegram claim. For
-        # NameMachine it is a paid/reserved conflict, never AVAILABLE_VERIFIED.
-        return _tag(row, signal="reserved", raw_signal="purchasable")
+        # Keep paid marketplace inventory as PURCHASABLE, not free/claimable.
+        # Strict-green code only accepts CLAIMABLE, while the UI can now expose
+        # the Fragment price and purchase path explicitly.
+        return _tag(row, raw_signal="purchasable")
     if signal in {"exists", "reserved", "invalid"}:
         return _tag(row)
     return _tag(row, non_blocking=True)
@@ -98,13 +99,7 @@ def _needs_secondary(row):
 
 
 def collect_live_provider_evidence(handle, legacy_availability):
-    """Return independent provider evidence keyed by platform.
-
-    Only production-approved secondary paths are scheduled. Strong legacy
-    terminal states skip them entirely. Eligible X, Instagram, TikTok, Fragment,
-    and WhatsMyName probes run concurrently on the shared bounded runtime; this
-    removes the old per-candidate sequential latency while retaining every row.
-    """
+    """Return independent provider evidence keyed by platform."""
     rows = legacy_availability if isinstance(legacy_availability, dict) else {}
     tasks = []
 
@@ -209,6 +204,25 @@ def _best(rows):
     return max(rows, key=lambda row: (_authority(row), _confidence(row)))
 
 
+def _fragment_offer(row):
+    if str(row.get("source") or "") != "fragment_public_web":
+        return None
+    meta = _metadata(row)
+    offer = {
+        "provider": "fragment",
+        "marketplace_url": str(meta.get("marketplace_url") or row.get("url") or ""),
+        "currency": "TON",
+        "purchase_type": "marketplace",
+        "marketplace_status": str(meta.get("marketplace_status") or ""),
+    }
+    for key in ("price_ton", "minimum_bid_ton", "current_bid_ton", "sold_price_ton"):
+        if meta.get(key) is not None:
+            offer[key] = meta[key]
+    if meta.get("price_label"):
+        offer["price_label"] = str(meta.get("price_label"))[:80]
+    return offer
+
+
 def _legacy_result_from_evidence(handle, row):
     signal = str(row.get("signal") or "unknown")
     status_map = {
@@ -216,6 +230,7 @@ def _legacy_result_from_evidence(handle, row):
         "reserved": "reserved",
         "invalid": "invalid",
         "absent": "not_found",
+        "purchasable": "purchasable",
     }
     status = status_map.get(signal)
     if status is None:
@@ -226,8 +241,14 @@ def _legacy_result_from_evidence(handle, row):
         "absent": "not_found",
         "reserved": "unknown",
         "invalid": "unknown",
+        "purchasable": "unknown",
     }[signal]
-    claimability = "unconfirmed" if signal == "absent" else "not_claimable"
+    if signal == "absent":
+        claimability = "unconfirmed"
+    elif signal == "purchasable":
+        claimability = "purchase_available"
+    else:
+        claimability = "not_claimable"
     return availability._result(
         status,
         str(row.get("detail") or "")[:300],
@@ -237,15 +258,16 @@ def _legacy_result_from_evidence(handle, row):
         confidence=_confidence(row),
         occupancy=occupancy,
         claimability=claimability,
+        offer=_fragment_offer(row),
     )
 
 
 def apply_compatibility_evidence(handle, platform, legacy_row, provider_evidence):
     """Project independent evidence back into the legacy compatibility payload.
 
-    Verification v2 remains authoritative for the final verdict. This projection
-    only preserves current UI/count behavior while the frontend migrates to the
-    richer evidence model.
+    Verification v2 remains authoritative for final truth. A Fragment marketplace
+    purchase path remains PURCHASABLE (paid, non-green) and carries its public TON
+    offer details into the compatibility payload.
     """
     if not _needs_secondary(legacy_row):
         return legacy_row
@@ -261,6 +283,10 @@ def apply_compatibility_evidence(handle, platform, legacy_row, provider_evidence
     occupied = [row for row in rows if row.get("signal") in {"exists", "reserved"}]
     if occupied:
         return _legacy_result_from_evidence(handle, _best(occupied)) or legacy_row
+
+    purchasable = [row for row in rows if row.get("signal") == "purchasable"]
+    if purchasable:
+        return _legacy_result_from_evidence(handle, _best(purchasable)) or legacy_row
 
     absent = [row for row in rows if row.get("signal") == "absent"]
     if absent:
