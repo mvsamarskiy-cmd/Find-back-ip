@@ -4,6 +4,14 @@ from __future__ import annotations
 
 import threading
 
+from session_store_threadsafe import install_threadsafe_session_store
+
+
+# Search, retention, and Browser Intelligence start concurrently in this process.
+# Serialize the one-time lazy SQLAlchemy engine/schema initialization before any
+# of those modules can race on PostgreSQL catalog creation.
+install_threadsafe_session_store()
+
 from audit_store import AUDIT_STORE
 from browser_enrichment import BROWSER_ENRICHMENT
 from browser_pipeline_worker import (
