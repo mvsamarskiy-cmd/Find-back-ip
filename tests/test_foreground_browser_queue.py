@@ -166,7 +166,7 @@ class ForegroundBrowserPipelineContractTests(unittest.TestCase):
         self.assertFalse(pipeline["fast_results_blocked_by_browser"])
         self.assertFalse(pipeline["browser_queue"]["foreground_stream_blocking"])
         self.assertIn("durable_candidate_boundary", pipeline["order"])
-        self.assertTrue(RELEASE_MARKER.startswith("v8.11."))
+        self.assertTrue(RELEASE_MARKER.startswith("v8.12."))
 
     def test_worker_uses_durable_queue_instead_of_direct_browser_wrapper(self):
         source = Path("worker_entry.py").read_text(encoding="utf-8")
