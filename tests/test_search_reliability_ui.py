@@ -11,6 +11,14 @@ class SearchReliabilityUiTests(unittest.TestCase):
         self.assertIn("direction_anchors: scoped.anchors", source)
         self.assertIn("conflict_names: rows.filter", source)
 
+    def test_background_run_uses_its_audited_prompt_not_current_textarea(self):
+        source = Path("static/search_reliability_overlay.js").read_text(encoding="utf-8")
+        self.assertIn("function backgroundPromptForRun", source)
+        self.assertIn("item?.type !== 'job_started'", source)
+        self.assertIn("String(details.run_id || '') !== id", source)
+        self.assertIn("bgPrompt && sameIntent(bgPrompt, prompt)", source)
+        self.assertNotIn("bg?.prompt || prompt", source)
+
     def test_report_contains_direct_urls_observed_identity_and_timeline(self):
         source = Path("static/search_reliability_overlay.js").read_text(encoding="utf-8")
         for value in (
