@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-import json
 import os
 import re
 from threading import Event, Lock, Thread
@@ -153,7 +152,14 @@ def fingerprint_from_snapshot(platform, handle, snapshot, network_rows=None, *, 
     og_description = _safe_text(snap.get("og_description"), 600)
     body = str(snap.get("body_text") or "")[:80000]
     scripts = str(snap.get("script_text") or "")[:240000]
-    network_text = json.dumps(network_rows, ensure_ascii=False)[:240000]
+    # Keep JSON response bodies raw instead of JSON-encoding the containing
+    # Python rows. Encoding would escape quotes (\"username\") and make exact
+    # identity parsers miss data the browser actually observed on XHR/fetch.
+    network_text = "\n".join(
+        str(row.get("body") or "")
+        for row in network_rows
+        if isinstance(row, dict)
+    )[:240000]
     combined = "\n".join((title, canonical, og_title, og_description, body, scripts, network_text))
     lower = combined.lower()
 
