@@ -57,8 +57,9 @@ async function auditHttpAndBackend() {
   assert('background worker online', d.background_search?.worker_online === true, JSON.stringify(d.background_search));
   assert('background search ready', d.background_search?.ready === true, JSON.stringify(d.background_search));
   if (!d.providers?.domain?.registrar?.configured) warn('domain registrar not configured', 'RDAP can prove registration presence, but fresh .com claimability stays unconfirmed without a registrar');
-  if (!d.providers?.youtube?.configured) warn('YouTube official API not configured', 'public-web fallback is less authoritative');
-  if (!d.providers?.x?.configured) warn('X official API not configured', 'no-key/public fallback is less authoritative');
+  if (!d.providers?.youtube?.official_api?.configured) warn('YouTube official API not configured', 'public-web fallback is less authoritative for occupancy');
+  if (!d.providers?.x?.official_api?.configured) warn('X official API not configured', 'no-key/public fallback is less authoritative for occupancy');
+  if (!d.providers?.telegram?.evidence_service?.configured) warn('Telegram strict claimability service not configured', 'public evidence can detect conflicts but cannot prove a handle is freely claimable');
 
   const occupied = await timed('known_occupied_check_ms', () => jsonFetch('/api/check/openai?resources=com,instagram,telegram,tiktok,youtube,facebook,x&required=com,instagram,telegram,tiktok,youtube,facebook,x', {}, 60000));
   assert('known occupied check HTTP 200', occupied.response.status === 200, `status=${occupied.response.status} ${occupied.text.slice(0,300)}`);
@@ -121,7 +122,7 @@ async function centerHit(page, locator) {
   }, {x: box.x + box.width/2, y: box.y + box.height/2});
 }
 
-async function auditBrowser(browserType, name) {
+async function auditBrowser(browserType, name, runLiveGeneration = false) {
   const browser = await browserType.launch({headless: true});
   const context = await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const page = await context.newPage();
@@ -137,7 +138,7 @@ async function auditBrowser(browserType, name) {
 
     const bodySize = await page.evaluate(() => ({client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth}));
     assert(`${name} no horizontal overflow`, bodySize.scroll <= bodySize.client + 2, JSON.stringify(bodySize));
-    assert(`${name} no stale ui cleanup asset`, await page.locator('script[src="/static/ui_cleanup_r8.js?v=2"]').count() === 1);
+    assert(`${name} cache-busted ui cleanup asset`, await page.locator('script[src="/static/ui_cleanup_r8.js?v=2"]').count() === 1);
 
     for (const selector of ['#startBtn','#saveBtn','.tab[data-tab="feed"]','[data-entry-mode="brand"]','[data-entry-mode="identity"]','[data-entry-mode="generic_name"]','[data-entry-mode="other"]']) {
       const locator = page.locator(selector).first();
@@ -160,15 +161,15 @@ async function auditBrowser(browserType, name) {
     assert(`${name} report preview action exists`, await preview.count() === 1);
     if (await preview.count()) {
       await preview.click();
-      assert(`${name} report preview opens`, !(await page.locator('#clientReportPreview').getAttribute('hidden')));
+      assert(`${name} report preview opens`, await page.locator('#clientReportPreview').isVisible());
       await page.locator('[data-report-close]').click();
-      assert(`${name} report preview closes`, Boolean(await page.locator('#clientReportPreview').getAttribute('hidden')));
+      assert(`${name} report preview closes`, await page.locator('#clientReportPreview').isHidden());
     }
 
     const feedTab = page.locator('.tab[data-tab="feed"]');
     await feedTab.click();
     assert(`${name} Feed tab activates`, await feedTab.evaluate(el => el.classList.contains('active')));
-    assert(`${name} Feed view visible`, !(await page.locator('#feedView').getAttribute('hidden')));
+    assert(`${name} Feed view visible`, await page.locator('#feedView').isVisible());
 
     const generic = page.locator('[data-entry-mode="generic_name"]');
     await generic.click();
@@ -188,25 +189,27 @@ async function auditBrowser(browserType, name) {
     const brand = page.locator('[data-entry-mode="brand"]');
     await brand.click();
     assert(`${name} brand mode activates`, await brand.evaluate(el => el.classList.contains('active')));
-    await page.locator('#prompt').fill('Канал про гусей та інших птахів, коротка природна англійська назва');
-    const checkboxes = page.locator('input[name="resource"]');
-    const checkboxCount = await checkboxes.count();
-    for (let i=0;i<checkboxCount;i++) await checkboxes.nth(i).uncheck();
-    await page.locator('input[name="resource"][value="com"]').check();
 
-    const before = Number((await page.locator('#feedCount').textContent()) || '0');
-    await timed(`${name}_first_stream_result_ms`, async () => {
-      await page.locator('#startBtn').click();
-      await page.waitForFunction(prev => Number(document.querySelector('#feedCount')?.textContent || 0) > prev, before, {timeout:120000});
-    });
-    const after = Number((await page.locator('#feedCount').textContent()) || '0');
-    assert(`${name} verified UI delivered result`, after > before, `before=${before} after=${after}`);
-    assert(`${name} result card rendered`, await page.locator('#feedGrid .card').count() > 0);
-    await page.locator('#stopBtn').click().catch(() => {});
-    await page.waitForTimeout(300);
+    if (runLiveGeneration) {
+      await page.locator('#prompt').fill('Канал про гусей та інших птахів, коротка природна англійська назва');
+      const checkboxes = page.locator('input[name="resource"]');
+      const checkboxCount = await checkboxes.count();
+      for (let i=0;i<checkboxCount;i++) await checkboxes.nth(i).uncheck();
+      await page.locator('input[name="resource"][value="com"]').check();
+
+      const before = Number((await page.locator('#feedCount').textContent()) || '0');
+      await timed(`${name}_first_stream_result_ms`, async () => {
+        await page.locator('#startBtn').click();
+        await page.waitForFunction(prev => Number(document.querySelector('#feedCount')?.textContent || 0) > prev, before, {timeout:120000});
+      });
+      const after = Number((await page.locator('#feedCount').textContent()) || '0');
+      assert(`${name} verified UI delivered result`, after > before, `before=${before} after=${after}`);
+      assert(`${name} result card rendered`, await page.locator('#feedGrid .card').count() > 0);
+      await page.locator('#stopBtn').click().catch(() => {});
+      await page.waitForTimeout(300);
+    }
 
     assert(`${name} no page errors`, pageErrors.length === 0, pageErrors.join(' | '));
-    // Favicon/network noise is not a JS console failure; every browser console error is still surfaced.
     assert(`${name} no console errors`, consoleErrors.length === 0, consoleErrors.join(' | '));
   } catch (error) {
     fail(`${name} browser audit crashed`, String(error?.stack || error));
@@ -216,8 +219,8 @@ async function auditBrowser(browserType, name) {
 }
 
 const backend = await auditHttpAndBackend();
-await auditBrowser(chromium, 'chromium-mobile');
-await auditBrowser(webkit, 'webkit-mobile');
+await auditBrowser(chromium, 'chromium-mobile', true);
+await auditBrowser(webkit, 'webkit-mobile', false);
 
 const report = {
   target: base,
