@@ -35,6 +35,7 @@ class UiCleanupR8Tests(unittest.TestCase):
 
     def test_mobile_hardening_keeps_real_touch_targets_and_bounded_search_grid(self):
         source = Path('static/ui_cleanup_r8.js').read_text(encoding='utf-8')
+        self.assertIn('#startBtn,#stopBtn,#saveBtn{min-height:44px}', source)
         self.assertIn('.entry-mode-button{min-height:44px', source)
         self.assertIn('.report-preview-close{position:relative;z-index:5', source)
         self.assertIn('width:44px;min-width:44px;height:44px;min-height:44px', source)
