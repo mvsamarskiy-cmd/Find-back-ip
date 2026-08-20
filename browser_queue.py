@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import os
+from threading import Lock
 import uuid
 
 from sqlalchemy import (
@@ -20,18 +21,16 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
-    JSON,
     PrimaryKeyConstraint,
     String,
     Table,
     and_,
-    insert,
     or_,
     select,
     update,
 )
 
-from session_store import STORE, SessionStore, _iso, _utcnow, candidates, metadata
+from session_store import STORE, SessionStore, _utcnow, candidates, metadata
 
 
 QUEUE_TABLE = "nm_browser_enrichment_jobs"
@@ -117,14 +116,28 @@ SERVER_BROWSER_KEYS = (
 class BrowserJobQueue:
     def __init__(self, session_store=None):
         self.session_store = session_store or STORE
+        self._table_ready = False
+        self._table_lock = Lock()
 
     @property
     def configured(self):
         return self.session_store.configured and bool(str(os.environ.get("BROWSER_EYE_URL") or "").strip())
 
     def _engine(self):
+        """Return the shared engine without schema introspection on every poll.
+
+        `browser_jobs` is registered on the shared NameMachine metadata before the
+        normal production store is first initialized, so SessionStore.create_all
+        creates it in the usual case. The guarded `create(checkfirst=True)` is only
+        a compatibility fallback for unusual import orders or isolated tests.
+        """
         engine = self.session_store._ensure_engine()
-        metadata.create_all(engine)
+        if self._table_ready:
+            return engine
+        with self._table_lock:
+            if not self._table_ready:
+                browser_jobs.create(engine, checkfirst=True)
+                self._table_ready = True
         return engine
 
     def diagnostics(self):
@@ -136,6 +149,7 @@ class BrowserJobQueue:
             "lease_seconds": BROWSER_JOB_LEASE_SECONDS,
             "foreground_stream_blocking": False,
             "enqueue_boundary": "async_candidate_persistence",
+            "schema_check_hot_path": False,
         }
 
     @staticmethod
