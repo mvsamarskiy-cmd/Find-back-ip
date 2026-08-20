@@ -27,6 +27,7 @@ from entry_mode_backend import install_entry_mode_intelligence  # noqa: E402
 from final_ranking import install_final_ranking  # noqa: E402
 import generic_naming_api as generic_naming_module  # noqa: E402
 from generic_naming_api import install_generic_naming_routes  # noqa: E402
+from ranking_persistence import install_ranking_persistence  # noqa: E402
 import session_api as session_api_module  # noqa: E402
 from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
 from session_provenance import install_session_provenance  # noqa: E402
@@ -40,6 +41,7 @@ app_module.check_all = check_all_v2
 app_module.check_many = check_many_v2
 install_entry_mode_intelligence(app_module)
 install_session_provenance(session_api_module)
+install_ranking_persistence(session_api_module)
 # Install ranking before route closures are created. This keeps one ranking
 # contract across JSON generation, generic naming, and streamed final rows.
 install_final_ranking(
@@ -62,7 +64,7 @@ install_variant_session_routes(app, app_module)
 RELEASE_MARKER = "v8.9.0-final-ranking"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
-SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=6"></script>'
+SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
 BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
 HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=4"></script>'
 AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'
@@ -205,6 +207,7 @@ def api_verification_diagnostics():
             "paid_state": "purchasable",
             "absence_only_state": "promising",
             "availability_can_rewrite_semantic_truth": False,
+            "durable_scores": True,
         },
         "entry_modes": {
             "supported": True,
