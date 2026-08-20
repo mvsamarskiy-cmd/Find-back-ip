@@ -150,6 +150,18 @@
       }
       return result;
     };
+    const mergeUniqueStrings = (local, incoming) => {
+      const result = Array.isArray(local) ? [...local] : [];
+      const seen = new Set(result.map(value => String(value)));
+      for (const value of Array.isArray(incoming) ? incoming : []) {
+        const key = String(value);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        result.push(value);
+        changed = true;
+      }
+      return result;
+    };
 
     current.promptHistory = mergeUniqueObjects(
       current.promptHistory,
@@ -175,10 +187,26 @@
       }
     }
 
-    current.feedback = { ...(remote.feedback || {}), ...(current.feedback || {}) };
-    current.shortlist = [...new Set([...(remote.shortlist || []), ...(current.shortlist || [])])];
-    current.directionAnchors = [...new Set([...(remote.directionAnchors || []), ...(current.directionAnchors || [])])];
-    current.batchCounter = Math.max(Number(current.batchCounter) || 0, Number(remote.batchCounter) || 0);
+    const localFeedback = current.feedback && typeof current.feedback === 'object' ? current.feedback : {};
+    const remoteFeedback = remote.feedback && typeof remote.feedback === 'object' ? remote.feedback : {};
+    const mergedFeedback = { ...localFeedback };
+    for (const [key, value] of Object.entries(remoteFeedback)) {
+      if (Object.prototype.hasOwnProperty.call(mergedFeedback, key)) continue;
+      mergedFeedback[key] = value;
+      changed = true;
+    }
+    current.feedback = mergedFeedback;
+    current.shortlist = mergeUniqueStrings(current.shortlist, remote.shortlist);
+    current.directionAnchors = mergeUniqueStrings(current.directionAnchors, remote.directionAnchors);
+
+    const localBatch = Number(current.batchCounter) || 0;
+    const remoteBatch = Number(remote.batchCounter) || 0;
+    if (remoteBatch > localBatch) {
+      current.batchCounter = remoteBatch;
+      changed = true;
+    } else {
+      current.batchCounter = localBatch;
+    }
     return changed;
   }
 
