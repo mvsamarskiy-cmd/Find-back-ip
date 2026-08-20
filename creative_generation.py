@@ -1,11 +1,12 @@
 """Runtime integration for the local creative lexicon.
 
-The existing naming model remains the semantic reasoner.  This overlay gives it a
+The existing naming model remains the semantic reasoner. This overlay gives it a
 small retrieved palette and gives the deterministic local expander the same roots,
 without a second AI request or a remote dictionary lookup.
 """
 from __future__ import annotations
 
+from contextvars import ContextVar
 from copy import deepcopy
 import re
 from typing import Any
@@ -13,7 +14,14 @@ from typing import Any
 from creative_lexicon import creative_palette, creative_palette_prompt
 
 
+# Kept as a stable internal identifier for diagnostics/tests, but the palette is
+# deliberately NOT inserted into Brand DNA. ContextVar preserves the established
+# generator call contract and isolates concurrent Gunicorn/worker requests.
 PRIVATE_PALETTE_KEY = "_namemachine_creative_palette"
+_CURRENT_PALETTE: ContextVar[dict[str, Any] | None] = ContextVar(
+    "namemachine_creative_palette",
+    default=None,
+)
 
 
 def _ascii_root(value: Any) -> str:
@@ -48,16 +56,10 @@ def _guidance_forbidden(guidance="", brand_dna=None) -> set[str]:
     return output
 
 
-def _with_private_palette(brand_dna, palette):
-    value = deepcopy(brand_dna) if isinstance(brand_dna, dict) else {}
-    value[PRIVATE_PALETTE_KEY] = deepcopy(palette)
-    return value
-
-
-def _local_brand_dna(brand_dna):
+def _local_brand_dna(brand_dna, palette=None):
     """Expose a bounded subset of retrieved roots only to the cheap local expander."""
     value = deepcopy(brand_dna) if isinstance(brand_dna, dict) else {}
-    palette = value.pop(PRIVATE_PALETTE_KEY, None)
+    palette = palette if isinstance(palette, dict) else _CURRENT_PALETTE.get()
     if not isinstance(palette, dict) or not palette.get("matched_clusters"):
         return value
 
@@ -87,18 +89,15 @@ def install_creative_generation(ai_module, app_module=None) -> None:
     base_expand = ai_module.expand_local_families
 
     def lexicon_brand_context(value):
-        palette = value.get(PRIVATE_PALETTE_KEY) if isinstance(value, dict) else None
-        public_value = deepcopy(value) if isinstance(value, dict) else value
-        if isinstance(public_value, dict):
-            public_value.pop(PRIVATE_PALETTE_KEY, None)
-        base = base_brand_context(public_value)
+        palette = _CURRENT_PALETTE.get()
+        base = base_brand_context(value)
         if not isinstance(palette, dict) or not palette.get("matched_clusters"):
             return base
         return base + "\nInternal creative semantic palette: " + creative_palette_prompt(palette)
 
     def lexicon_expand(brief="", brand_dna=None, limit=180):
-        palette = brand_dna.get(PRIVATE_PALETTE_KEY) if isinstance(brand_dna, dict) else None
-        rows = base_expand(brief, _local_brand_dna(brand_dna), limit=limit)
+        palette = _CURRENT_PALETTE.get()
+        rows = base_expand(brief, _local_brand_dna(brand_dna, palette), limit=limit)
         if not isinstance(palette, dict) or not palette.get("matched_clusters"):
             return rows
         clusters = list(palette.get("matched_clusters") or [])[:4]
@@ -133,15 +132,23 @@ def install_creative_generation(ai_module, app_module=None) -> None:
             batch_number=adaptive.get("batch_number", 1),
             forbidden=forbidden,
         )
-        enriched_dna = _with_private_palette(brand_dna, palette)
-        rows = base_generate(
-            brief,
-            count=count,
-            preferences=preferences,
-            brand_dna=enriched_dna,
-            search_context=context,
-            generation_context=adaptive,
-        )
+
+        # Keep the public/internal Brand DNA contract byte-for-byte stable. The
+        # palette travels only through this request's context, so concurrent
+        # generation threads cannot leak semantic material into one another.
+        token = _CURRENT_PALETTE.set(palette)
+        try:
+            rows = base_generate(
+                brief,
+                count=count,
+                preferences=preferences,
+                brand_dna=brand_dna,
+                search_context=context,
+                generation_context=adaptive,
+            )
+        finally:
+            _CURRENT_PALETTE.reset(token)
+
         if not palette.get("matched_clusters"):
             return rows
         clusters = list(palette.get("matched_clusters") or [])[:4]
@@ -175,6 +182,8 @@ def creative_generation_diagnostics() -> dict[str, Any]:
         "user_constraints_override_palette": True,
         "local_expander_uses_same_palette": True,
         "batch_semantic_bridge_rotation": True,
+        "request_isolation": "contextvar",
+        "brand_dna_contract_mutated": False,
     }
 
 
