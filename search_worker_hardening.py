@@ -1,7 +1,7 @@
 """Production hardening for the long-running naming/search loop.
 
 The durable worker must learn from feedback for the *current search intent* without
-letting unrelated names from older prompts steer a new job.  It also must not die
+letting unrelated names from older prompts steer a new job. It also must not die
 before checking a single candidate merely because the background service is
 missing an AI credential: the foreground remains GPT-first, while the worker has a
 bounded local fallback so a large search can still make progress and expose facts.
@@ -9,7 +9,6 @@ bounded local fallback so a large search can still make progress and expose fact
 from __future__ import annotations
 
 from difflib import SequenceMatcher
-import os
 import re
 from typing import Any
 
@@ -158,7 +157,7 @@ def _scoped_runtime_state(module, job, generation_context):
             latest_feedback_at = _iso(item.get("updated_at"))
 
     # Explicit shortlist/direction choices remain powerful, but only if that name
-    # belongs to a run with the same intent.  This prevents an old floral search,
+    # belongs to a run with the same intent. This prevents an old floral search,
     # for example, from becoming hard guidance for a new "boom"-style search.
     allowed_names = set(by_key)
     shortlist = [
@@ -257,12 +256,12 @@ def _fallback_pool(module, brief, count, brand_dna, search_context, generation_c
 
     pool = expand_local_families(brief, dna, limit=180)
     # A one-word/style-only brief can legitimately yield too few semantic roots.
-    # Fill the fallback pool with the legacy phonetic generator, then let the same
-    # quality/diversity filter used by GPT output decide what survives.
-    needed_raw = max(120, count * 12)
+    # Fill the fallback pool with the legacy phonetic generator. Selection below
+    # still enforces spelling, blacklist, near-duplicate and local-quality gates.
+    needed_raw = max(160, count * 14)
     seen = {str(row.get("name") or "").lower() for row in pool}
     attempts = 0
-    while len(pool) < needed_raw and attempts < needed_raw * 30:
+    while len(pool) < needed_raw and attempts < needed_raw * 40:
         attempts += 1
         name = module.app_module.candidate()
         key = str(name).lower()
@@ -271,13 +270,53 @@ def _fallback_pool(module, brief, count, brand_dna, search_context, generation_c
         seen.add(key)
         pool.append({
             "name": name,
-            "family": "abstract",
+            "family": "invented_phonetic",
             "reason": "Резервний локальний генератор зберіг пошук активним, поки AI-провайдер недоступний.",
             "pronunciation": name,
             "language_risks": [],
             "candidate_source": "local_resilient_fallback",
         })
     return pool
+
+
+def _fallback_select(ai_engine, pool, count, search_context, exclude_names):
+    """Fill a full fallback batch without weakening normal validity/diversity gates.
+
+    Normal MMR intentionally caps each naming family. A degraded one-word fallback
+    can be mostly invented-phonetic, so applying the family cap as a hard limit can
+    return five names for a requested batch of twenty and recreate the 0/N worker
+    failure. We run normal MMR first, then fill only with individually valid,
+    non-near-duplicate rows ranked by the existing local quality model.
+    """
+    selected = list(ai_engine.select_diverse_names(
+        pool,
+        count,
+        search_context,
+        exclude_names=exclude_names,
+    ))
+    if len(selected) >= count:
+        return selected[:count]
+
+    blocked = [str(value) for value in (exclude_names or []) if str(value)]
+    blocked.extend(str(row.get("name") or "") for row in selected)
+    chosen = {str(row.get("name") or "").lower() for row in selected}
+    for candidate in ai_engine.rank_candidate_pool(pool):
+        name = str(candidate.get("name") or "").strip()
+        key = name.lower()
+        if not key or key in chosen:
+            continue
+        if not ai_engine._is_allowed_name(name, search_context):
+            continue
+        if any(ai_engine._too_similar(name, old) for old in blocked):
+            continue
+        row = dict(candidate)
+        row["name"] = name
+        selected.append(row)
+        chosen.add(key)
+        blocked.append(name)
+        if len(selected) >= count:
+            break
+    return selected
 
 
 def _fallback_generate(module, job, count, generation_context, error):
@@ -292,11 +331,12 @@ def _fallback_generate(module, job, count, generation_context, error):
         search_context,
         generation_context,
     )
-    selected = ai_engine.select_diverse_names(
+    selected = _fallback_select(
+        ai_engine,
         pool,
         count,
         search_context,
-        exclude_names=(generation_context or {}).get("exclude_names") or [],
+        (generation_context or {}).get("exclude_names") or [],
     )
     if len(selected) < count:
         raise error
