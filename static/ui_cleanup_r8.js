@@ -147,6 +147,7 @@
   const style = document.createElement('style');
   style.id = 'uiCleanupR8Style';
   style.textContent = `
+    #startBtn,#stopBtn,#saveBtn{min-height:44px}
     .entry-mode-button{min-height:44px;padding:10px 12px}
     .large-search-compact{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-width:0;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:var(--panel2);font-size:12px;color:var(--muted)}
     .large-search-compact [data-compact-copy]{min-width:0;overflow-wrap:anywhere}
