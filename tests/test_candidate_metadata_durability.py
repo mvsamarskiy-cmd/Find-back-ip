@@ -112,12 +112,15 @@ class CandidateMetadataDurabilityTests(unittest.TestCase):
         for key in (
             "product_mode", "entry_mode", "pronunciation", "language_risks",
             "verification_state", "lifecycle_event_seq", "brand_collision",
-            "brand_collision_checked_at",
+            "brand_collision_checked_at", "name_quality_score", "user_fit_score",
+            "adaptive_relevance_score", "final_score", "availability_state",
+            "bundle_availability_state", "ranking_model", "ranking_reason",
         ):
             self.assertIn(key, source)
         self.assertIn("mergeDurableExtras", source)
+        self.assertIn("rankingScalarKeys", source)
         body = app.test_client().get("/").get_data(as_text=True)
-        self.assertIn('/static/session_sync.js?v=6', body)
+        self.assertIn('/static/session_sync.js?v=7', body)
         self.assertTrue(RELEASE_MARKER.startswith("v8."))
 
 
