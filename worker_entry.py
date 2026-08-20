@@ -5,8 +5,10 @@ from __future__ import annotations
 import threading
 
 from audit_store import AUDIT_STORE
+from browser_enrichment import BROWSER_ENRICHMENT, install_live_background_enrichment
 from durable_candidate_events import LIVE_CANDIDATES
 from entry_mode_backend import install_entry_mode_intelligence
+import live_background
 from live_background import run_live_background_job
 import search_worker
 
@@ -20,6 +22,11 @@ install_entry_mode_intelligence(search_worker.app_module)
 # is a module-level callable, so production can switch to the true-live durable
 # implementation without duplicating the worker process lifecycle.
 search_worker.run_availability_hunter_job = run_live_background_job
+
+# Verification v3 keeps the fast API/RDAP/oEmbed path authoritative and immediate.
+# Completed fast rows are then submitted to Browser Eye asynchronously; Chromium,
+# WebKit and sparse search corroboration run while the next naming batch proceeds.
+install_live_background_enrichment(live_background)
 
 
 def _telemetry_cleanup_loop():
@@ -53,6 +60,7 @@ def main():
     finally:
         search_worker.STOP.set()
         sweeper.join(timeout=2.0)
+        BROWSER_ENRICHMENT.shutdown(wait=False)
 
 
 if __name__ == "__main__":
