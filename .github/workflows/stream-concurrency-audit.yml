@@ -1,0 +1,25 @@
+name: Production Stream Concurrency Audit
+
+on:
+  pull_request:
+    paths:
+      - 'verification/stream_concurrency_probe.mjs'
+      - '.github/workflows/stream-concurrency-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stream-concurrency:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Probe health while NDJSON stream is active
+        env:
+          NAMEMACHINE_PRODUCTION_URL: https://web-production-04fec.up.railway.app
+        run: node verification/stream_concurrency_probe.mjs
