@@ -7,6 +7,11 @@ import os
 from flask import jsonify, request
 
 from availability_hunter import HUNTER_KEY, MAX_TARGET_MATCHES, STRICT_MATCH_POLICY
+from background_job_guardrails import (
+    BackgroundJobLimitError,
+    admission_diagnostics,
+    admit_and_enqueue,
+)
 from background_jobs import JOB_STORE, MAX_BACKGROUND_TARGET, MAX_BATCH_SIZE
 from candidate_feed import CandidateFeedStore, MAX_FEED_PAGE
 from procedural_search import PROCEDURAL_KEY, STRATEGIES
@@ -32,6 +37,7 @@ def background_search_diagnostics():
     return {
         **diagnostics,
         **heartbeat,
+        "admission_control": admission_diagnostics(),
         "availability_hunter": {
             "supported": True,
             "target_matches_max": MAX_TARGET_MATCHES,
@@ -173,7 +179,16 @@ def install_background_search_routes(app, app_module):
                 return jsonify({"error": "max_batches must be an integer"}), 400
 
         try:
-            job = JOB_STORE.enqueue(session_id, token(), payload)
+            job = admit_and_enqueue(JOB_STORE, session_id, token(), payload)
+        except BackgroundJobLimitError as error:
+            body = {
+                "error": str(error),
+                "error_type": "BackgroundSearchLimitExceeded",
+                "limit_code": error.code,
+                "retry_after": error.retry_after,
+                **error.details,
+            }
+            return jsonify(body), error.http_status, {"Retry-After": str(error.retry_after)}
         except Exception as error:
             app.logger.warning("Background search enqueue failed: %s", type(error).__name__)
             return unavailable()
