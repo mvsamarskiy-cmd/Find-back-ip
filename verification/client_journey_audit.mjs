@@ -92,6 +92,51 @@ function makeRows(resources, names, promptIndex) {
   });
 }
 
+function candidateSource(row) {
+  const source = { ...row };
+  delete source.availability;
+  delete source.bundle_state;
+  delete source.bundle_availability_state;
+  delete source.availability_opportunity_score;
+  delete source.availability_evidence_confidence_score;
+  delete source.verification_coverage_score;
+  return source;
+}
+
+function streamEvents(rows, resources) {
+  const totalChecks = rows.length * resources.length;
+  const events = [
+    { type: 'phase', phase: 'generated', label: 'Audit: кандидати сформовані', total: rows.length, total_resource_checks: totalChecks },
+    { type: 'phase', phase: 'verifying', label: 'Audit: перевіряю ресурси', total: rows.length, total_resource_checks: totalChecks },
+  ];
+  let completedChecks = 0;
+  rows.forEach((row, index) => {
+    const candidateId = `${index}:${row.name.toLowerCase()}`;
+    events.push({ type: 'candidate', candidate_id: candidateId, row: candidateSource(row), resources, index, total: rows.length });
+    resources.forEach((resource, resourceIndex) => {
+      completedChecks += 1;
+      const availability = row.availability[resource];
+      events.push({
+        type: 'resource', candidate_id: candidateId, name: row.name, resource,
+        availability,
+        verification: {
+          verdict: ['taken', 'reserved', 'invalid'].includes(availability.status) ? 'conflict' : availability.status === 'not_found' ? 'absence' : 'fixture',
+          confidence: availability.confidence,
+          provider: 'client_journey_fixture',
+        },
+        error: false,
+        completed_resources: resourceIndex + 1,
+        total_resources: resources.length,
+        completed_resource_checks: completedChecks,
+        total_resource_checks: totalChecks,
+      });
+    });
+    events.push({ type: 'result', candidate_id: candidateId, row, completed: index + 1, total: rows.length });
+  });
+  events.push({ type: 'done', total: rows.length, completed: rows.length, delivered: rows.length, errors: 0, completed_resource_checks: totalChecks, total_resource_checks: totalChecks });
+  return events;
+}
+
 const promptNames = [
   ['BreadHearth', 'CrustSun', 'FlourEmber', 'OvenRise', 'GrainGlow', 'LoafKind'],
   ['WheatMorn', 'DoughCraft', 'CrumbSun', 'BakeHaven', 'HearthLoaf', 'BreadNest'],
@@ -110,8 +155,8 @@ const genericRows = [
 }));
 
 async function installFixtures(page, browserName) {
-  const seenPrompts = new Map();
-  let promptIndex = 0;
+  const promptMeta = new Map();
+  let nextPromptIndex = 0;
 
   await page.route('**/api/generic-names', async route => {
     line(browserName, 'API fixture', 'generic-names -> 8 deterministic rows');
@@ -119,18 +164,15 @@ async function installFixtures(page, browserName) {
   });
 
   await page.route('**/api/ai-generate-stream', async route => {
-    const request = route.request();
-    const body = request.postDataJSON();
+    const body = route.request().postDataJSON();
     const prompt = String(body?.brief || '');
     const resources = Array.isArray(body?.resources) ? body.resources : [];
-    if (!seenPrompts.has(prompt)) seenPrompts.set(prompt, promptIndex++);
-    const index = seenPrompts.get(prompt);
-    const already = Number(body?.generation_context?.batch_number || 0) > 1 && (body?.generation_context?.exclude_names || []).length > 0;
-    const rows = already ? [] : makeRows(resources, promptNames[index % promptNames.length], index);
-    const events = [{ type: 'phase', total: rows.length || 6 }];
-    rows.forEach((row, i) => events.push({ type: 'result', row, completed: i + 1, total: rows.length }));
-    events.push({ type: 'done', total: rows.length });
-    line(browserName, 'API fixture', `stream prompt#${index + 1} resources=${resources.join(',') || 'none'} rows=${rows.length}`);
+    if (!promptMeta.has(prompt)) promptMeta.set(prompt, { index: nextPromptIndex++, calls: 0 });
+    const meta = promptMeta.get(prompt);
+    meta.calls += 1;
+    const rows = meta.calls === 1 ? makeRows(resources, promptNames[meta.index % promptNames.length], meta.index) : [];
+    const events = rows.length ? streamEvents(rows, resources) : [{ type: 'done', total: 0, completed: 0, delivered: 0, errors: 0, completed_resource_checks: 0, total_resource_checks: 0 }];
+    line(browserName, 'API fixture', `stream prompt#${meta.index + 1} call=${meta.calls} resources=${resources.join(',') || 'none'} rows=${rows.length}`);
     await route.fulfill({ status: 200, contentType: 'application/x-ndjson; charset=utf-8', body: events.map(event => JSON.stringify(event)).join('\n') + '\n' });
   });
 
@@ -169,13 +211,14 @@ async function snapshot(page, browserName, label) {
   return state;
 }
 
-async function clickSearchAndWait(page, browserName, label) {
+async function clickSearchAndWait(page, browserName, label, expectGrowth = true) {
   const before = await page.evaluate(() => current?.results?.length || 0);
   await page.locator('#startBtn').click();
   await page.waitForFunction(() => !document.getElementById('startBtn')?.disabled, null, { timeout: 15_000 });
   const after = await page.evaluate(() => current?.results?.length || 0);
   const status = (await page.locator('#status').textContent() || '').trim();
   line(browserName, 'SEARCH ' + label, `results ${before}->${after}; status=${status}`);
+  if (expectGrowth && after <= before) failures.push(`${browserName}: ${label} produced no new visible candidate (${before}->${after})`);
 }
 
 async function feedbackClicks(page, browserName) {
@@ -188,19 +231,23 @@ async function feedbackClicks(page, browserName) {
   ];
   for (const [cls, name] of actions) {
     const button = page.locator(`.${cls}[data-name="${name}"]`).first();
-    if (await button.count()) {
-      await button.click();
-      line(browserName, 'FEEDBACK CLICK', `${cls} ${name}`);
+    if (!await button.count()) {
+      failures.push(`${browserName}: missing feedback control ${cls} for ${name}`);
+      continue;
     }
+    await button.click();
+    line(browserName, 'FEEDBACK CLICK', `${cls} ${name}`);
   }
   const comment = page.locator('.comment-toggle[data-name="GrainGlow"]').first();
-  if (await comment.count()) {
-    await comment.click();
-    const box = page.locator('[data-commentbox="GrainGlow"]').first();
-    await box.locator('input').fill('Подобається зв’язок із зерном, але хочу ще сильніше відчуття хліба й випічки.');
-    await box.locator('.save-comment').click();
-    line(browserName, 'FEEDBACK COMMENT', 'GrainGlow -> semantic bread/bakery guidance');
+  if (!await comment.count()) {
+    failures.push(`${browserName}: missing comment control for GrainGlow`);
+    return;
   }
+  await comment.click();
+  const box = page.locator('[data-commentbox="GrainGlow"]').first();
+  await box.locator('input').fill('Подобається зв’язок із зерном, але хочу ще сильніше відчуття хліба й випічки.');
+  await box.locator('.save-comment').click();
+  line(browserName, 'FEEDBACK COMMENT', 'GrainGlow -> semantic bread/bakery guidance');
 }
 
 async function run(browserType, browserName, device) {
@@ -245,8 +292,10 @@ async function run(browserType, browserName, device) {
     const recheck = page.locator('#nmRecheckResults');
     if (await recheck.count() && !(await recheck.isDisabled())) {
       await recheck.click();
-      await page.waitForFunction(() => !document.getElementById('nmRecheckResults')?.disabled, null, { timeout: 15_000 });
+      await page.waitForFunction(() => (document.getElementById('status')?.textContent || '').includes('Перепровірено'), null, { timeout: 15_000 });
       line(browserName, 'RECHECK', 'all 7 resources on existing results');
+    } else {
+      failures.push(`${browserName}: all-resource recheck button unavailable`);
     }
     await snapshot(page, browserName, 'after all-resource recheck');
 
