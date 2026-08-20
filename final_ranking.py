@@ -80,8 +80,6 @@ def structural_quality_score(name):
     if len(segments) <= 1:
         return round(whole, 1)
     segmented = _weighted_segment_score(segments, legacy_structural_quality)
-    # Keep whole-name length/readability pressure, but stop an artificial
-    # cross-boundary consonant run from dominating the score.
     return round(max(whole, 0.42 * whole + 0.58 * segmented), 1)
 
 
@@ -99,8 +97,6 @@ def name_quality_score(name, candidate_source=None):
     linguistic = linguistic_quality_score(name)
     score = 0.56 * structural + 0.44 * linguistic
     if candidate_source == LOCAL_SOURCE:
-        # Keep the existing small prior for deterministic local expansions:
-        # model candidates have richer semantic context than cheap local blends.
         score -= 6.0
     return round(_clamp(score), 1)
 
@@ -114,10 +110,7 @@ def rank_candidate_pool_v2(candidates):
         row = dict(candidate)
         structural = structural_quality_score(row.get("name", ""))
         linguistic = linguistic_quality_score(row.get("name", ""))
-        quality = name_quality_score(
-            row.get("name", ""),
-            row.get("candidate_source"),
-        )
+        quality = name_quality_score(row.get("name", ""), row.get("candidate_source"))
         row["structural_quality_score"] = structural
         row["linguistic_quality_score"] = linguistic
         row["name_quality_score"] = quality
@@ -211,8 +204,6 @@ def availability_metrics(row, required_resources=None):
 
 def _identity_score(quality, user_fit, adaptive_relevance, has_user_fit):
     if adaptive_relevance is not None:
-        # The adaptive score already applies taste-model confidence, so it is the
-        # best available preference-aware signal without double-counting feedback.
         adaptive = _clamp(adaptive_relevance)
         return 0.45 * quality + 0.55 * adaptive
     if has_user_fit:
@@ -221,9 +212,6 @@ def _identity_score(quality, user_fit, adaptive_relevance, has_user_fit):
 
 
 def _state_penalty(state):
-    # Scores rank opportunities; they do not rewrite semantic truth. Conflicts
-    # should remain inspectable (a great occupied name can teach taste) but should
-    # not crowd out actionable candidates in the primary ordering.
     return {
         "claimable": 0.0,
         "purchasable": -1.5,
@@ -295,7 +283,7 @@ def annotate_candidate(row, required_resources=None):
         final = 0.72 * identity + 0.28 * opportunity + _state_penalty(state)
 
     final = round(_clamp(final), 1)
-    result = {
+    return {
         "structural_quality_score": round(structural, 1),
         "linguistic_quality_score": round(linguistic, 1),
         "name_quality_score": round(quality, 1),
@@ -306,10 +294,43 @@ def annotate_candidate(row, required_resources=None):
         "ranking_reason": _reason_text(quality, user_fit, state, opportunity),
         "ranking_model": "final-v1",
     }
-    return result
+
+
+def _legacy_count_sort_key(row):
+    """Preserve the historical count-only contract used by legacy callers/tests.
+
+    Real v2 verification rows carry an `availability` mapping and use final-v1.
+    Old generated fixtures may contain only aggregate counts; inventing resource
+    evidence from those counts would be epistemically wrong, so retain their old
+    deterministic ordering instead of pretending they have v2 evidence.
+    """
+    if not isinstance(row, dict):
+        return None
+    availability = row.get("availability")
+    count_keys = (
+        "claimable_count", "purchasable_count", "not_found_count", "taken_count",
+        "reserved_count", "invalid_count", "unresolved_count", "unknown_count",
+    )
+    if isinstance(availability, dict) and availability:
+        return None
+    if not any(key in row for key in count_keys):
+        return None
+    return (
+        -row.get("claimable_count", 0),
+        -row.get("purchasable_count", 0),
+        -row.get("not_found_count", 0),
+        row.get("taken_count", 0) + row.get("reserved_count", 0) + row.get("invalid_count", 0),
+        row.get("unresolved_count", row.get("unknown_count", 0)),
+        -row.get("score", 0),
+        row.get("length", len(row.get("name", ""))),
+        row.get("name", "").lower(),
+    )
 
 
 def final_ranking_sort_key(row):
+    legacy = _legacy_count_sort_key(row)
+    if legacy is not None:
+        return legacy
     ranking = annotate_candidate(row)
     if isinstance(row, dict):
         row.update(ranking)
