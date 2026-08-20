@@ -4,7 +4,7 @@
   if (menu) {
     menu.innerHTML = `
       <button type="button" id="downloadClientHtml">Клієнтський звіт HTML</button>
-      <button type="button" id="downloadClientTxt">Клієнтський звіт TXT</button>
+      <button type="button" id="downloadClientTxt">Клієнтський звіт TXT + перевірки</button>
       <button type="button" id="emailClientReport">Надіслати на email</button>
     `;
     menu.querySelector('#downloadClientHtml')?.addEventListener('click', () => { void window.exportClientReportHtml?.(); });
@@ -14,6 +14,14 @@
 
   const note = document.querySelector('.session-note');
   if (note) {
-    note.textContent = 'Робоча сесія зберігає результати, shortlist і фідбек для продовження пошуку. У меню «Зберегти» клієнту доступний тільки чистий підсумковий звіт; технічна телеметрія не змішується з клієнтським документом.';
+    note.textContent = 'Робоча сесія зберігає результати, shortlist і фідбек для продовження пошуку. TXT-звіт містить прямі лінки, Browser Eye факти та хронологію, щоб кожен результат можна було перепровірити.';
+  }
+
+  if (!document.getElementById('searchReliabilityOverlay')) {
+    const script = document.createElement('script');
+    script.id = 'searchReliabilityOverlay';
+    script.src = '/static/search_reliability_overlay.js?v=1';
+    script.async = false;
+    document.body.appendChild(script);
   }
 })();

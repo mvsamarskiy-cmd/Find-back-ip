@@ -9,7 +9,14 @@ from __future__ import annotations
 
 from flask import jsonify
 
+import browser_eye_service as browser_eye_module
+from browser_eye_hardening import install_browser_eye_hardening
 from browser_eye_service import RUNTIME, app
+
+
+# Harden identity interpretation before the first real or readiness-triggered
+# browser task. A requested URL/error shell can no longer count as occupancy.
+install_browser_eye_hardening(browser_eye_module)
 
 
 def ready_health():

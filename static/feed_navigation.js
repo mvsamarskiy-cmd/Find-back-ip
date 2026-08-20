@@ -1,9 +1,9 @@
 /* Large-feed navigation layer.
  *
  * Keeps the working Feed newest-first and uses real bounded pages instead of an
- * ever-growing "show more" window. Turbo still presents only strict claimable
- * results from the active Turbo run; rejected rows remain durable for audit,
- * learning, and reports.
+ * ever-growing "show more" window. Turbo keeps every checked candidate visible
+ * in Results so likes/dislikes/comments can steer the next batch; Recommended
+ * remains strict-green only.
  */
 (() => {
   const PAGE_SIZE = 25;
@@ -39,7 +39,9 @@
   function primaryRows(rows) {
     const turbo = turboContext();
     if (!turbo) return rows || [];
-    return turboRunRows(rows).filter(allGreen);
+    // Do not hide rejected/unconfirmed rows. They are the user's training surface:
+    // feedback on them is consumed by the next intent-scoped generation batch.
+    return turboRunRows(rows);
   }
 
   function resourcesFor(row) {
@@ -181,16 +183,9 @@
   }
 
   function syncTurboFilters() {
-    const turbo = turboContext();
-    document.querySelectorAll('[data-feed-filter]').forEach(button => {
-      const key = button.dataset.feedFilter;
-      button.hidden = Boolean(turbo && !['all', 'confirmed'].includes(key));
-    });
-    if (turbo && !['all', 'confirmed'].includes(feedFilter)) {
-      feedFilter = 'all';
-      pages.feed = 1;
-      document.querySelectorAll('[data-feed-filter]').forEach(button => button.classList.toggle('active', button.dataset.feedFilter === 'all'));
-    }
+    // Turbo no longer hides evidence. All category filters stay usable so the user
+    // can judge rejected/unconfirmed names and feed that judgement back.
+    document.querySelectorAll('[data-feed-filter]').forEach(button => { button.hidden = false; });
   }
 
   function pageGrid(gridId, rows, source, kind, emptyHtml) {
@@ -214,9 +209,7 @@
       filtered,
       'feed',
       'feed',
-      turbo
-        ? '<div class="empty">Turbo ще не знайшов жодного підтверджено вільного результату. Зайняті та непідтверджені кандидати перевіряються у фоні й не засмічують цю стрічку.</div>'
-        : '<div class="empty">За цим фільтром результатів немає.</div>',
+      '<div class="empty">За цим фільтром результатів немає.</div>',
     );
 
     const totals = counts(rows);
@@ -230,9 +223,9 @@
       const start = filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0;
       const end = filtered.length ? Math.min(start + shown - 1, filtered.length) : 0;
       if (turbo) {
-        const checked = turboRunRows(allRows).length;
-        const rejected = Math.max(0, checked - rows.length);
-        shownLabel.innerHTML = `<span class="turbo-feed-note">Turbo · ${rows.length} вільних</span> · перевірено ${checked} · відсіяно ${rejected}${filtered.length ? ` · ${start}–${end}` : ''}`;
+        shownLabel.innerHTML = `<span class="turbo-feed-note">Turbo · ${totals.confirmed} підтверджено</span> · ` +
+          `${totals.promising} перспективних · ${totals.conflict} конфліктів · ${totals.unresolved} невідомих` +
+          (filtered.length ? ` · ${start}–${end}` : '');
       } else {
         shownLabel.textContent = filtered.length
           ? `Показано ${start}–${end} з ${filtered.length} · найновіші зверху`
@@ -258,12 +251,12 @@
     if (!current) current = emptySession();
     const rows = Array.isArray(current.results) ? current.results : [];
     const turbo = turboContext();
-    const strictCurrent = turbo ? primaryRows(rows) : null;
-    const recommended = turbo ? newestFirst(strictCurrent) : newestFirst(rows.filter(allGreen));
+    const activeRows = turbo ? turboRunRows(rows) : rows;
+    const recommended = newestFirst(activeRows.filter(allGreen));
     const shortlist = newestFirst(rows.filter(row => current.shortlist.includes(row.name)));
 
     document.getElementById('recommendedCount').textContent = recommended.length;
-    document.getElementById('feedCount').textContent = turbo ? strictCurrent.length : rows.length;
+    document.getElementById('feedCount').textContent = activeRows.length;
     document.getElementById('shortlistCount').textContent = shortlist.length;
 
     pageGrid(
@@ -291,7 +284,7 @@
 
   const note = document.querySelector('.session-note');
   if (note) {
-    note.textContent = 'Робоча сесія зберігається одразу в браузері. Якщо серверне сховище доступне, вона також синхронізується з ним. Stop ставить пошук на паузу; лайки, дизлайки, коментарі, кандидати й напрями не скидаються.';
+    note.textContent = 'Усі перевірені кандидати залишаються в «Результатах». Лайки, дизлайки, коментарі та напрями з поточного пошуку впливають на наступну генерацію; «Підтверджені» лишаються строго зеленими.';
   }
 
   window.nameMachineFeedPagination = { pageSize: PAGE_SIZE, pages };

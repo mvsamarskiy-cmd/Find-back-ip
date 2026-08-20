@@ -6,6 +6,7 @@ COPY requirements-browser-eye.txt ./
 RUN pip install --no-cache-dir -r requirements-browser-eye.txt
 
 COPY browser_eye_service.py ./
+COPY browser_eye_hardening.py ./
 COPY browser_eye_ready.py ./
 
 ENV PORT=8080

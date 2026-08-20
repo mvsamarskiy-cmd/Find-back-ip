@@ -26,6 +26,7 @@ from entry_mode_backend import install_entry_mode_intelligence
 import live_background
 from live_background import run_live_background_job
 import search_worker
+from search_worker_hardening import install_search_worker_hardening
 from strict_claimability import install_strict_claimability
 
 
@@ -38,6 +39,11 @@ install_creative_generation(ai_engine_module, search_worker.app_module)
 # Background generation imports app directly, so install it here as well before
 # the worker loop can interpret its first durable job.
 install_entry_mode_intelligence(search_worker.app_module)
+
+# Scope live feedback to the current search intent, strip stale hard anchors, keep
+# exact Browser Eye identity evidence, and provide a bounded local generation
+# fallback so a missing/transient AI provider cannot fail a 5k search at 0/5000.
+install_search_worker_hardening(search_worker)
 
 # Keep search_worker.main and its heartbeat/shutdown behavior stable. Its runner
 # is a module-level callable, so production can switch to the true-live durable
