@@ -18,7 +18,7 @@ class ReportMathV6Tests(unittest.TestCase):
         self.assertLess(body.index(client_tag), body.index(modes_tag))
         self.assertLess(body.index(modes_tag), body.index(overlay_tag))
         self.assertLess(body.index(overlay_tag), body.index(controls_tag))
-        self.assertEqual(RELEASE_MARKER, 'v8.13.0-mathematical-report')
+        self.assertEqual(RELEASE_MARKER, 'v8.12.2-mathematical-report')
 
     def test_math_report_exposes_denominators_uncertainty_and_runtime_equations(self):
         source = Path('static/report_math_v6.js').read_text(encoding='utf-8')
