@@ -75,7 +75,7 @@ install_variant_routes(app, app_module)
 install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.12.0-turbo-recheck-fragment"
+RELEASE_MARKER = "v8.12.1-flow-clarity"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
@@ -97,6 +97,7 @@ SEARCH_RELIABILITY_TAG = '<script src="/static/search_reliability_overlay.js?v=2
 VARIANT_EXPANSION_UI_TAG = '<script src="/static/variant_expansion_ui.js?v=1"></script>'
 VARIANT_EXPANSION_SYNC_TAG = '<script src="/static/variant_expansion_sync.js?v=1"></script>'
 SEARCH_ACTIONS_V2_TAG = '<script src="/static/search_actions_v2.js?v=1"></script>'
+FLOW_CLARITY_V4_TAG = '<script src="/static/flow_clarity_v4.js?v=1"></script>'
 
 
 @app.after_request
@@ -126,9 +127,10 @@ def prevent_stale_html(response):
             SEARCH_RELIABILITY_TAG,
             VARIANT_EXPANSION_UI_TAG,
             VARIANT_EXPANSION_SYNC_TAG,
-            # Final controller: it wraps the already-installed generation,
-            # verification, report, and navigation layers.
+            # Final controllers: search actions own generation/recheck behavior;
+            # flow clarity makes the zero-resource and Turbo contracts obvious.
             SEARCH_ACTIONS_V2_TAG,
+            FLOW_CLARITY_V4_TAG,
         ):
             if tag not in body:
                 tags.append(tag)
@@ -297,7 +299,7 @@ def api_verification_diagnostics():
             "availability_hunter_api": True,
             "result_goal_field": "target_matches",
             "budget_field": "max_checks",
-            "default_search_strategy": "procedural",
+            "default_search_strategy": "turbo",
             "search_strategies": ["procedural", "turbo"],
             "match_policies": ["strict_all", "no_conflict", "any_opportunity"],
             "procedural_focus_visible": True,
