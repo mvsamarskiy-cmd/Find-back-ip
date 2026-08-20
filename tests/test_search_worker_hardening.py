@@ -37,16 +37,17 @@ class SearchWorkerHardeningTests(unittest.TestCase):
         self.assertFalse(hardening.same_intent("Kasko", "boom"))
 
     def test_local_fallback_can_fill_one_word_style_prompt(self):
-        pool = hardening._fallback_pool(
-            _Module,
-            "boom",
-            20,
-            None,
-            {"mode": "new_brand", "brand_name": "", "guidance": ""},
-            {"batch_number": 1, "exclude_names": [], "conflict_names": [], "successful_names": []},
-        )
-        self.assertGreaterEqual(len(pool), 120)
-        self.assertTrue(any(row.get("candidate_source") == "local_resilient_fallback" for row in pool))
+        job = {
+            "prompt": "boom",
+            "brand_dna": None,
+            "search_context": {"mode": "new_brand", "brand_name": "", "guidance": ""},
+        }
+        context = {"batch_number": 1, "exclude_names": [], "conflict_names": [], "successful_names": []}
+        rows = hardening._fallback_generate(_Module, job, 20, context, RuntimeError("model unavailable"))
+        self.assertEqual(len(rows), 20)
+        self.assertEqual(len({row["name"].lower() for row in rows}), 20)
+        self.assertTrue(all(row.get("generation_source") == "local_resilient_fallback" for row in rows))
+        self.assertTrue(all(row.get("generation_fallback_reason") == "RuntimeError" for row in rows))
 
     def test_stale_anchor_guidance_is_removed_but_mode_lock_survives(self):
         result = hardening._strip_stale_anchor_guidance({
