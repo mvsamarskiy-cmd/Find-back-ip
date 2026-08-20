@@ -1,40 +1,17 @@
 /* Strict claimability presentation.
  *
  * Free-green is reserved for direct claimability. Paid/marketplace inventory is
- * actionable but deliberately rendered as a separate purple state. When a
- * provider exposes a public marketplace price, show it without implying free
- * registration.
+ * actionable but deliberately rendered as a separate purple state.
  */
 (() => {
   function statusOf(row) {
     return normalizedStatus(row);
   }
 
-  function tonValue(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) return '';
-    return new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 3 }).format(number);
-  }
-
-  function purchaseLabel(row) {
-    const offer = row?.offer && typeof row.offer === 'object' ? row.offer : {};
-    const choices = [
-      ['current_bid_ton', 'ставка'],
-      ['minimum_bid_ton', 'від'],
-      ['price_ton', 'ціна'],
-      ['sold_price_ton', 'продано за'],
-    ];
-    for (const [key, prefix] of choices) {
-      const value = tonValue(offer[key]);
-      if (value) return `Можна купити · ${prefix} ${value} TON`;
-    }
-    return 'Можна купити';
-  }
-
   uiState = function strictUiState(row) {
     const status = statusOf(row);
     if (status === 'claimable') return { cls: 'free', label: 'Вільне' };
-    if (status === 'purchasable') return { cls: 'purchase', label: purchaseLabel(row) };
+    if (status === 'purchasable') return { cls: 'purchase', label: 'Можна купити' };
     if (conflictStatuses.has(status)) return { cls: 'taken', label: status === 'invalid' ? 'Недопустиме' : 'Зайняте' };
     if (status === 'not_found') return { cls: 'unknown', label: 'Не знайдено' };
     return { cls: 'unknown', label: 'Не вдалося підтвердити' };
@@ -59,8 +36,6 @@
     if (row?.bundle_state === 'promising') return 'перспективний';
     return 'перевірка завершена';
   };
-
-  window.nameMachinePurchaseLabel = purchaseLabel;
 
   if (!document.getElementById('claimabilityUiStyle')) {
     const style = document.createElement('style');
