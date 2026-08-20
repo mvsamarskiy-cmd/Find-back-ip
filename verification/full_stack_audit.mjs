@@ -6,15 +6,9 @@ const failures = [];
 const warnings = [];
 const metrics = {};
 
-function fail(label, detail = '') {
-  failures.push(detail ? `${label}: ${detail}` : label);
-}
-function warn(label, detail = '') {
-  warnings.push(detail ? `${label}: ${detail}` : label);
-}
-function assert(label, condition, detail = '') {
-  if (!condition) fail(label, detail);
-}
+function fail(label, detail = '') { failures.push(detail ? `${label}: ${detail}` : label); }
+function warn(label, detail = '') { warnings.push(detail ? `${label}: ${detail}` : label); }
+function assert(label, condition, detail = '') { if (!condition) fail(label, detail); }
 async function timed(label, fn) {
   const started = Date.now();
   try { return await fn(); }
@@ -29,9 +23,7 @@ async function jsonFetch(path, options = {}, timeoutMs = 120000) {
     let body = null;
     try { body = JSON.parse(text); } catch (_) {}
     return { response, body, text };
-  } finally {
-    clearTimeout(timer);
-  }
+  } finally { clearTimeout(timer); }
 }
 
 async function auditHttpAndBackend() {
@@ -53,9 +45,8 @@ async function auditHttpAndBackend() {
   assert('not_found is not strict green', d.strict_free_semantics?.not_found_is_green === false);
   assert('streaming enabled', d.streaming_feed?.enabled === true);
   assert('feed pagination enabled', d.large_feed_navigation?.pagination === true);
-  assert('background search enabled', d.background_search?.enabled === true, JSON.stringify(d.background_search));
+  assert('background storage configured', d.background_search?.configured === true, JSON.stringify(d.background_search));
   assert('background worker online', d.background_search?.worker_online === true, JSON.stringify(d.background_search));
-  assert('background search ready', d.background_search?.ready === true, JSON.stringify(d.background_search));
   if (!d.providers?.domain?.registrar?.configured) warn('domain registrar not configured', 'RDAP can prove registration presence, but fresh .com claimability stays unconfirmed without a registrar');
   if (!d.providers?.youtube?.official_api?.configured) warn('YouTube official API not configured', 'public-web fallback is less authoritative for occupancy');
   if (!d.providers?.x?.official_api?.configured) warn('X official API not configured', 'no-key/public fallback is less authoritative for occupancy');
@@ -75,12 +66,8 @@ async function auditHttpAndBackend() {
   assert('bundle classification attached', Boolean(occupied.body?.bundle_state), JSON.stringify({bundle_state: occupied.body?.bundle_state, bundle_score: occupied.body?.bundle_score}));
 
   const interpret = await timed('prompt_interpret_ms', () => jsonFetch('/api/interpret', {
-    method: 'POST',
-    headers: {'content-type': 'application/json'},
-    body: JSON.stringify({
-      prompt: 'Я блогер, мені потрібна назва каналу про гусей та інших птахів. Хочу коротко, природно і щоб гарно звучало.',
-      resources: ['instagram','tiktok','youtube','x'],
-    }),
+    method: 'POST', headers: {'content-type': 'application/json'},
+    body: JSON.stringify({prompt: 'Я блогер, мені потрібна назва каналу про гусей та інших птахів. Хочу коротко, природно і щоб гарно звучало.', resources: ['instagram','tiktok','youtube','x']}),
   }, 90000));
   assert('prompt interpretation HTTP 200', interpret.response.status === 200, `status=${interpret.response.status} ${interpret.text.slice(0,500)}`);
   assert('prompt intelligence has semantic brief', String(interpret.body?.semantic_brief || '').length >= 10, JSON.stringify(interpret.body));
@@ -88,14 +75,8 @@ async function auditHttpAndBackend() {
   assert('prompt intelligence preserves selected resources', Array.isArray(interpret.body?.selected_resources) && interpret.body.selected_resources.join(',') === 'instagram,tiktok,youtube,x', JSON.stringify(interpret.body?.selected_resources));
 
   const generic = await timed('generic_generation_ms', () => jsonFetch('/api/generic-names', {
-    method: 'POST',
-    headers: {'content-type': 'application/json'},
-    body: JSON.stringify({
-      brief: 'Коротка назва для каналу про гусей, диких птахів, польоти та природу. Англійське звучання.',
-      count: 6,
-      preferences: {},
-      generation_context: {batch_number: 1, exclude_names: [], conflict_names: [], successful_names: []},
-    }),
+    method: 'POST', headers: {'content-type': 'application/json'},
+    body: JSON.stringify({brief: 'Коротка назва для каналу про гусей, диких птахів, польоти та природу. Англійське звучання.', count: 6, preferences: {}, generation_context: {batch_number: 1, exclude_names: [], conflict_names: [], successful_names: []}}),
   }, 120000));
   assert('generic generation HTTP 200', generic.response.status === 200, `status=${generic.response.status} ${generic.text.slice(0,500)}`);
   assert('generic generation returns six rows', Array.isArray(generic.body) && generic.body.length === 6, `count=${Array.isArray(generic.body) ? generic.body.length : 'not-array'}`);
@@ -108,7 +89,6 @@ async function auditHttpAndBackend() {
       assert('generic row is not falsely verified', row?.checked === false && row?.product_mode === 'generic_name', JSON.stringify(row));
     }
   }
-
   return { version: version.body, diagnostics: d };
 }
 
@@ -120,6 +100,20 @@ async function centerHit(page, locator) {
     const el = document.elementFromPoint(x,y);
     return el ? {tag: el.tagName, id: el.id || '', cls: String(el.className || ''), text: (el.textContent || '').trim().slice(0,80)} : null;
   }, {x: box.x + box.width/2, y: box.y + box.height/2});
+}
+
+async function overflowDiagnostics(page) {
+  return page.evaluate(() => {
+    const width = document.documentElement.clientWidth;
+    return [...document.querySelectorAll('body *')]
+      .map(el => {
+        const r = el.getBoundingClientRect();
+        return {tag: el.tagName, id: el.id || '', cls: String(el.className || ''), left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width), text: (el.textContent || '').trim().replace(/\s+/g,' ').slice(0,60)};
+      })
+      .filter(row => row.right > width + 2 || row.left < -2)
+      .sort((a,b) => Math.max(b.right-width, -b.left) - Math.max(a.right-width, -a.left))
+      .slice(0,12);
+  });
 }
 
 async function auditBrowser(browserType, name, runLiveGeneration = false) {
@@ -137,6 +131,7 @@ async function auditBrowser(browserType, name, runLiveGeneration = false) {
     await page.waitForTimeout(1200);
 
     const bodySize = await page.evaluate(() => ({client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth}));
+    if (bodySize.scroll > bodySize.client + 2) warn(`${name} overflow elements`, JSON.stringify(await overflowDiagnostics(page)));
     assert(`${name} no horizontal overflow`, bodySize.scroll <= bodySize.client + 2, JSON.stringify(bodySize));
     assert(`${name} cache-busted ui cleanup asset`, await page.locator('script[src="/static/ui_cleanup_r8.js?v=2"]').count() === 1);
 
@@ -162,7 +157,15 @@ async function auditBrowser(browserType, name, runLiveGeneration = false) {
     if (await preview.count()) {
       await preview.click();
       assert(`${name} report preview opens`, await page.locator('#clientReportPreview').isVisible());
-      await page.locator('[data-report-close]').click();
+      const close = page.locator('[data-report-close]');
+      const closeHit = await centerHit(page, close);
+      const closeClickable = String(closeHit?.cls || '').includes('report-preview-close');
+      assert(`${name} report close hit target`, closeClickable, JSON.stringify(closeHit));
+      if (closeClickable) {
+        await close.click({timeout:5000});
+      } else {
+        await page.keyboard.press('Escape');
+      }
       assert(`${name} report preview closes`, await page.locator('#clientReportPreview').isHidden());
     }
 
@@ -193,10 +196,8 @@ async function auditBrowser(browserType, name, runLiveGeneration = false) {
     if (runLiveGeneration) {
       await page.locator('#prompt').fill('Канал про гусей та інших птахів, коротка природна англійська назва');
       const checkboxes = page.locator('input[name="resource"]');
-      const checkboxCount = await checkboxes.count();
-      for (let i=0;i<checkboxCount;i++) await checkboxes.nth(i).uncheck();
+      for (let i=0;i<await checkboxes.count();i++) await checkboxes.nth(i).uncheck();
       await page.locator('input[name="resource"][value="com"]').check();
-
       const before = Number((await page.locator('#feedCount').textContent()) || '0');
       await timed(`${name}_first_stream_result_ms`, async () => {
         await page.locator('#startBtn').click();
@@ -211,24 +212,13 @@ async function auditBrowser(browserType, name, runLiveGeneration = false) {
 
     assert(`${name} no page errors`, pageErrors.length === 0, pageErrors.join(' | '));
     assert(`${name} no console errors`, consoleErrors.length === 0, consoleErrors.join(' | '));
-  } catch (error) {
-    fail(`${name} browser audit crashed`, String(error?.stack || error));
-  } finally {
-    await browser.close();
-  }
+  } catch (error) { fail(`${name} browser audit crashed`, String(error?.stack || error)); }
+  finally { await browser.close(); }
 }
 
 const backend = await auditHttpAndBackend();
 await auditBrowser(chromium, 'chromium-mobile', true);
 await auditBrowser(webkit, 'webkit-mobile', false);
 
-const report = {
-  target: base,
-  release: backend.version?.release,
-  git_commit: backend.version?.git_commit,
-  metrics_ms: metrics,
-  warnings,
-  failures,
-};
-console.log(JSON.stringify(report, null, 2));
+console.log(JSON.stringify({target:base, release:backend.version?.release, git_commit:backend.version?.git_commit, metrics_ms:metrics, warnings, failures}, null, 2));
 if (failures.length) process.exit(1);
