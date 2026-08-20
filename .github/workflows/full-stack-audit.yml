@@ -1,33 +1,21 @@
 name: Production Full-Stack Audit
 
 on:
-  pull_request:
-    paths:
-      - 'app.py'
-      - 'ai_engine.py'
-      - 'candidate_funnel.py'
-      - 'preference_engine.py'
-      - 'prompt_intelligence.py'
-      - 'availability.py'
-      - 'availability_v2.py'
-      - 'verification/**'
-      - 'static/**'
-      - 'templates/**'
-      - 'telegram_bootstrap.py'
-      - '.github/workflows/full-stack-audit.yml'
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-full-stack-audit-${{ github.ref }}
+  group: production-full-stack-audit-main
   cancel-in-progress: true
 
 jobs:
   full-stack-audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,6 +25,34 @@ jobs:
         run: |
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium webkit
+      - name: Wait for canonical Railway deployment
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+          BASE: https://web-production-04fec.up.railway.app
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            payload="$(curl -fsS --max-time 15 "$BASE/api/version" || true)"
+            echo "attempt=$attempt payload=$payload"
+            if python - "$EXPECTED_COMMIT" "$payload" <<'PY'
+import json, sys
+expected, payload = sys.argv[1], sys.argv[2]
+try:
+    data = json.loads(payload)
+except Exception:
+    raise SystemExit(1)
+actual = str(data.get('git_commit') or '')
+raise SystemExit(0 if actual and (actual == expected or actual.startswith(expected) or expected.startswith(actual)) else 1)
+PY
+            then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Canonical Railway deployment did not converge to $EXPECTED_COMMIT" >&2
+          exit 1
       - name: Audit canonical Railway production
         env:
           NAMEMACHINE_PRODUCTION_URL: https://web-production-04fec.up.railway.app
