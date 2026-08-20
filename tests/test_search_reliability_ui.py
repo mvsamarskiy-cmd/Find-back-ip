@@ -14,8 +14,10 @@ class SearchReliabilityUiTests(unittest.TestCase):
     def test_background_run_uses_its_audited_prompt_not_current_textarea(self):
         source = Path("static/search_reliability_overlay.js").read_text(encoding="utf-8")
         self.assertIn("function backgroundPromptForRun", source)
-        self.assertIn("item?.type !== 'job_started'", source)
-        self.assertIn("String(details.run_id || '') !== id", source)
+        self.assertIn("'availability_hunter_started'", source)
+        self.assertIn("String(details.run_id || '') === runKey", source)
+        self.assertIn("String(item?.job_id || '') === jobKey", source)
+        self.assertIn("backgroundPromptForRun(bg.run_id, bg.id)", source)
         self.assertIn("bgPrompt && sameIntent(bgPrompt, prompt)", source)
         self.assertNotIn("bg?.prompt || prompt", source)
 
