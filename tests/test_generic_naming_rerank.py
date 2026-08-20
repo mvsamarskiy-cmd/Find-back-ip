@@ -11,9 +11,9 @@ class GenericNamingRerankTests(unittest.TestCase):
             "feedback": [
                 {"name": "wildwing", "vote": 1, "comment": "", "family": "semantic_compound"},
                 {"name": "skyflock", "vote": 0, "comment": "О це мені подобається, гарно звучить", "family": "semantic_compound"},
-                {"name": "wingrove", "vote": -1, "comment": "", "family": "semantic_compound"},
+                {"name": "wingrove", "vote": -1, "comment": "", "family": "root_blend"},
                 {"name": "sovaku", "vote": -1, "comment": "", "family": "invented_phonetic"},
-                {"name": "sumi", "vote": -1, "comment": "", "family": "invented_phonetic"},
+                {"name": "sumi", "vote": -1, "comment": "", "family": "abstract"},
                 {"name": "tavren", "vote": -1, "comment": "", "family": "invented_phonetic"},
             ],
         }
