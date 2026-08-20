@@ -55,16 +55,18 @@ class BackgroundSearchApiTests(unittest.TestCase):
         self.assertEqual(data["max_target"], 20000)
         self.assertNotIn("database_url", data)
         self.assertTrue(data["availability_hunter"]["supported"])
-        self.assertEqual(data["availability_hunter"]["strict_match_policy"], "claimable")
-        self.assertFalse(data["availability_hunter"]["purchasable_counts_as_free_match"])
-        self.assertFalse(data["availability_hunter"]["not_found_counts_as_free_match"])
+        self.assertEqual(data["availability_hunter"]["strict_match_policy"], "strict_all")
+        self.assertFalse(data["availability_hunter"]["purchasable_is_strict_green"])
+        self.assertFalse(data["availability_hunter"]["not_found_is_claimable"])
+        self.assertIn("any_opportunity", data["availability_hunter"]["match_policies"])
         self.assertTrue(data["procedural_search"]["supported"])
         self.assertTrue(data["procedural_search"]["default_for_hunter"])
         self.assertTrue(data["procedural_search"]["one_root_at_a_time"])
         self.assertIn("phonetic", data["procedural_search"]["strategies"])
         self.assertTrue(data["turbo_search"]["supported"])
-        self.assertTrue(data["turbo_search"]["primary_feed_strict_free_only"])
-        self.assertTrue(data["turbo_search"]["rejected_rows_remain_durable"])
+        self.assertFalse(data["turbo_search"]["primary_feed_strict_free_only"])
+        self.assertEqual(data["turbo_search"]["default_match_policy"], "any_opportunity")
+        self.assertTrue(data["turbo_search"]["all_checked_rows_remain_visible"])
 
     def test_create_list_read_and_cancel_job(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
@@ -100,13 +102,13 @@ class BackgroundSearchApiTests(unittest.TestCase):
         self.assertTrue(hunter["enabled"])
         self.assertEqual(hunter["target_matches"], 3)
         self.assertEqual(hunter["max_checks"], 800)
-        self.assertEqual(hunter["match_policy"], "claimable")
+        self.assertEqual(hunter["match_policy"], "strict_all")
         self.assertEqual(job["search_context"]["search_strategy"], "procedural")
         procedural = job["search_context"]["procedural_search"]
         self.assertTrue(procedural["enabled"])
         self.assertEqual(procedural["strategy"], "procedural")
 
-    def test_create_turbo_hunter_keeps_broad_search_and_marks_primary_feed(self):
+    def test_create_turbo_hunter_keeps_broad_search_and_all_checked_rows(self):
         path = f"/api/sessions/{self.session['session_id']}/search-jobs"
         created = self.client.post(
             path,
@@ -118,7 +120,10 @@ class BackgroundSearchApiTests(unittest.TestCase):
         context = job["search_context"]
         self.assertEqual(context["search_strategy"], "turbo")
         self.assertTrue(context["turbo_search"]["enabled"])
-        self.assertTrue(context["turbo_search"]["strict_free_primary_feed"])
+        self.assertFalse(context["turbo_search"]["strict_free_primary_feed"])
+        self.assertTrue(context["turbo_search"]["all_checked_rows_visible"])
+        self.assertEqual(context["turbo_search"]["match_policy"], "any_opportunity")
+        self.assertEqual(context["availability_hunter"]["match_policy"], "any_opportunity")
         self.assertNotIn("procedural_search", context)
         self.assertIn("Turbo search", context["guidance"])
 
