@@ -1,9 +1,9 @@
 """Result-goal runner for NameMachine durable background searches.
 
-Legacy large search asks for N delivered candidates. Availability Hunter instead
-asks for N strict matches and treats the candidate count as a hard search budget.
-The configuration is stored inside the existing search_context JSON so R2 does
-not require a risky live PostgreSQL schema migration.
+Hunter keeps strict-green truth separate from practical discovery goals. A job can
+stop on all-resource strict claimability, on a no-conflict bundle, or when at
+least one selected channel has an actionable/absence opportunity signal. None of
+the looser policies rewrites ``not_found`` into ``claimable``.
 """
 from __future__ import annotations
 
@@ -24,7 +24,24 @@ from session_store import _iso, _utcnow, candidates
 
 HUNTER_KEY = "availability_hunter"
 MAX_TARGET_MATCHES = 100
-STRICT_MATCH_POLICY = "claimable"
+STRICT_MATCH_POLICY = "strict_all"
+MATCH_POLICIES = frozenset({"strict_all", "no_conflict", "any_opportunity"})
+HARD_CONFLICT = frozenset({"taken", "reserved", "invalid"})
+OPPORTUNITY = frozenset({"claimable", "purchasable", "not_found"})
+
+
+def normalize_match_policy(value):
+    raw = str(value or STRICT_MATCH_POLICY).strip().lower()
+    aliases = {
+        "claimable": "strict_all",
+        "strict": "strict_all",
+        "all_claimable": "strict_all",
+        "promising": "no_conflict",
+        "any_free_signal": "any_opportunity",
+        "any_absence": "any_opportunity",
+    }
+    raw = aliases.get(raw, raw)
+    return raw if raw in MATCH_POLICIES else STRICT_MATCH_POLICY
 
 
 def hunter_config(job):
@@ -44,15 +61,18 @@ def hunter_config(job):
         "enabled": True,
         "target_matches": target_matches,
         "max_checks": max_checks,
-        "match_policy": STRICT_MATCH_POLICY,
+        "match_policy": normalize_match_policy(raw.get("match_policy")),
     }
 
 
-def row_is_strict_match(row, required_resources):
-    """A Hunter match means every required resource is directly claimable.
+def row_matches_policy(row, required_resources, policy=STRICT_MATCH_POLICY):
+    """Evaluate a discovery goal without changing any resource verdict.
 
-    Purchasable marketplace inventory and not_found observations remain useful,
-    but neither satisfies the strict-free target.
+    ``strict_all`` means every selected resource is directly claimable.
+    ``no_conflict`` means no selected resource has a hard conflict and at least
+    one selected resource has a claimable/purchasable/not_found opportunity.
+    ``any_opportunity`` means at least one selected resource has such an
+    opportunity, even if another selected channel is occupied.
     """
     if not isinstance(row, dict):
         return False
@@ -60,17 +80,31 @@ def row_is_strict_match(row, required_resources):
     if not required:
         return False
     availability = row.get("availability") if isinstance(row.get("availability"), dict) else {}
-    return all(
-        isinstance(availability.get(resource), dict)
-        and str(availability[resource].get("status") or "unknown") == "claimable"
+    statuses = [
+        str((availability.get(resource) or {}).get("status") or "unknown")
+        if isinstance(availability.get(resource), dict) else "unknown"
         for resource in required
-    )
+    ]
+    policy = normalize_match_policy(policy)
+    if policy == "strict_all":
+        return all(status == "claimable" for status in statuses)
+    has_opportunity = any(status in OPPORTUNITY for status in statuses)
+    if policy == "no_conflict":
+        return has_opportunity and not any(status in HARD_CONFLICT for status in statuses)
+    return has_opportunity
 
 
-def count_persisted_matches(store, job):
-    """Recompute the strict match count from durable rows for crash-safe resume."""
+def row_is_strict_match(row, required_resources):
+    """Backward-compatible strict matcher used by existing tests/callers."""
+    return row_matches_policy(row, required_resources, "strict_all")
+
+
+def count_persisted_matches(store, job, policy=None):
+    """Recompute the selected match count from durable rows for crash-safe resume."""
     engine = store.session_store._ensure_engine()
     required = list(job.get("required_resources") or job.get("resources") or [])
+    config = hunter_config(job) or {}
+    match_policy = normalize_match_policy(policy or config.get("match_policy"))
     with engine.connect() as conn:
         rows = conn.execute(
             select(candidates.c.row).where(
@@ -78,7 +112,7 @@ def count_persisted_matches(store, job):
                 & (candidates.c.run_id == job.get("run_id"))
             )
         ).scalars().all()
-    return sum(1 for row in rows if row_is_strict_match(row, required))
+    return sum(1 for row in rows if row_matches_policy(row, required, match_policy))
 
 
 def _persist_runtime(store, job, *, checked, matches, config):
@@ -91,7 +125,7 @@ def _persist_runtime(store, job, *, checked, matches, config):
         "matches": max(0, int(matches)),
         "target_matches": int(config["target_matches"]),
         "max_checks": int(config["max_checks"]),
-        "match_policy": STRICT_MATCH_POLICY,
+        "match_policy": normalize_match_policy(config.get("match_policy")),
     }
     with engine.begin() as conn:
         conn.execute(
@@ -112,11 +146,7 @@ def run_availability_hunter_job(
     verify_workers=BACKGROUND_VERIFY_WORKERS,
     should_stop=None,
 ):
-    """Execute one job, stopping on strict matches rather than candidate volume.
-
-    Jobs without an Availability Hunter configuration retain the legacy runner,
-    which preserves compatibility with existing sessions and clients.
-    """
+    """Execute one Hunter job and stop when its configured discovery goal is met."""
     job = store.claim_next(worker_id)
     if not job:
         return None
@@ -144,8 +174,9 @@ def run_availability_hunter_job(
     batch_size = int(job.get("batch_size") or 1)
     max_checks = min(int(config["max_checks"]), int(job.get("target_count") or config["max_checks"]))
     target_matches = int(config["target_matches"])
+    match_policy = normalize_match_policy(config.get("match_policy"))
     resources = list(job.get("resources") or [])
-    matches = count_persisted_matches(store, job)
+    matches = count_persisted_matches(store, job, match_policy)
     _persist_runtime(store, job, checked=checked, matches=matches, config=config)
 
     try:
@@ -172,7 +203,7 @@ def run_availability_hunter_job(
                 "current_matches": matches,
                 "max_checks": max_checks,
                 "checked": checked,
-                "match_policy": STRICT_MATCH_POLICY,
+                "match_policy": match_policy,
             }
             generated = generate_batch(job, count, context) or []
 
@@ -212,7 +243,7 @@ def run_availability_hunter_job(
             # Procedural search learns from actual provider verdicts, never from
             # guessed generation quality. This state is separate from taste feedback.
             record_procedural_batch(store, job, verified_rows)
-            matches = count_persisted_matches(store, job)
+            matches = count_persisted_matches(store, job, match_policy)
             _persist_runtime(store, job, checked=checked, matches=matches, config=config)
             job = store.checkpoint(job["id"], worker_id, attempted, checked) or job
 
@@ -229,11 +260,16 @@ def run_availability_hunter_job(
 
 
 __all__ = [
+    "HARD_CONFLICT",
     "HUNTER_KEY",
+    "MATCH_POLICIES",
     "MAX_TARGET_MATCHES",
+    "OPPORTUNITY",
     "STRICT_MATCH_POLICY",
     "count_persisted_matches",
     "hunter_config",
+    "normalize_match_policy",
     "row_is_strict_match",
+    "row_matches_policy",
     "run_availability_hunter_job",
 ]
