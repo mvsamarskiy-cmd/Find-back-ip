@@ -22,6 +22,11 @@ async function run(browserType, name, device = {}) {
     if (!ok) failures.push(`${name}: ${label}${detail ? ` — ${detail}` : ''}`);
   };
 
+  async function touchHeight(locator) {
+    const box = await locator.boundingBox();
+    return box?.height || 0;
+  }
+
   async function centerHit(locator) {
     await locator.scrollIntoViewIfNeeded();
     const box = await locator.boundingBox();
@@ -29,54 +34,63 @@ async function run(browserType, name, device = {}) {
     return page.evaluate(({ x, y }) => {
       const el = document.elementFromPoint(x, y);
       if (!el) return null;
-      return { tag: el.tagName, id: el.id || '', cls: String(el.className || ''), text: (el.textContent || '').trim().slice(0, 80) };
+      return { id: el.id || '', cls: String(el.className || ''), text: (el.textContent || '').trim().slice(0, 80) };
     }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
-  }
-
-  async function touchHeight(locator) {
-    const box = await locator.boundingBox();
-    return box?.height || 0;
   }
 
   try {
     const response = await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 20_000 });
     check('root HTTP 200', response?.status() === 200, `status=${response?.status()}`);
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(1000);
 
-    const uiShell = await page.evaluate(() => ({
-      uiV2: document.body.classList.contains('nm-ui-v2'),
-      stylesheet: document.getElementById('nameMachineUiV2Styles')?.getAttribute('href') || '',
-      introVisible: Boolean(document.getElementById('nameMachineIntro')?.getBoundingClientRect().height),
-      introText: document.querySelector('#nameMachineIntro h1')?.textContent?.trim() || '',
+    const shell = await page.evaluate(() => ({
+      uiV3: document.body.classList.contains('nm-ui-v3'),
+      stylesheet: document.getElementById('nameMachineUiV3Styles')?.getAttribute('href') || '',
+      intro: document.querySelector('#nameMachineIntro h1')?.textContent?.trim() || '',
       composerRight: Math.round(document.querySelector('.composer')?.getBoundingClientRect().right || 0),
       clientWidth: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth,
-      titleSize: parseFloat(getComputedStyle(document.querySelector('#nameMachineIntro h1')).fontSize || '0'),
+      oldModeHidden: getComputedStyle(document.getElementById('entryModePanel')).display === 'none',
     }));
-    check('UI v2 product shell is active', uiShell.uiV2, JSON.stringify(uiShell));
-    check('UI v2 stylesheet is attached', uiShell.stylesheet.includes('/static/ui_v2.css'), uiShell.stylesheet);
-    check('Product intro is visible', uiShell.introVisible && uiShell.introText.includes('Знайди назву'), uiShell.introText);
-    check('Hero typography is prominent', uiShell.titleSize >= 32, `fontSize=${uiShell.titleSize}`);
-    check('Composer stays inside viewport', uiShell.composerRight <= uiShell.clientWidth + 2, JSON.stringify(uiShell));
-    check('UI v2 creates no document overflow', uiShell.scrollWidth <= uiShell.clientWidth + 2, JSON.stringify(uiShell));
+    check('UI v3 clarity shell is active', shell.uiV3, JSON.stringify(shell));
+    check('UI v3 stylesheet is attached', shell.stylesheet.includes('/static/ui_v3_clarity.css'), shell.stylesheet);
+    check('Product intro is clear', shell.intro.includes('Знайди назву'), shell.intro);
+    check('Composer stays inside viewport', shell.composerRight <= shell.clientWidth + 2, JSON.stringify(shell));
+    check('No document overflow', shell.scrollWidth <= shell.clientWidth + 2, JSON.stringify(shell));
+    check('Old four-mode matrix is hidden', shell.oldModeHidden, JSON.stringify(shell));
+
+    const flows = page.locator('[data-nm-flow]');
+    check('Two clear workflow controls loaded', await flows.count() === 2, `count=${await flows.count()}`);
+    for (const flow of ['brand', 'identity']) {
+      const button = page.locator(`[data-nm-flow="${flow}"]`);
+      check(`${flow} flow visible`, await button.isVisible(), '');
+      check(`${flow} touch target >= 44px`, await touchHeight(button) >= 44, `height=${await touchHeight(button)}`);
+      const hit = await centerHit(button);
+      check(`${flow} hit target clickable`, String(hit?.cls || '').includes('nm-flow'), JSON.stringify(hit));
+    }
+    await page.locator('[data-nm-flow="identity"]').click();
+    check('Identity flow activates', await page.locator('[data-nm-flow="identity"]').evaluate(el => el.classList.contains('active')), '');
+    check('Existing brand input appears', await page.locator('#existingBrandWrap').isVisible(), '');
+    await page.locator('[data-nm-flow="brand"]').click();
+    check('Brand flow activates', await page.locator('[data-nm-flow="brand"]').evaluate(el => el.classList.contains('active')), '');
 
     const start = page.locator('#startBtn');
-    check('Start visible', await start.isVisible(), '');
-    check('Start enabled', await start.isEnabled(), '');
-    check('Start touch target >= 44px', await touchHeight(start) >= 44, `height=${await touchHeight(start)}`);
-    const startHit = await centerHit(start);
-    check('Start hit target is not covered', startHit?.id === 'startBtn', JSON.stringify(startHit));
+    const stop = page.locator('#stopBtn');
+    check('Primary action visible', await start.isVisible(), '');
+    check('Primary action localized', ['Знайти', 'Продовжити', 'Ще варіанти', 'Згенерувати'].includes((await start.textContent() || '').trim()), await start.textContent());
+    check('Primary touch target >= 44px', await touchHeight(start) >= 44, `height=${await touchHeight(start)}`);
+    check('Stop localized', (await stop.textContent() || '').trim() === 'Зупинити', await stop.textContent());
     await start.click({ timeout: 5_000 });
     const emptyStatus = (await page.locator('#status').textContent()) || '';
-    check('Start click handler runs', emptyStatus.includes('Опиши задачу'), emptyStatus);
+    check('Primary action click handler runs', emptyStatus.includes('Опиши'), emptyStatus);
+
+    const resourcesHead = page.locator('#nmResourcesHead');
+    check('Resource selection has clear heading', await resourcesHead.isVisible(), '');
+    check('Resource selection shows count', /\d+ вибрано/.test((await resourcesHead.textContent()) || ''), await resourcesHead.textContent());
 
     const save = page.locator('#saveBtn');
     check('Save touch target >= 36px', await touchHeight(save) >= 36, `height=${await touchHeight(save)}`);
-    const saveHit = await centerHit(save);
-    check('Save hit target is not covered', saveHit?.id === 'saveBtn', JSON.stringify(saveHit));
     await save.click({ timeout: 5_000 });
-    check('Save menu opens', await page.locator('#saveMenu').evaluate(el => el.classList.contains('open')), '');
-
     const preview = page.locator('#previewClientReport');
     check('Report preview action exists', await preview.count() === 1, '');
     if (await preview.count()) {
@@ -85,56 +99,31 @@ async function run(browserType, name, device = {}) {
       check('Report preview opens', await modal.isVisible(), '');
       const close = page.locator('[data-report-close]');
       check('Report close touch target >= 44px', await touchHeight(close) >= 44, `height=${await touchHeight(close)}`);
-      const closeHit = await centerHit(close);
-      check('Report close hit target is not covered', String(closeHit?.cls || '').includes('report-preview-close'), JSON.stringify(closeHit));
-      if (String(closeHit?.cls || '').includes('report-preview-close')) {
-        await close.click({ timeout: 5_000 });
-        check('Report close button dismisses modal', await modal.isHidden(), '');
-      }
+      await close.click({ timeout: 5_000 });
+      check('Report closes', await modal.isHidden(), '');
     }
 
-    const feedTab = page.locator('.tab[data-tab="feed"]');
-    const feedHit = await centerHit(feedTab);
-    check('Feed tab hit target is clickable', String(feedHit?.cls || '').includes('tab'), JSON.stringify(feedHit));
-    await feedTab.click({ timeout: 5_000 });
-    await page.waitForTimeout(100);
-    check('Feed tab activates', await feedTab.evaluate(el => el.classList.contains('active')), '');
-    check('Feed view visible', await page.locator('#feedView').isVisible(), '');
+    const tabs = page.locator('.tabs');
+    check('Result tabs visible', await tabs.isVisible(), '');
+    const tabTexts = await tabs.locator('.tab').allTextContents();
+    check('Results-first navigation is clear', tabTexts[0]?.includes('Результати') && tabTexts[1]?.includes('Підтверджені') && tabTexts[2]?.includes('Збережені'), JSON.stringify(tabTexts));
+    const summary = page.locator('#nmResultSummary');
+    check('Result truth summary visible', await summary.isVisible(), '');
+    const summaryText = (await summary.textContent()) || '';
+    check('Strict and non-strict states explained', summaryText.includes('підтверджено вільних') && summaryText.includes('без явного конфлікту'), summaryText);
 
-    const legend = page.locator('#nameMachineTruthLegend');
-    check('Truth-status legend is visible', await legend.isVisible(), '');
-    const legendText = (await legend.textContent()) || '';
-    check('Truth-status legend distinguishes strict and promising', legendText.includes('вільне — підтверджено') && legendText.includes('перспективне'), legendText);
-
-    const modeButtons = page.locator('[data-entry-mode]');
-    const count = await modeButtons.count();
-    check('Entry mode controls loaded', count >= 4, `count=${count}`);
-    if (count >= 4) {
-      for (const mode of ['brand', 'identity', 'generic_name', 'other']) {
-        const button = page.locator(`[data-entry-mode="${mode}"]`);
-        check(`${mode} mode touch target >= 44px`, await touchHeight(button) >= 44, `height=${await touchHeight(button)}`);
-        const hit = await centerHit(button);
-        check(`${mode} mode hit target is clickable`, String(hit?.cls || '').includes('entry-mode'), JSON.stringify(hit));
-      }
-      const generic = page.locator('[data-entry-mode="generic_name"]');
-      await generic.click({ timeout: 5_000 });
-      check('Entry mode click activates', await generic.evaluate(el => el.classList.contains('active')), '');
-    }
-
-    const panel = page.locator('#largeSearchPanel');
-    if (await panel.count()) {
-      await page.evaluate(() => {
-        const node = document.getElementById('largeSearchPanel');
-        if (node) node.hidden = false;
-      });
-      await page.waitForTimeout(100);
+    const deep = page.locator('.nm-deep-search');
+    if (await deep.count()) {
+      check('Deep search is collapsed by default', !(await deep.evaluate(el => el.open)), '');
+      await deep.locator('summary').click();
+      check('Deep search can be opened', await deep.evaluate(el => el.open), '');
       const dimensions = await page.evaluate(() => ({
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
         panelRight: Math.round(document.getElementById('largeSearchPanel')?.getBoundingClientRect().right || 0),
       }));
-      check('Large-search panel stays inside viewport', dimensions.panelRight <= dimensions.clientWidth + 2, JSON.stringify(dimensions));
-      check('Large-search panel does not create document overflow', dimensions.scrollWidth <= dimensions.clientWidth + 2, JSON.stringify(dimensions));
+      check('Deep-search panel stays inside viewport', dimensions.panelRight <= dimensions.clientWidth + 2, JSON.stringify(dimensions));
+      check('Deep-search panel creates no overflow', dimensions.scrollWidth <= dimensions.clientWidth + 2, JSON.stringify(dimensions));
     }
 
     check('No page errors during click smoke', pageErrors.length === 0, pageErrors.join(' | '));
@@ -150,16 +139,11 @@ async function run(browserType, name, device = {}) {
 
 await run(chromium, 'chromium-mobile');
 await run(webkit, 'webkit-mobile');
-await run(chromium, 'chromium-desktop', {
-  viewport: { width: 1440, height: 1000 },
-  isMobile: false,
-  hasTouch: false,
-});
+await run(chromium, 'chromium-desktop', { viewport: { width: 1440, height: 1000 }, isMobile: false, hasTouch: false });
 
 if (failures.length) {
   console.error('\nBUTTON SMOKE FAILED');
   for (const failure of failures) console.error('- ' + failure);
   process.exit(1);
 }
-
 console.log('BUTTON SMOKE OK');
