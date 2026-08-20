@@ -24,6 +24,11 @@ from brand_collision_api import install_brand_collision_routes  # noqa: E402
 from browser_enrichment import browser_enrichment_diagnostics  # noqa: E402
 from browser_queue import BROWSER_JOBS, install_candidate_enqueue  # noqa: E402
 from candidate_events_api import install_candidate_event_routes  # noqa: E402
+from creative_generation import (  # noqa: E402
+    creative_generation_diagnostics,
+    install_creative_generation,
+)
+from creative_lexicon import creative_lexicon_diagnostics  # noqa: E402
 from durable_candidate_events import LIVE_CANDIDATES  # noqa: E402
 from entry_mode_backend import install_entry_mode_intelligence  # noqa: E402
 from final_ranking import install_final_ranking  # noqa: E402
@@ -48,6 +53,10 @@ app_module.check_many = check_many_v2
 install_entry_mode_intelligence(app_module)
 install_session_provenance(session_api_module)
 install_ranking_persistence(session_api_module)
+# A bounded local semantic graph gives GPT and the deterministic expander the
+# same creative palette without another model/API call. app.py imported the
+# generator by value, so install into both modules before routes are created.
+install_creative_generation(ai_engine_module, app_module)
 # Verification v4 keeps expensive authoritative assignment/registration checks
 # outside the foreground critical path when production enables deferred mode.
 # Browser absence can strengthen evidence, but this layer is the only stage that
@@ -76,7 +85,7 @@ install_variant_routes(app, app_module)
 install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.11.1-strict-claimability"
+RELEASE_MARKER = "v8.11.2-creative-lexicon"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
@@ -210,7 +219,7 @@ def api_verification_diagnostics():
         "verification_engine": "v2",
         "verification_pipeline": {
             # Keep the historical field stable for clients while advertising the
-            # new architecture/stage explicitly below.
+            # newer architecture/stages explicitly below.
             "version": "v3.1",
             "architecture_version": "v4",
             "strict_claimability_version": "strict-v1",
@@ -232,6 +241,10 @@ def api_verification_diagnostics():
             "foreground_and_background_share_browser_pipe": True,
             "fast_results_blocked_by_browser": False,
             "fast_results_blocked_by_claimability": False,
+        },
+        "generation_intelligence": {
+            "creative_lexicon": creative_lexicon_diagnostics(),
+            "creative_generation": creative_generation_diagnostics(),
         },
         "final_ranking": {
             "enabled": True,
