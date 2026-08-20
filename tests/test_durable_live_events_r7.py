@@ -167,14 +167,15 @@ class DurableLiveUiTests(unittest.TestCase):
     def test_real_lifecycle_consumer_is_loaded_after_card_wrappers(self):
         body = app.test_client().get("/").get_data(as_text=True)
         self.assertIn('/static/brand_collision_ui.js?v=1', body)
-        self.assertIn('/static/durable_live_events.js?v=1', body)
+        self.assertIn('/static/durable_live_events.js?v=2', body)
         self.assertLess(
             body.index('/static/brand_collision_ui.js?v=1'),
-            body.index('/static/durable_live_events.js?v=1'),
+            body.index('/static/durable_live_events.js?v=2'),
         )
         source = Path("static/durable_live_events.js").read_text(encoding="utf-8")
         self.assertIn("candidate_generated", source)
         self.assertIn("candidate_completed", source)
+        self.assertIn("candidate_enriched", source)
         self.assertIn("verification_state = 'checking'", source)
         self.assertIn("candidate-events?after_seq=", source)
         self.assertNotIn("Math.random", source)
@@ -183,6 +184,7 @@ class DurableLiveUiTests(unittest.TestCase):
         source = Path("worker_entry.py").read_text(encoding="utf-8")
         self.assertIn("run_live_background_job", source)
         self.assertIn("search_worker.run_availability_hunter_job = run_live_background_job", source)
+        self.assertIn("install_live_background_enrichment(live_background)", source)
         runner = Path("live_background.py").read_text(encoding="utf-8")
         self.assertIn("stage_candidates", runner)
         self.assertIn("finalize_candidate", runner)
