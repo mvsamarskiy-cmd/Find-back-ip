@@ -105,6 +105,26 @@ class StrictClaimabilityTests(unittest.TestCase):
             row = self.row("com")
             self.assertTrue(browser_queue._browser_candidate(row))
 
+    def test_stale_same_run_client_cannot_erase_strict_green(self):
+        strict_claimability.install_runtime_overlay()
+        existing = self.row("com")
+        existing["run_id"] = "run-1"
+        existing["availability"]["com"]["status"] = "claimable"
+        existing["availability"]["com"]["claimability"] = "confirmed"
+        existing["strict_claimability_state"] = "complete"
+        existing["strict_claimability"] = {
+            "com": {"status": "claimable", "authoritative": True}
+        }
+        existing["bundle_availability_state"] = "claimable"
+        existing["final_score"] = 91.0
+
+        stale = self.row("com")
+        stale["run_id"] = "run-1"
+        merged = browser_queue.BrowserJobQueue._merge_existing_browser(existing, stale)
+        self.assertEqual(merged["availability"]["com"]["status"], "claimable")
+        self.assertEqual(merged["strict_claimability_state"], "complete")
+        self.assertEqual(merged["final_score"], 91.0)
+
 
 class StrictClaimabilityDiagnosticsTests(unittest.TestCase):
     def test_pipeline_advertises_authoritative_final_stage_without_weakening_green(self):
