@@ -1,7 +1,8 @@
 /* Mode-aware client-report overlay.
  *
- * Generic naming has no availability check by design, so its client report must
- * not mislabel generated ideas as unresolved verification failures.
+ * A session is generation-only only when it contains no availability evidence.
+ * If ideas were later rechecked, the verification report wins so the document
+ * never claims that no resources were checked when provider facts are present.
  */
 (() => {
   const baseHtml = window.exportClientReportHtml;
@@ -12,7 +13,14 @@
   const clean = (value, limit = 1000) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, limit);
   const escapeHtml = value => clean(value, 4000).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
+  function hasAvailabilityEvidence() {
+    return (current?.results || []).some(row =>
+      row?.availability && typeof row.availability === 'object' && Object.keys(row.availability).length > 0
+    );
+  }
+
   function isGenericSession() {
+    if (hasAvailabilityEvidence()) return false;
     return String(current?.entryMode || '') === 'generic_name' ||
       (current?.results || []).some(row => row?.product_mode === 'generic_name');
   }
@@ -79,7 +87,7 @@
     if (!rejected.length) lines.push('- Немає дизлайків.');
     rejected.forEach(row => lines.push('- ' + rowText(row)));
     lines.push('', '4. ДЛЯ ПРОДОВЖЕННЯ', `- Session ID: ${current?.id || '?'}`, `- Shortlist: ${(current?.shortlist || []).join(', ') || '—'}`, `- Напрями: ${(current?.directionAnchors || []).join(', ') || '—'}`);
-    lines.push('', 'Примітка: у режимі «Придумати назву» NameMachine не перевіряє домени, соцмережі, компанії чи торгові марки. Цей документ фіксує ідеї та вибір користувача, а не доступність назв.');
+    lines.push('', 'Примітка: у цьому запуску ресурси не перевірялися. Вибери хоча б один канал і натисни «Перепровірити результати», щоб отримати фактичні статуси.');
     return lines.join('\n');
   }
 
@@ -97,7 +105,7 @@
           return `<article><div class="head"><h3>${escapeHtml(row?.name || '?')}</h3><span>ідея</span></div>${marks.length ? `<b>${escapeHtml(marks.join(' · '))}</b>` : ''}${row?.reason ? `<p>${escapeHtml(row.reason)}</p>` : ''}${fb?.comment ? `<blockquote>${escapeHtml(fb.comment)}</blockquote>` : ''}</article>`;
         }).join('')
       : '<div class="empty">Немає</div>';
-    return `<!doctype html><html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NameMachine — ${escapeHtml(current?.title || 'генерація назв')}</title><style>body{margin:0;background:#f5f6f8;color:#17191d;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:900px;margin:auto;padding:36px 18px 70px}.hero{background:#111827;color:white;border-radius:22px;padding:26px}.hero h1{margin:0 0 8px}.hero p{margin:0;color:#d4d9e1}.stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.stat{background:#ffffff18;border-radius:12px;padding:10px 14px}.stat b{font-size:22px;display:block}section{margin-top:28px}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}article,.empty,.note{background:white;border:1px solid #e1e4e8;border-radius:16px;padding:16px}.head{display:flex;justify-content:space-between;gap:10px}.head h3{margin:0;font-size:22px}.head span{font-size:11px;background:#eef0f3;border-radius:999px;padding:5px 8px;height:max-content}article p{color:#49505a}blockquote{margin:10px 0 0;padding:9px 11px;background:#f6f7f9;border-left:3px solid #a8afb9}.note{margin-top:28px;color:#5d6570}@media(max-width:680px){.cards{grid-template-columns:1fr}}</style></head><body><main class="wrap"><header class="hero"><h1>${escapeHtml(current?.title || 'NameMachine')}</h1><p>${escapeHtml(latestPrompt())}</p><div class="stats"><div class="stat"><b>${rows.length}</b>згенеровано</div><div class="stat"><b>${chosen.length}</b>виділено</div><div class="stat"><b>${rejected.length}</b>відсіяно</div></div></header><section><h2>Вибрані / цікаві ідеї</h2><div class="cards">${cards(chosen)}</div></section><section><h2>Усі згенеровані назви</h2><div class="cards">${cards(rows)}</div></section><section><h2>Відсіяно користувачем</h2><div class="cards">${cards(rejected)}</div></section><div class="note"><strong>Важливо:</strong> цей режим не перевіряє доступність доменів, соцмереж, компаній або торгових марок. Звіт фіксує генерацію та ваш вибір.</div></main></body></html>`;
+    return `<!doctype html><html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NameMachine — ${escapeHtml(current?.title || 'генерація назв')}</title><style>body{margin:0;background:#f5f6f8;color:#17191d;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:900px;margin:auto;padding:36px 18px 70px}.hero{background:#111827;color:white;border-radius:22px;padding:26px}.hero h1{margin:0 0 8px}.hero p{margin:0;color:#d4d9e1}.stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.stat{background:#ffffff18;border-radius:12px;padding:10px 14px}.stat b{font-size:22px;display:block}section{margin-top:28px}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}article,.empty,.note{background:white;border:1px solid #e1e4e8;border-radius:16px;padding:16px}.head{display:flex;justify-content:space-between;gap:10px}.head h3{margin:0;font-size:22px}.head span{font-size:11px;background:#eef0f3;border-radius:999px;padding:5px 8px;height:max-content}article p{color:#49505a}blockquote{margin:10px 0 0;padding:9px 11px;background:#f6f7f9;border-left:3px solid #a8afb9}.note{margin-top:28px;color:#5d6570}@media(max-width:680px){.cards{grid-template-columns:1fr}}</style></head><body><main class="wrap"><header class="hero"><h1>${escapeHtml(current?.title || 'NameMachine')}</h1><p>${escapeHtml(latestPrompt())}</p><div class="stats"><div class="stat"><b>${rows.length}</b>згенеровано</div><div class="stat"><b>${chosen.length}</b>виділено</div><div class="stat"><b>${rejected.length}</b>відсіяно</div></div></header><section><h2>Вибрані / цікаві ідеї</h2><div class="cards">${cards(chosen)}</div></section><section><h2>Усі згенеровані назви</h2><div class="cards">${cards(rows)}</div></section><section><h2>Відсіяно користувачем</h2><div class="cards">${cards(rejected)}</div></section><div class="note"><strong>Важливо:</strong> у цьому запуску ресурси не перевірялися. Вибери канали й запусти переперевірку, якщо потрібні фактичні статуси.</div></main></body></html>`;
   }
 
   function download(text, filename, type) {
