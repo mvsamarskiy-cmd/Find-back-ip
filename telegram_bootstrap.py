@@ -35,6 +35,7 @@ from final_ranking import install_final_ranking  # noqa: E402
 import generic_naming_api as generic_naming_module  # noqa: E402
 from generic_naming_api import install_generic_naming_routes  # noqa: E402
 from ranking_persistence import install_ranking_persistence  # noqa: E402
+from recheck_api import install_recheck_routes  # noqa: E402
 import session_api as session_api_module  # noqa: E402
 from session_api import install_session_routes, session_storage_diagnostics  # noqa: E402
 from session_provenance import install_session_provenance  # noqa: E402
@@ -53,21 +54,9 @@ app_module.check_many = check_many_v2
 install_entry_mode_intelligence(app_module)
 install_session_provenance(session_api_module)
 install_ranking_persistence(session_api_module)
-# A bounded local semantic graph gives GPT and the deterministic expander the
-# same creative palette without another model/API call. app.py imported the
-# generator by value, so install into both modules before routes are created.
 install_creative_generation(ai_engine_module, app_module)
-# Verification v4 keeps expensive authoritative assignment/registration checks
-# outside the foreground critical path when production enables deferred mode.
-# Browser absence can strengthen evidence, but this layer is the only stage that
-# may turn a resource strict green.
 install_strict_claimability()
-# Candidate persistence happens asynchronously after the foreground NDJSON result
-# is already visible. Attach the durable browser/claimability queue at that
-# boundary so Chromium/WebKit/strict providers cannot extend search latency.
 install_candidate_enqueue(session_api_module.STORE)
-# Install ranking before route closures are created. This keeps one ranking
-# contract across JSON generation, generic naming, and streamed final rows.
 install_final_ranking(
     app_module,
     ai_module=ai_engine_module,
@@ -80,30 +69,35 @@ install_audit_routes(app, app_module)
 install_background_search_routes(app, app_module)
 install_candidate_event_routes(app, app_module)
 install_generic_naming_routes(app, app_module)
+install_recheck_routes(app, app_module)
 install_brand_collision_routes(app, app_module)
 install_variant_routes(app, app_module)
 install_variant_session_routes(app, app_module)
 
 
-RELEASE_MARKER = "v8.11.3-ui-v2"
+RELEASE_MARKER = "v8.12.1-flow-clarity"
 STREAM_CLIENT_TAG = '<script src="/static/streaming.js?v=2"></script>'
 RESOURCE_PROGRESS_TAG = '<script src="/static/resource_progress.js"></script>'
 SESSION_SYNC_TAG = '<script src="/static/session_sync.js?v=7"></script>'
 BACKGROUND_SEARCH_TAG = '<script src="/static/background_search.js"></script>'
-HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=4"></script>'
+HUNTER_UI_TAG = '<script src="/static/availability_hunter_ui.js?v=5"></script>'
 AUDIT_SYNC_TAG = '<script src="/static/audit_sync.js?v=5"></script>'
 AUDIT_REPORT_TAG = '<script src="/static/audit_report.js?v=4"></script>'
 CLIENT_REPORT_TAG = '<script src="/static/client_report.js?v=6"></script>'
-CLIENT_REPORT_MODES_TAG = '<script src="/static/client_report_modes.js?v=1"></script>'
+CLIENT_REPORT_MODES_TAG = '<script src="/static/client_report_modes.js?v=2"></script>'
 REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=5"></script>'
-FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=3"></script>'
+FEED_NAVIGATION_TAG = '<script src="/static/feed_navigation.js?v=4"></script>'
 CLAIMABILITY_UI_TAG = '<script src="/static/claimability_ui.js?v=1"></script>'
 ENTRY_MODES_TAG = '<script src="/static/entry_modes.js?v=1"></script>'
 BRAND_COLLISION_UI_TAG = '<script src="/static/brand_collision_ui.js?v=1"></script>'
 DURABLE_LIVE_EVENTS_TAG = '<script src="/static/durable_live_events.js?v=2"></script>'
 UI_CLEANUP_TAG = '<script src="/static/ui_cleanup_r8.js?v=4"></script>'
+UI_V3_TAG = '<script src="/static/ui_v3_clarity.js?v=3"></script>'
+SEARCH_RELIABILITY_TAG = '<script src="/static/search_reliability_overlay.js?v=2"></script>'
 VARIANT_EXPANSION_UI_TAG = '<script src="/static/variant_expansion_ui.js?v=1"></script>'
 VARIANT_EXPANSION_SYNC_TAG = '<script src="/static/variant_expansion_sync.js?v=1"></script>'
+SEARCH_ACTIONS_V2_TAG = '<script src="/static/search_actions_v2.js?v=1"></script>'
+FLOW_CLARITY_V4_TAG = '<script src="/static/flow_clarity_v4.js?v=1"></script>'
 
 
 @app.after_request
@@ -112,43 +106,34 @@ def prevent_stale_html(response):
     if response.mimetype == "text/html":
         body = response.get_data(as_text=True)
         tags = []
-        if STREAM_CLIENT_TAG not in body:
-            tags.append(STREAM_CLIENT_TAG)
-        if RESOURCE_PROGRESS_TAG not in body:
-            tags.append(RESOURCE_PROGRESS_TAG)
-        if SESSION_SYNC_TAG not in body:
-            tags.append(SESSION_SYNC_TAG)
-        if BACKGROUND_SEARCH_TAG not in body:
-            tags.append(BACKGROUND_SEARCH_TAG)
-        if HUNTER_UI_TAG not in body:
-            tags.append(HUNTER_UI_TAG)
-        if AUDIT_SYNC_TAG not in body:
-            tags.append(AUDIT_SYNC_TAG)
-        if AUDIT_REPORT_TAG not in body:
-            tags.append(AUDIT_REPORT_TAG)
-        if CLIENT_REPORT_TAG not in body:
-            tags.append(CLIENT_REPORT_TAG)
-        if CLIENT_REPORT_MODES_TAG not in body:
-            tags.append(CLIENT_REPORT_MODES_TAG)
-        if REPORT_CONTROLS_TAG not in body:
-            tags.append(REPORT_CONTROLS_TAG)
-        if FEED_NAVIGATION_TAG not in body:
-            tags.append(FEED_NAVIGATION_TAG)
-        if CLAIMABILITY_UI_TAG not in body:
-            tags.append(CLAIMABILITY_UI_TAG)
-        if ENTRY_MODES_TAG not in body:
-            tags.append(ENTRY_MODES_TAG)
-        if BRAND_COLLISION_UI_TAG not in body:
-            tags.append(BRAND_COLLISION_UI_TAG)
-        if DURABLE_LIVE_EVENTS_TAG not in body:
-            tags.append(DURABLE_LIVE_EVENTS_TAG)
-        if UI_CLEANUP_TAG not in body:
-            tags.append(UI_CLEANUP_TAG)
-        if VARIANT_EXPANSION_UI_TAG not in body:
-            tags.append(VARIANT_EXPANSION_UI_TAG)
-        # Sync is an overlay on the visible expansion controller and must load last.
-        if VARIANT_EXPANSION_SYNC_TAG not in body:
-            tags.append(VARIANT_EXPANSION_SYNC_TAG)
+        for tag in (
+            STREAM_CLIENT_TAG,
+            RESOURCE_PROGRESS_TAG,
+            SESSION_SYNC_TAG,
+            BACKGROUND_SEARCH_TAG,
+            HUNTER_UI_TAG,
+            AUDIT_SYNC_TAG,
+            AUDIT_REPORT_TAG,
+            CLIENT_REPORT_TAG,
+            CLIENT_REPORT_MODES_TAG,
+            REPORT_CONTROLS_TAG,
+            FEED_NAVIGATION_TAG,
+            CLAIMABILITY_UI_TAG,
+            ENTRY_MODES_TAG,
+            BRAND_COLLISION_UI_TAG,
+            DURABLE_LIVE_EVENTS_TAG,
+            UI_CLEANUP_TAG,
+            UI_V3_TAG,
+            SEARCH_RELIABILITY_TAG,
+            VARIANT_EXPANSION_UI_TAG,
+            VARIANT_EXPANSION_SYNC_TAG,
+            # Final controllers: search actions own generation/recheck behavior;
+            # flow clarity makes the zero-resource and Turbo contracts obvious.
+            SEARCH_ACTIONS_V2_TAG,
+            FLOW_CLARITY_V4_TAG,
+        ):
+            if tag not in body:
+                tags.append(tag)
         if tags and "</body>" in body:
             response.set_data(body.replace("</body>", "\n".join(tags) + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
@@ -213,13 +198,12 @@ def api_verification_diagnostics():
         "sources": ["legacy_t_me", "fragment_public_web", "whatsmyname_positive_only"],
         "negative_evidence_promoted": False,
         "fragment_marketplace_available_is_free_claimable": False,
+        "fragment_marketplace_price_visible": True,
         "authoritative_claimability": False,
     }
     return jsonify({
         "verification_engine": "v2",
         "verification_pipeline": {
-            # Keep the historical field stable for clients while advertising the
-            # newer architecture/stages explicitly below.
             "version": "v3.1",
             "architecture_version": "v4",
             "strict_claimability_version": "strict-v1",
@@ -245,6 +229,7 @@ def api_verification_diagnostics():
         "generation_intelligence": {
             "creative_lexicon": creative_lexicon_diagnostics(),
             "creative_generation": creative_generation_diagnostics(),
+            "zero_resource_generation": True,
         },
         "final_ranking": {
             "enabled": True,
@@ -266,6 +251,8 @@ def api_verification_diagnostics():
             "supported": True,
             "modes": ["brand", "identity", "generic_name", "other"],
             "generic_name_verification": False,
+            "zero_selected_resources_runs_generation_only": True,
+            "recheck_existing_results": True,
             "explicit_mode_overrides_ai_inference": True,
         },
         "brand_collision": brand_collision_diagnostics(),
@@ -299,7 +286,8 @@ def api_verification_diagnostics():
             "render_page_size": 25,
             "views_paginated": ["feed", "recommended", "shortlist"],
             "filters": ["all", "confirmed", "promising", "conflict", "unresolved"],
-            "turbo_primary_feed_strict_free_only": True,
+            "turbo_primary_feed_strict_free_only": False,
+            "turbo_all_checked_rows_visible": True,
         },
         "background_search_ui": {
             "enabled_when_worker_ready": True,
@@ -311,8 +299,9 @@ def api_verification_diagnostics():
             "availability_hunter_api": True,
             "result_goal_field": "target_matches",
             "budget_field": "max_checks",
-            "default_search_strategy": "procedural",
+            "default_search_strategy": "turbo",
             "search_strategies": ["procedural", "turbo"],
+            "match_policies": ["strict_all", "no_conflict", "any_opportunity"],
             "procedural_focus_visible": True,
             "telemetry_default": "compact",
             "technical_details_toggle": True,

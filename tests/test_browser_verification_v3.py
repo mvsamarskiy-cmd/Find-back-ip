@@ -230,7 +230,7 @@ class VerificationPipelineContractTests(unittest.TestCase):
         self.assertTrue(pipeline["foreground_and_background_share_browser_pipe"])
         self.assertFalse(pipeline["fast_results_blocked_by_browser"])
         self.assertFalse(pipeline["browser_intelligence"]["browser_absence_can_decide_claimability"])
-        self.assertTrue(RELEASE_MARKER.startswith("v8.11."))
+        self.assertTrue(RELEASE_MARKER.startswith("v8.12."))
 
 
 if __name__ == "__main__":

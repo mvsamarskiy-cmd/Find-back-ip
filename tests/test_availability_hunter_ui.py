@@ -8,21 +8,26 @@ class AvailabilityHunterUiTests(unittest.TestCase):
     def test_hunter_ui_loads_after_background_search_runtime(self):
         body = app.test_client().get('/').get_data(as_text=True)
         self.assertIn('/static/background_search.js', body)
-        self.assertIn('/static/availability_hunter_ui.js?v=4', body)
+        self.assertIn('/static/availability_hunter_ui.js?v=5', body)
         self.assertLess(
             body.index('/static/background_search.js'),
-            body.index('/static/availability_hunter_ui.js?v=4'),
+            body.index('/static/availability_hunter_ui.js?v=5'),
         )
 
-    def test_hunter_ui_exposes_procedural_and_turbo_strategies(self):
+    def test_hunter_ui_exposes_procedural_turbo_and_match_policies(self):
         source = Path('static/availability_hunter_ui.js').read_text(encoding='utf-8')
         self.assertIn('hunterSearchStrategy', source)
         self.assertIn('<option value="procedural" selected>Процедурно</option>', source)
         self.assertIn('<option value="turbo">Turbo</option>', source)
+        self.assertIn('hunterMatchPolicy', source)
+        self.assertIn('strict_all', source)
+        self.assertIn('no_conflict', source)
+        self.assertIn('any_opportunity', source)
+        self.assertIn('match_policy: matchPolicy', source)
         self.assertIn('search_strategy: strategy', source)
-        self.assertIn("target_matches: targetMatches", source)
-        self.assertIn("max_checks: maxChecks", source)
-        self.assertIn("availability_hunter_started", source)
+        self.assertIn('target_matches: targetMatches', source)
+        self.assertIn('max_checks: maxChecks', source)
+        self.assertIn('availability_hunter_started', source)
 
     def test_hunter_respects_selected_entry_workflow(self):
         source = Path('static/availability_hunter_ui.js').read_text(encoding='utf-8')
@@ -33,13 +38,14 @@ class AvailabilityHunterUiTests(unittest.TestCase):
 
     def test_hunter_ui_reports_matches_and_strategy_specific_progress(self):
         source = Path('static/availability_hunter_ui.js').read_text(encoding='utf-8')
-        self.assertIn("runtime.matches", source)
-        self.assertIn("runtime.checked", source)
-        self.assertIn("_procedural_runtime", source)
-        self.assertIn("plan.current_root", source)
-        self.assertIn("plan.current_strategy", source)
-        self.assertIn("Шукаю корінь", source)
-        self.assertIn("Turbo · широке дослідження", source)
+        self.assertIn('runtime.matches', source)
+        self.assertIn('runtime.checked', source)
+        self.assertIn('_procedural_runtime', source)
+        self.assertIn('plan.current_root', source)
+        self.assertIn('plan.current_strategy', source)
+        self.assertIn('Шукаю корінь', source)
+        self.assertIn('Turbo · широке дослідження', source)
+        self.assertIn('усі перевірені кандидати лишаються у Результатах', source)
 
 
 if __name__ == '__main__':

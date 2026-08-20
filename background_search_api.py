@@ -6,7 +6,13 @@ import os
 
 from flask import jsonify, request
 
-from availability_hunter import HUNTER_KEY, MAX_TARGET_MATCHES, STRICT_MATCH_POLICY
+from availability_hunter import (
+    HUNTER_KEY,
+    MATCH_POLICIES,
+    MAX_TARGET_MATCHES,
+    STRICT_MATCH_POLICY,
+    normalize_match_policy,
+)
 from background_job_guardrails import (
     BackgroundJobLimitError,
     admission_diagnostics,
@@ -23,7 +29,8 @@ BACKGROUND_CREATE_RATE_LIMIT = os.environ.get("BACKGROUND_CREATE_RATE_LIMIT", "3
 BACKGROUND_READ_RATE_LIMIT = os.environ.get("BACKGROUND_READ_RATE_LIMIT", "180 per minute")
 TURBO_GUIDANCE = (
     "Turbo search: maximize lexical and phonetic breadth across the interpreted semantic territory. "
-    "Do not linger on one root or make tiny mutations of occupied names. The objective is strict-free yield, not a pretty brainstorm list."
+    "Do not linger on one root or make tiny mutations of occupied names. Keep every checked candidate visible; "
+    "maximize useful opportunity yield while preserving strict claimability truth."
 )
 
 
@@ -43,8 +50,9 @@ def background_search_diagnostics():
             "target_matches_max": MAX_TARGET_MATCHES,
             "max_checks_max": MAX_BACKGROUND_TARGET,
             "strict_match_policy": STRICT_MATCH_POLICY,
-            "purchasable_counts_as_free_match": False,
-            "not_found_counts_as_free_match": False,
+            "match_policies": sorted(MATCH_POLICIES),
+            "not_found_is_claimable": False,
+            "purchasable_is_strict_green": False,
         },
         "procedural_search": {
             "supported": True,
@@ -56,9 +64,10 @@ def background_search_diagnostics():
         "turbo_search": {
             "supported": True,
             "broad_exploration": True,
-            "primary_feed_strict_free_only": True,
+            "primary_feed_strict_free_only": False,
+            "default_match_policy": "any_opportunity",
             "strict_match_policy": STRICT_MATCH_POLICY,
-            "rejected_rows_remain_durable": True,
+            "all_checked_rows_remain_visible": True,
         },
     }
 
@@ -135,13 +144,15 @@ def install_background_search_routes(app, app_module):
             strategy = str(data.get("search_strategy") or "procedural").strip().lower()
             if strategy not in {"procedural", "adaptive", "turbo"}:
                 return jsonify({"error": "search_strategy must be procedural, turbo, or adaptive"}), 400
+            default_policy = "any_opportunity" if strategy == "turbo" else STRICT_MATCH_POLICY
+            match_policy = normalize_match_policy(data.get("match_policy") or default_policy)
 
             search_context = dict(search_context or {})
             search_context[HUNTER_KEY] = {
                 "enabled": True,
                 "target_matches": target_matches,
                 "max_checks": max_checks,
-                "match_policy": STRICT_MATCH_POLICY,
+                "match_policy": match_policy,
             }
             search_context["search_strategy"] = strategy
             if strategy == "procedural":
@@ -156,7 +167,9 @@ def install_background_search_routes(app, app_module):
                 )[:500]
                 search_context["turbo_search"] = {
                     "enabled": True,
-                    "strict_free_primary_feed": True,
+                    "strict_free_primary_feed": False,
+                    "all_checked_rows_visible": True,
+                    "match_policy": match_policy,
                 }
             target_count = max_checks
 
