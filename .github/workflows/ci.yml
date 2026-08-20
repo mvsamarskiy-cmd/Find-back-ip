@@ -31,8 +31,10 @@ jobs:
       - run: node --check static/availability_hunter_ui.js
       - run: node --check static/audit_sync.js
       - run: node --check static/audit_report.js
+      - run: node --check static/report_math_v6.js
       - run: node --check static/client_report.js
       - run: node --check static/client_report_modes.js
+      - run: node --check static/report_math_overlay.js
       - run: node --check static/report_controls.js
       - run: node --check static/feed_navigation.js
       - run: node --check static/claimability_ui.js
