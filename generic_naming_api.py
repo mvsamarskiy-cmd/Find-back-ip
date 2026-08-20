@@ -142,12 +142,35 @@ def _similarity(left, right):
     return score
 
 
+def _preference_core(rows, confidence, position, count):
+    """Keep low-fit exploration out of the high-confidence recommendation core.
+
+    Diversity is still useful, but after explicit feedback it must not pull a
+    clearly disliked naming style ahead of candidates that match the learned
+    direction. The tail of the batch remains free to explore other families.
+    """
+    if confidence < 0.25 or not rows:
+        return rows
+    exploit_slots = min(count, max(1, math.ceil(count * (0.70 + 0.15 * confidence))))
+    if position >= exploit_slots:
+        return rows
+    best_fit = max(float(row.get("user_fit_score", 50.0)) for row in rows)
+    tolerance = max(6.0, 14.0 * (1.0 - confidence))
+    core = [
+        row for row in rows
+        if float(row.get("user_fit_score", 50.0)) >= best_fit - tolerance
+    ]
+    return core or rows
+
+
 def _select_generic_rows(rows, count, taste_model):
     """Rank by name quality + learned taste, then diversify with MMR.
 
     Generic naming deliberately does not use brand blacklists or availability
     evidence. It does share the same session-learning principle as verified
     naming so Continue reacts to likes, dislikes, comments and direction anchors.
+    Explicit taste evidence defines a recommendation core; MMR explores inside
+    that core first and only spends the tail of the batch on weaker-fit families.
     """
     model = taste_model if isinstance(taste_model, dict) else build_taste_model()
     confidence = float(model.get("confidence", 0.0) or 0.0)
@@ -175,24 +198,29 @@ def _select_generic_rows(rows, count, taste_model):
     selected = []
     remaining = eligible[:]
     while remaining and len(selected) < count:
-        best_index = None
+        allowed = [
+            candidate for candidate in remaining
+            if family_counts.get(str(candidate.get("family", "abstract")), 0)
+            < family_caps.get(str(candidate.get("family", "abstract")), hard_cap)
+        ]
+        if not allowed:
+            break
+        candidates = _preference_core(allowed, confidence, len(selected), count)
+        best = None
         best_score = -10.0
-        for index, candidate in enumerate(remaining):
-            family = str(candidate.get("family", "abstract"))
-            if family_counts.get(family, 0) >= family_caps.get(family, hard_cap):
-                continue
+        for candidate in candidates:
             relevance = float(candidate.get("adaptive_relevance_score", 0.0)) / 100.0
             redundancy = max((_similarity(candidate, other) for other in selected), default=0.0)
             mmr = 0.72 * relevance - 0.28 * redundancy
             if mmr > best_score:
                 best_score = mmr
-                best_index = index
-        if best_index is None:
+                best = candidate
+        if best is None:
             break
-        picked = remaining.pop(best_index)
-        family = str(picked.get("family", "abstract"))
+        remaining.remove(best)
+        family = str(best.get("family", "abstract"))
         family_counts[family] = family_counts.get(family, 0) + 1
-        selected.append(picked)
+        selected.append(best)
 
     # A model can occasionally ignore the requested family mix. Family caps are
     # therefore a diversity preference, not a reason to fail a usable response.
