@@ -255,7 +255,7 @@ def search_money_opportunities(
     query, *, category="all", country="EU", requester=requests.get, poster=requests.post,
     evidence_fetcher=None,
 ):
-    plan = build_money_search_plan(query, country=country)
+    plan = build_money_search_plan(query, country=country, category=category)
     profile = plan["profile"]
     provider, providers = _provider_choice()
     if provider == "none":

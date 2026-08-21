@@ -5,7 +5,7 @@ import re
 
 from money_eligibility import compile_eligibility_profile
 from money_sources import sources_for
-from money_taxonomy import TYPE_BY_ID, infer_money_families, infer_money_types, looks_like_material_opportunity
+from money_taxonomy import FAMILIES, TYPE_BY_ID, infer_money_families, infer_money_types, looks_like_material_opportunity
 from opportunity_intelligence import extract_amount
 
 
@@ -24,6 +24,16 @@ FAMILY_EXPANSIONS = {
     "markets": "price gap supply shortage import export opportunity market dislocation demand",
     "off_market": "public notices BIP bulletin liquidation insolvency university partner call local association off market",
     "other": "monetizable opportunity paid programme commercial opportunity",
+}
+
+LEGACY_CATEGORY_SCOPE = {
+    "tender": "procurement",
+    "auction": "public_auction",
+    "benefit": "savings",
+    "business_aid": "funding",
+    "research": "research_funding",
+    "government": "funding",
+    "private": "capital",
 }
 
 NEED_FAMILY_HINTS = (
@@ -72,11 +82,32 @@ def _applicant_types(text: str) -> list[str]:
     return [name for name, patterns in APPLICANT_HINTS.items() if any(re.search(pattern, text, flags=re.I) for pattern in patterns)]
 
 
-def compile_money_profile(query: object, *, country: object = "EU") -> dict:
+def _requested_scope(category: object) -> tuple[str | None, str | None, str]:
+    raw = str(category or "all").strip().lower().replace("-", "_") or "all"
+    scoped = LEGACY_CATEGORY_SCOPE.get(raw, raw)
+    if scoped == "all":
+        return None, None, raw
+    if scoped in TYPE_BY_ID:
+        return "type", scoped, raw
+    if scoped in FAMILIES:
+        return "family", scoped, raw
+    return None, None, raw
+
+
+def compile_money_profile(query: object, *, country: object = "EU", category: object = "all") -> dict:
     cleaned = _clean(query)
     text = cleaned.casefold()
     explicit_types = infer_money_types(cleaned, limit=12)
     explicit_families = infer_money_families(cleaned, limit=8)
+    scope_kind, scope_value, requested_category = _requested_scope(category)
+
+    if scope_kind == "type" and scope_value:
+        explicit_types = [scope_value, *[item for item in explicit_types if item != scope_value]]
+        family = TYPE_BY_ID[scope_value].family
+        explicit_families = [family, *[item for item in explicit_families if item != family]]
+    elif scope_kind == "family" and scope_value:
+        explicit_families = [scope_value, *[item for item in explicit_families if item != scope_value]]
+
     need_families = _need_families(text)
     families = []
     for family in [*explicit_families, *need_families]:
@@ -87,7 +118,9 @@ def compile_money_profile(query: object, *, country: object = "EU") -> dict:
         "query": cleaned,
         "country": str(country or "EU").strip().upper(),
         "country_name": _country_name(country),
-        "money_intent": looks_like_material_opportunity(cleaned),
+        "money_intent": bool(scope_kind) or looks_like_material_opportunity(cleaned),
+        "requested_category": requested_category,
+        "selected_scope": {"kind": scope_kind, "value": scope_value},
         "requested_types": explicit_types,
         "requested_families": families,
         "applicant_types": _applicant_types(text),
@@ -105,8 +138,11 @@ def _family_order(profile: dict) -> list[str]:
     return ["funding", "capital", "finance", "revenue", "assets", "savings", "local", "off_market", "markets"]
 
 
-def build_money_search_plan(query: object, *, country: object = "EU", max_lanes: int = MAX_MONEY_QUERY_LANES) -> dict:
-    profile = compile_money_profile(query, country=country)
+def build_money_search_plan(
+    query: object, *, country: object = "EU", category: object = "all",
+    max_lanes: int = MAX_MONEY_QUERY_LANES,
+) -> dict:
+    profile = compile_money_profile(query, country=country, category=category)
     cleaned = profile["query"]
     if len(cleaned) < 2:
         raise ValueError("Query must contain at least 2 characters")
@@ -176,6 +212,7 @@ def money_query_planner_capabilities() -> dict:
         "max_lanes": MAX_MONEY_QUERY_LANES,
         "exact_query_first": True,
         "natural_language_need_expansion": True,
+        "explicit_category_scope": True,
         "explicit_eligibility_profile": True,
         "source_probe_lanes": True,
         "families": list(FAMILY_EXPANSIONS),
