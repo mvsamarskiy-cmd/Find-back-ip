@@ -30,7 +30,7 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
         self.assertEqual(universal["intelligence_version"], "universal-router-v2")
         self.assertEqual(
             set(universal["modules"]),
-            {"technical", "news", "company", "person"},
+            {"local", "product", "technical", "news", "company", "person"},
         )
         for module in universal["modules"].values():
             self.assertTrue(module["preferred_host_ranking_only"])
