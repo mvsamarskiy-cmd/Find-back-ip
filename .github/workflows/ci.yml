@@ -46,6 +46,7 @@ jobs:
       - run: node --check static/variant_expansion_sync.js
       - run: node --check static/private_global_mode.js
       - run: node --check static/universal_global_mode.js
+      - run: node --check static/money_opportunity_ui.js
       - run: node --check static/private_research_browser.js
 
   postgres-session-store:
