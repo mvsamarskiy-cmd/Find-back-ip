@@ -11,6 +11,8 @@ turning the entire private Global Search into a single-provider failure.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hmac
 import os
 from time import perf_counter
@@ -29,6 +31,22 @@ def _clean(value, limit=1200):
     return " ".join(str(value or "").split())[:limit]
 
 
+def _decode_bing_target(value):
+    raw = unquote(_clean(value, 1800))
+    if raw.startswith(("http://", "https://")):
+        return raw
+    if raw.startswith("a1"):
+        raw = raw[2:]
+    if not raw:
+        return ""
+    try:
+        padded = raw + ("=" * (-len(raw) % 4))
+        decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8", "ignore")
+    except (ValueError, UnicodeError, binascii.Error):
+        return ""
+    return decoded if decoded.startswith(("http://", "https://")) else ""
+
+
 def _external_url(raw):
     value = _clean(raw, 1800)
     if not value:
@@ -43,6 +61,9 @@ def _external_url(raw):
     if host.endswith("google.com") and parsed.path == "/url":
         target = (query.get("q") or query.get("url") or [""])[0]
         return _external_url(target)
+    if host.endswith("bing.com") and parsed.path.startswith("/ck/a"):
+        target = (query.get("u") or query.get("url") or [""])[0]
+        return _external_url(_decode_bing_target(target))
     if host.endswith("duckduckgo.com") and parsed.path.startswith("/l/"):
         target = (query.get("uddg") or [""])[0]
         return _external_url(unquote(target))
