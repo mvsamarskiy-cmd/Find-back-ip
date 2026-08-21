@@ -7,6 +7,8 @@ first real NameMachine candidate.
 """
 from __future__ import annotations
 
+import os
+
 from flask import jsonify
 
 import browser_eye_service as browser_eye_module
@@ -38,7 +40,7 @@ def ready_health():
         "status": "ok",
         "service": "browser-eye",
         "ready": True,
-        "global_web_search": bool(__import__("os").environ.get("GLOBAL_SEARCH_BROWSER_TOKEN")),
+        "global_web_search": bool(os.environ.get("GLOBAL_SEARCH_BROWSER_TOKEN")),
         **RUNTIME.diagnostics(),
     })
 
