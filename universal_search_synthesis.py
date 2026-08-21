@@ -11,6 +11,26 @@ import universal_search_multi as multi_search
 from evidence_synthesis import evidence_synthesis_capabilities, synthesize_search_payload
 
 
+def _finalize_synthesis_semantics(synthesis: object) -> dict:
+    """Apply production truth labels without changing the underlying evidence."""
+    data = synthesis if isinstance(synthesis, dict) else {}
+    conflicts = data.get("conflict_candidates")
+    if isinstance(conflicts, list):
+        for item in conflicts:
+            if not isinstance(item, dict):
+                continue
+            if item.get("kind") == "price_or_amount_variance":
+                item["kind"] = "monetary_variance_candidate"
+                item["scope"] = "query_level"
+                item["entity_resolution_required"] = True
+                item["reason"] = (
+                    "Different monetary values were observed across retrieval evidence. "
+                    "Entity resolution is required before deciding whether they refer to the "
+                    "same product/opportunity or represent a genuine conflict."
+                )
+    return data
+
+
 def search_universal(
     query,
     *,
@@ -41,15 +61,20 @@ def search_universal(
         kwargs["multi_searcher"] = multi_searcher
 
     payload = multi_search.search_universal(query, **kwargs)
-    payload["synthesis"] = synthesizer(payload)
+    payload["synthesis"] = _finalize_synthesis_semantics(synthesizer(payload))
     return payload
 
 
 def universal_search_capabilities() -> dict:
     payload = dict(multi_search.universal_search_capabilities())
+    synthesis = dict(evidence_synthesis_capabilities())
+    synthesis.update({
+        "entity_resolution": False,
+        "monetary_variance_scope": "query_level_candidate",
+    })
     payload.update({
         "intelligence_version": "universal-router-v4",
-        "answer_synthesis": evidence_synthesis_capabilities(),
+        "answer_synthesis": synthesis,
     })
     return payload
 
