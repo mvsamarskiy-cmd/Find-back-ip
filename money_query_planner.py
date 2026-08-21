@@ -1,14 +1,15 @@
-"""Bounded query planner for Money / Material Opportunity Intelligence v2."""
+"""Bounded query planner for Money / Material Opportunity Intelligence v2.2."""
 from __future__ import annotations
 
 import re
 
+from money_eligibility import compile_eligibility_profile
 from money_sources import sources_for
 from money_taxonomy import TYPE_BY_ID, infer_money_families, infer_money_types, looks_like_material_opportunity
 from opportunity_intelligence import extract_amount
 
 
-MONEY_QUERY_PLANNER_VERSION = "money-query-planner-v2"
+MONEY_QUERY_PLANNER_VERSION = "money-query-planner-v2.2"
 MAX_MONEY_QUERY_LANES = 7
 
 
@@ -82,7 +83,7 @@ def compile_money_profile(query: object, *, country: object = "EU") -> dict:
         if family not in families:
             families.append(family)
     amount = extract_amount(cleaned)
-    return {
+    base = {
         "query": cleaned,
         "country": str(country or "EU").strip().upper(),
         "country_name": _country_name(country),
@@ -92,14 +93,13 @@ def compile_money_profile(query: object, *, country: object = "EU") -> dict:
         "applicant_types": _applicant_types(text),
         "requested_amount": amount,
     }
+    base["eligibility_profile"] = compile_eligibility_profile(cleaned, country=country, base_profile=base)
+    return base
 
 
 def _family_order(profile: dict) -> list[str]:
     requested = list(profile.get("requested_families") or [])
     if requested:
-        # Keep exploration lanes after the inferred mechanisms so that an
-        # equipment-finance request can still discover liquidation assets or
-        # procurement revenue instead of being trapped in one mechanism.
         exploration = ["funding", "finance", "capital", "revenue", "assets", "savings", "local", "off_market", "markets"]
         return list(dict.fromkeys([*requested, *exploration]))
     return ["funding", "capital", "finance", "revenue", "assets", "savings", "local", "off_market", "markets"]
@@ -129,9 +129,6 @@ def build_money_search_plan(query: object, *, country: object = "EU", max_lanes:
             "source_domain": None,
         })
 
-    # For focused searches, reserve up to two lanes for authoritative/public
-    # sources. Broad "find everything" searches spend their budget on family
-    # coverage instead of overfitting to a small domain catalog.
     requested_types = profile.get("requested_types") or []
     requested_families = profile.get("requested_families") or []
     focused = bool(requested_types or (requested_families and len(requested_families) <= 2))
@@ -152,7 +149,6 @@ def build_money_search_plan(query: object, *, country: object = "EU", max_lanes:
                 "source_domain": source["domain"],
             })
 
-    # Deduplicate query strings while preserving exact query at position zero.
     unique, seen = [], set()
     for lane in lanes:
         key = lane["query"].casefold()
@@ -180,6 +176,7 @@ def money_query_planner_capabilities() -> dict:
         "max_lanes": MAX_MONEY_QUERY_LANES,
         "exact_query_first": True,
         "natural_language_need_expansion": True,
+        "explicit_eligibility_profile": True,
         "source_probe_lanes": True,
         "families": list(FAMILY_EXPANSIONS),
         "truth_semantics": "planner_inference_is_search_strategy_not_eligibility_or_profit_proof",
