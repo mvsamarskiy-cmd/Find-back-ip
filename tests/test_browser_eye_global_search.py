@@ -42,6 +42,18 @@ class BrowserEyeGlobalSearchTests(unittest.TestCase):
         self.assertEqual(rows[0]["host"], "funding-tenders.ec.europa.eu")
         self.assertTrue(rows[0]["url"].startswith("https://funding-tenders.ec.europa.eu/"))
 
+    def test_bing_redirect_is_unwrapped(self):
+        rows = normalize_serp_rows([
+            {
+                "title": "PARP grants",
+                "url": "https://www.bing.com/ck/a?u=a1aHR0cHM6Ly9wYXJwLmdvdi5wbC9ncmFudHM&ntb=1",
+                "snippet": "Official programme",
+            }
+        ])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["url"], "https://parp.gov.pl/grants")
+        self.assertEqual(rows[0]["host"], "parp.gov.pl")
+
     def test_duckduckgo_redirect_is_unwrapped(self):
         rows = normalize_serp_rows([
             {
