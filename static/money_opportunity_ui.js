@@ -31,8 +31,17 @@
   function isPrivate(){return document.body.classList.contains('nm-private-global');}
   function number(v){const n=Number(v);return Number.isFinite(n)?n:null;}
 
+  function clearMoneyUi(){
+    document.getElementById('nmMoneySummary')?.remove();
+    for(const node of document.querySelectorAll('.nmm-v21'))node.remove();
+  }
+
   function capture(payload){
-    if(!payload || !Array.isArray(payload.money_records)) return;
+    if(!payload || !Array.isArray(payload.money_records)){
+      latest=null;
+      queueMicrotask(clearMoneyUi);
+      return;
+    }
     latest=payload;
     queueMicrotask(enhance);
   }
