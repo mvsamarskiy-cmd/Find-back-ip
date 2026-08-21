@@ -19,17 +19,20 @@
   const PAGE_SIZE = 20;
   let privateMode = false;
   let privateController = null;
+  let currentSearchId = null;
+  let stopRequested = false;
   let state = null;
   let latestPayload = null;
   let currentPage = 1;
   let sortMode = 'practical';
-  let localType = 'all';
 
   const labels = {
-    all:'Усі можливості', grant:'Гранти', subsidy:'Субсидії', public_aid:'Державна допомога',
+    all:'Усі можливості', funding:'Фінансування', capital:'Капітал / інвестори', finance:'Кредити / фінансові інструменти',
+    savings:'Економія / компенсації', revenue:'Контракти / доходи', assets:'Активи', local:'Локальні пропозиції',
+    markets:'Ринкові можливості', off_market:'Off-market', grant:'Гранти', subsidy:'Субсидії', public_aid:'Державна допомога',
     eu_fund:'Фонди ЄС', regional_fund:'Регіональні фонди', competition:'Конкурси', prize:'Грошові призи',
     challenge:'Челенджі', bounty:'Баунті', accelerator:'Акселератори', incubator:'Інкубатори',
-    scholarship:'Стипендії', fellowship:'Fellowship / дослідницькі програми', research_funding:'Фінансування досліджень',
+    scholarship:'Стипендії', fellowship:'Дослідницькі програми', research_funding:'Фінансування досліджень',
     corporate_open_call:'Корпоративні open call', paid_open_call:'Оплачувані open call', vc:'Venture Capital',
     angel:'Бізнес-ангели', equity_program:'Equity-програми', crowdfunding:'Краудфандинг',
     preferential_loan:'Пільгові кредити', guarantee:'Гарантії', leasing:'Лізинг', factoring:'Факторинг',
@@ -42,13 +45,12 @@
     auction:'Аукціони', classified_offer:'Оголошення', wholesale_closeout:'Оптові залишки / closeout',
     import_export_gap:'Імпортно-експортні можливості', market_dislocation:'Цінові / ринкові аномалії',
     off_market_public:'Публічні off-market можливості', other_monetizable_signal:'Інші монетизовані сигнали',
-    funding:'Фінансування', benefit:'Допомога / виплати', business_aid:'Допомога бізнесу', research:'Дослідження',
-    government:'Державні', private:'Приватні', other:'Інше'
+    benefit:'Допомога / виплати', business_aid:'Допомога бізнесу', research:'Дослідження', government:'Державні', private:'Приватні', other:'Інше'
   };
   const familyLabels = {
-    funding:'Фінансування без повернення / конкурси', capital:'Капітал / інвестори', finance:'Кредити та фінансові інструменти',
-    savings:'Економія / відшкодування', revenue:'Контракти та виручка', assets:'Активи', local:'Локальні пропозиції',
-    markets:'Ринкові можливості', off_market:'Публічні off-market', other:'Інше'
+    funding:'фінансування без повернення / конкурси', capital:'капітал / інвестори', finance:'кредити та фінансові інструменти',
+    savings:'економія / відшкодування', revenue:'контракти та виручка', assets:'активи', local:'локальні пропозиції',
+    markets:'ринкові можливості', off_market:'публічні off-market можливості', other:'інші можливості'
   };
   const applicantLabels = {
     individual:'фізособа', startup:'стартап', sme:'МСП', company:'компанія', ngo:'NGO',
@@ -69,7 +71,6 @@
       #nmPrivateGlobalPanel{display:none;margin-top:18px}body.nm-private-global #nmPrivateGlobalPanel{display:block}
       .nmpg-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;position:sticky;top:0;z-index:4;background:var(--bg);padding:7px 0}
       .nmpg-toolbar select,.nmpg-toolbar button{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px;font:inherit}.nmpg-toolbar button{cursor:pointer}.nmpg-toolbar button:disabled{opacity:.45;cursor:default}
-      .nmpg-transport{border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:11px}.nmpg-transport.on{border-color:var(--ok);color:var(--ok)}
       .nmpg-viewport{max-height:calc(100vh - 250px);min-height:220px;overflow-y:auto;overscroll-behavior:contain;scroll-behavior:smooth;padding-right:4px;scrollbar-gutter:stable}
       .nmpg-grid{display:grid;gap:12px;padding-bottom:10px}.nmpg-card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:15px}.nmpg-card.high{border-color:rgba(90,220,150,.48)}.nmpg-card.blocked{opacity:.72}
       .nmpg-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.nmpg-title-wrap{display:flex;gap:8px;align-items:flex-start;min-width:0}.nmpg-index{color:var(--muted);font-size:12px;min-width:34px;padding-top:3px}.nmpg-title{font-size:18px;font-weight:850;line-height:1.28}.nmpg-fit{min-width:58px;text-align:center;border:1px solid var(--line);border-radius:14px;padding:6px 8px;font-weight:800}.nmpg-fit.high{border-color:var(--ok);color:var(--ok)}.nmpg-fit.blocked{color:#e7868f}
@@ -85,9 +86,8 @@
     let p=document.getElementById('nmPrivateGlobalPanel');if(p)return p;
     p=document.createElement('section');p.id='nmPrivateGlobalPanel';
     p.innerHTML=`<div class="nmpg-toolbar">
-      <select id="nmPrivateCategory" aria-label="Категорія пошуку"></select>
+      <select id="nmPrivateCategory" aria-label="Категорія матеріальної можливості"></select>
       <select id="nmPrivateCountry" aria-label="Країна"></select>
-      <select id="nmPrivateType" aria-label="Тип можливості"></select>
       <select id="nmPrivateSort" aria-label="Сортування">
         <option value="practical">Практичність ↓</option>
         <option value="relevance">Релевантність ↓</option>
@@ -97,7 +97,6 @@
       </select>
       <button id="nmScrollUp" type="button" title="До початку списку">↑ Вгору</button>
       <button id="nmScrollDown" type="button" title="До кінця сторінки">↓ Вниз</button>
-      <span id="nmTorState" class="nmpg-transport">Tor: авто</span>
       <span id="nmResultCount" class="nmpg-result-count"></span>
     </div>
     <div id="nmPrivateViewport" class="nmpg-viewport"><div id="nmPrivateResults" class="nmpg-grid"><div class="nmpg-empty">Введи глобальний пошуковий запит.</div></div></div>
@@ -106,27 +105,17 @@
     <details id="nmPrivatePlan" class="nmpg-plan" hidden><summary>Пошуковий тунель</summary><code></code></details>`;
     composer?.insertAdjacentElement('afterend',p);
     p.querySelector('#nmPrivateSort')?.addEventListener('change',e=>{sortMode=e.target.value;currentPage=1;renderCurrent();});
-    p.querySelector('#nmPrivateType')?.addEventListener('change',e=>{localType=e.target.value;currentPage=1;renderCurrent();});
     p.querySelector('#nmScrollUp')?.addEventListener('click',()=>p.querySelector('#nmPrivateViewport')?.scrollTo({top:0,behavior:'smooth'}));
     p.querySelector('#nmScrollDown')?.addEventListener('click',()=>{const v=p.querySelector('#nmPrivateViewport');v?.scrollTo({top:v.scrollHeight,behavior:'smooth'});});
     return p;
   }
 
-  function moneyTypes(){
-    return [
-      'grant','subsidy','public_aid','eu_fund','regional_fund','competition','prize','challenge','bounty','accelerator','incubator','scholarship','fellowship','research_funding','corporate_open_call','paid_open_call','vc','angel','equity_program','crowdfunding','preferential_loan','guarantee','leasing','factoring','equipment_financing','tax_relief','reimbursement','employment_incentive','training_support','export_support','innovation_voucher','green_energy_support','procurement','job_contract','subcontract','supplier_demand','business_for_sale','asset_sale','liquidation','real_estate_opportunity','public_auction','classified_offer','wholesale_closeout','import_export_gap','market_dislocation','off_market_public','other_monetizable_signal'
-    ];
-  }
-
   function controls(search={}){
-    const cat=document.getElementById('nmPrivateCategory'),country=document.getElementById('nmPrivateCountry'),type=document.getElementById('nmPrivateType');if(!cat||!country||!type)return;
+    const cat=document.getElementById('nmPrivateCategory'),country=document.getElementById('nmPrivateCountry');if(!cat||!country)return;
     const cats=['all',...(search.categories||[])].filter((x,i,a)=>labels[x]&&a.indexOf(x)===i);
     cat.replaceChildren(...cats.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=labels[x];return o;}));
     const eu=document.createElement('option');eu.value='EU';eu.textContent='Весь ЄС';
     const opts=[eu,...(search.countries||[]).map(x=>{const o=document.createElement('option');o.value=x.code;o.textContent=`${x.code} · ${x.name}`;return o;})];country.replaceChildren(...opts);
-    const typeOptions=[['all','Усі 47 типів'],...moneyTypes().map(x=>[x,labels[x]||x])];
-    type.replaceChildren(...typeOptions.map(([value,text])=>{const o=document.createElement('option');o.value=value;o.textContent=text;return o;}));
-    type.value=localType;
   }
 
   function hidePublic(on){
@@ -141,7 +130,7 @@
   function mode(on,payload=null){
     privateMode=!!on;state=payload||state;document.body.classList.toggle('nm-private-global',privateMode);hidePublic(privateMode);
     if(privateMode){if(brand)brand.textContent='Global Search';if(sessionTitle)sessionTitle.textContent='Private mode';if(prompt){prompt.value='';prompt.placeholder='Шукай гранти, фінансування, тендери, активи або іншу матеріальну можливість…';}if(startBtn)startBtn.textContent='Знайти';if(stopBtn)stopBtn.textContent='Стоп';if(status)status.textContent='Opportunity Intelligence активний.';controls(state?.search||{});panel();}
-    else {if(privateController)privateController.abort();privateController=null;if(brand)brand.textContent=publicBrand;if(sessionTitle)sessionTitle.textContent=current?.title||'Нова сесія';if(prompt){prompt.value=current?.promptHistory?.at?.(-1)?.text||'';prompt.placeholder=publicPlaceholder;}if(startBtn)startBtn.textContent=current?.results?.length?'Continue':'Start';if(status)status.textContent='Опиши задачу і запусти пошук.';try{render();}catch(_){}}
+    else {if(privateController)privateController.abort();privateController=null;currentSearchId=null;stopRequested=false;if(brand)brand.textContent=publicBrand;if(sessionTitle)sessionTitle.textContent=current?.title||'Нова сесія';if(prompt){prompt.value=current?.promptHistory?.at?.(-1)?.text||'';prompt.placeholder=publicPlaceholder;}if(startBtn)startBtn.textContent=current?.results?.length?'Continue':'Start';if(status)status.textContent='Опиши задачу і запусти пошук.';try{render();}catch(_){}}
   }
 
   function commandLike(v){
@@ -204,10 +193,7 @@
     return practicalScore(b)-practicalScore(a)||(Number(b?.retrieval_score)||0)-(Number(a?.retrieval_score)||0);
   }
 
-  function filteredRows(){
-    const rows=Array.isArray(latestPayload?.results)?latestPayload.results.slice():[];
-    return rows.filter(row=>localType==='all'||typeOf(row)===localType).sort(rowComparator);
-  }
+  function sortedRows(){const rows=Array.isArray(latestPayload?.results)?latestPayload.results.slice():[];return rows.sort(rowComparator);}
 
   function resultCard(row,index){
     const opp=opportunityOf(row),fit=row?.fit||{},verification=opp.verification||row?.verification||{},eligibility=opp.eligibility||{},statusInfo=opp.status||{};
@@ -215,25 +201,19 @@
     const head=textNode('div','nmpg-head','');const wrap=textNode('div','nmpg-title-wrap','');wrap.appendChild(textNode('span','nmpg-index',`#${index}`));wrap.appendChild(textNode('div','nmpg-title',row.title||'Без назви'));head.appendChild(wrap);
     if(Number.isFinite(Number(fit.score)))head.appendChild(textNode('div',`nmpg-fit ${fit.label||''}`.trim(),`${Number(fit.score)}%`));card.appendChild(head);
     card.appendChild(textNode('div','nmpg-desc',ukOpportunityDescription(row)));
-    if(row.description){const details=textNode('details','nmpg-original','');details.appendChild(textNode('summary','', 'Оригінальний фрагмент джерела'));details.appendChild(textNode('p','',row.description));card.appendChild(details);}
+    if(row.description){const details=textNode('details','nmpg-original','');details.appendChild(textNode('summary','','Оригінальний фрагмент джерела'));details.appendChild(textNode('p','',row.description));card.appendChild(details);}
     const meta=textNode('div','nmpg-meta','');
     if(row.official_source)fact(meta,'ОФІЦІЙНЕ ДЖЕРЕЛО','official');
     if(verification.source_verified||recordOf(row)?.source_observed)fact(meta,'ДЖЕРЕЛО ПЕРЕВІРЕНО','verified');
     if(recordOf(row)?.current_call_verified)fact(meta,'АКТУАЛЬНИЙ НАБІР ПЕРЕВІРЕНО','verified');
-    fact(meta,labels[typeOf(row)]||typeOf(row)||'web');
-    if(row.source_name)fact(meta,row.source_name);
+    fact(meta,labels[typeOf(row)]||typeOf(row)||'web');if(row.source_name)fact(meta,row.source_name);
     const statusValue=statusInfo.value||recordOf(row)?.status?.value||'unknown';fact(meta,statusLabels[statusValue]||statusValue,statusValue==='closed'?'closed':statusValue==='open'?'open':'');card.appendChild(meta);
     const amount=amountText(opp.amount||recordOf(row)?.amount);if(amount)card.appendChild(textNode('div','nmpg-money',amount));
-    const facts=textNode('div','nmpg-facts','');
-    const deadline=deadlineOf(row);if(deadline)fact(facts,`дедлайн ${deadline}`);
+    const facts=textNode('div','nmpg-facts','');const deadline=deadlineOf(row);if(deadline)fact(facts,`дедлайн ${deadline}`);
     for(const applicant of eligibility.applicant_types||recordOf(row)?.applicant_types||[])fact(facts,applicantLabels[applicant]||applicant);
-    for(const geo of eligibility.geography||recordOf(row)?.geography||[])fact(facts,geo);
-    if(facts.childNodes.length)card.appendChild(facts);
-    const evidence=textNode('div','nmpg-evidence','');
-    const observed=observedAt(row);if(observed)evidence.appendChild(textNode('div','',`Остання перевірка: ${new Date(observed).toLocaleString('uk-UA')}`));
-    if(verification.state)evidence.appendChild(textNode('div','',`Доказовий стан: ${verification.state}`));
-    for(const blocker of fit.blockers||recordOf(row)?.blockers||[])evidence.appendChild(textNode('div','nmpg-blocker',`⚠ ${blocker}`));
-    card.appendChild(evidence);
+    for(const geo of eligibility.geography||recordOf(row)?.geography||[])fact(facts,geo);if(facts.childNodes.length)card.appendChild(facts);
+    const evidence=textNode('div','nmpg-evidence','');const observed=observedAt(row);if(observed)evidence.appendChild(textNode('div','',`Остання перевірка: ${new Date(observed).toLocaleString('uk-UA')}`));
+    if(verification.state)evidence.appendChild(textNode('div','',`Доказовий стан: ${verification.state}`));for(const blocker of fit.blockers||recordOf(row)?.blockers||[])evidence.appendChild(textNode('div','nmpg-blocker',`⚠ ${blocker}`));card.appendChild(evidence);
     if(row.url){const a=textNode('a','nmpg-link','Відкрити першоджерело ↗');a.href=row.url;a.target='_blank';a.rel='noopener noreferrer';card.appendChild(a);}return card;
   }
 
@@ -244,38 +224,49 @@
     const next=textNode('button','','Наступна →');next.type='button';next.disabled=currentPage>=pageCount;next.addEventListener('click',()=>{if(currentPage<pageCount){currentPage++;renderCurrent(true);}});pages.appendChild(next);
   }
 
-  function updateTor(payload){
-    const tor=document.getElementById('nmTorState');if(!tor)return;const info=payload?.tor_retrieval;
-    if(!info){tor.textContent='Tor: авто';tor.classList.remove('on');return;}
-    if(info.attempted){tor.textContent=`Tor: ${info.provider_status==='complete'?'активний':'використано'}`;tor.classList.add('on');}
-    else {tor.textContent='Tor: не запускався';tor.classList.remove('on');}
-  }
-
   function renderCurrent(scrollTop=false){
     const box=document.getElementById('nmPrivateResults'),count=document.getElementById('nmResultCount');if(!box)return;
-    const rows=filteredRows(),pageCount=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));currentPage=Math.min(Math.max(1,currentPage),pageCount);
+    const rows=sortedRows(),pageCount=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));currentPage=Math.min(Math.max(1,currentPage),pageCount);
     const start=(currentPage-1)*PAGE_SIZE,pageRows=rows.slice(start,start+PAGE_SIZE);box.replaceChildren();
     if(!pageRows.length)box.appendChild(textNode('div','nmpg-empty',latestPayload?'За цим фільтром результатів немає.':'Введи глобальний пошуковий запит.'));
-    pageRows.forEach((row,i)=>box.appendChild(resultCard(row,start+i+1)));
-    if(count)count.textContent=`Показано ${pageRows.length} з ${rows.length}`;renderPages(rows.length,pageCount);updateTor(latestPayload);
+    pageRows.forEach((row,i)=>box.appendChild(resultCard(row,start+i+1)));if(count)count.textContent=`Показано ${pageRows.length} з ${rows.length}`;renderPages(rows.length,pageCount);
     if(scrollTop)document.getElementById('nmPrivateViewport')?.scrollTo({top:0,behavior:'smooth'});
   }
 
   function renderRows(payload){
-    latestPayload=payload||{};currentPage=1;renderCurrent(true);
-    const truth=document.getElementById('nmPrivateTruth'),plan=document.getElementById('nmPrivatePlan');
+    latestPayload=payload||{};currentPage=1;renderCurrent(true);const truth=document.getElementById('nmPrivateTruth'),plan=document.getElementById('nmPrivatePlan');
     if(truth)truth.textContent=payload?.truth_note||'Результат пошуку є кандидатом, а не гарантією доступності, права на фінансування чи прибутку.';
     const queries=Array.isArray(payload?.search_plan)?payload.search_plan:[];if(plan){plan.hidden=!queries.length;const code=plan.querySelector('code');if(code)code.textContent=queries.join('\n\n');}
   }
 
+  function makeSearchId(){
+    try{return crypto.randomUUID();}catch(_){return `nm-${Date.now()}-${Math.random().toString(36).slice(2)}`;}
+  }
+
+  async function requestPrivateStop(){
+    if(!privateController||!currentSearchId)return;
+    stopRequested=true;if(stopBtn)stopBtn.disabled=true;if(status)status.textContent='Зупиняю пошук… Уже показані результати залишаються доступними.';
+    try{
+      const r=await fetch('/api/private-mode/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({search_id:currentSearchId})});
+      if(!r.ok)throw new Error(`HTTP ${r.status}`);
+      if(status)status.textContent='Команду Stop прийнято. Завершую активний етап і залишаю знайдене на екрані.';
+    }catch(_){privateController?.abort();if(status)status.textContent='Пошук зупинено локально. Уже показані результати залишено на екрані.';}
+  }
+
   async function privateSearch(){
     const q=String(prompt?.value||'').replace(/\s+/g,' ').trim();if(q.length<2){if(status)status.textContent='Введи пошуковий запит.';return;}if(privateController)return;
-    privateController=new AbortController();if(startBtn)startBtn.disabled=true;if(stopBtn)stopBtn.disabled=false;if(status)status.textContent='Шукаю. Уже показані результати залишаються доступними для перегляду; натисни «Стоп», щоб припинити очікування.';
-    try{const category=document.getElementById('nmPrivateCategory')?.value||'all',country=document.getElementById('nmPrivateCountry')?.value||'EU';const r=await fetch('/api/private-mode/search',{method:'POST',signal:privateController.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,category,country})});let p=null;try{p=await r.json();}catch(_){}if(r.status===404){mode(false,{mode:'public'});return;}if(!r.ok)throw new Error(p?.error||`HTTP ${r.status}`);renderRows(p||{});if(status)status.textContent=`Готово · ${(p?.results||[]).length} результатів · ${p?.provider_status||'complete'} · ${p?.intelligence_version||'search'}`;}catch(e){if(status)status.textContent=e?.name==='AbortError'?'Пошук зупинено. Уже показані результати залишено на екрані.':(e?.message||'Помилка глобального пошуку.');}finally{privateController=null;if(startBtn)startBtn.disabled=false;if(stopBtn)stopBtn.disabled=true;}
+    privateController=new AbortController();currentSearchId=makeSearchId();stopRequested=false;if(startBtn)startBtn.disabled=true;if(stopBtn)stopBtn.disabled=false;if(status)status.textContent='Шукаю. Уже показані результати залишаються доступними; «Стоп» припинить наступні етапи пошуку.';
+    try{
+      const category=document.getElementById('nmPrivateCategory')?.value||'all',country=document.getElementById('nmPrivateCountry')?.value||'EU';
+      const r=await fetch('/api/private-mode/search',{method:'POST',signal:privateController.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,category,country,search_id:currentSearchId})});let p=null;try{p=await r.json();}catch(_){}
+      if(r.status===404){mode(false,{mode:'public'});return;}if(!r.ok)throw new Error(p?.error||`HTTP ${r.status}`);renderRows(p||{});
+      if(status)status.textContent=(p?.stopped||stopRequested)?`Зупинено · ${(p?.results||[]).length} знайдених результатів залишено для перегляду.`:`Готово · ${(p?.results||[]).length} результатів · ${p?.provider_status||'complete'} · ${p?.intelligence_version||'search'}`;
+    }catch(e){if(status)status.textContent=e?.name==='AbortError'?'Пошук зупинено. Уже показані результати залишено на екрані.':(e?.message||'Помилка глобального пошуку.');}
+    finally{privateController=null;currentSearchId=null;stopRequested=false;if(startBtn)startBtn.disabled=false;if(stopBtn)stopBtn.disabled=true;}
   }
 
   startSearch=async function(){const v=String(prompt?.value||'').trim();if(await command(v))return;if(privateMode)return privateSearch();return baseStart();};
-  stopSearch=function(){if(privateMode){if(privateController){privateController.abort();if(status)status.textContent='Пошук зупинено. Переглядай уже показані результати.';}return;}return baseStop();};
+  stopSearch=function(){if(privateMode){requestPrivateStop();return;}return baseStop();};
 
   addStyle();panel();fetch('/api/private-mode/state',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(p=>{if(p?.mode==='private')mode(true,p);}).catch(()=>{});
 })();
