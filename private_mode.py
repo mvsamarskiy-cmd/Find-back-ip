@@ -10,6 +10,9 @@ import base64
 import hashlib
 import hmac
 import os
+import re
+import threading
+import time
 import unicodedata
 from dataclasses import dataclass
 from typing import Callable
@@ -25,6 +28,10 @@ SESSION_SCOPE = "private_global"
 SESSION_TTL_SECONDS = 12 * 60 * 60
 DEFAULT_COMMAND_LIMIT = "8 per minute"
 DEFAULT_SEARCH_LIMIT = "30 per minute"
+SEARCH_CANCEL_TTL_SECONDS = 10 * 60
+_SEARCH_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,96}$")
+_SEARCH_EVENTS: dict[str, tuple[threading.Event, float]] = {}
+_SEARCH_EVENTS_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -171,6 +178,43 @@ def _capability_payload() -> dict:
     }
 
 
+def _clean_search_id(value: object) -> str | None:
+    search_id = str(value or "").strip()
+    return search_id if _SEARCH_ID_RE.fullmatch(search_id) else None
+
+
+def _prune_search_events_locked(now: float) -> None:
+    stale = [
+        search_id for search_id, (_, created_at) in _SEARCH_EVENTS.items()
+        if now - created_at > SEARCH_CANCEL_TTL_SECONDS
+    ]
+    for search_id in stale:
+        _SEARCH_EVENTS.pop(search_id, None)
+
+
+def _register_search(search_id: str) -> threading.Event:
+    event = threading.Event()
+    now = time.monotonic()
+    with _SEARCH_EVENTS_LOCK:
+        _prune_search_events_locked(now)
+        _SEARCH_EVENTS[search_id] = (event, now)
+    return event
+
+
+def _cancel_search(search_id: str) -> bool:
+    with _SEARCH_EVENTS_LOCK:
+        row = _SEARCH_EVENTS.get(search_id)
+        if not row:
+            return False
+        row[0].set()
+        return True
+
+
+def _unregister_search(search_id: str) -> None:
+    with _SEARCH_EVENTS_LOCK:
+        _SEARCH_EVENTS.pop(search_id, None)
+
+
 def private_mode_diagnostics() -> dict:
     config = _config()
     capabilities = global_search_capabilities()
@@ -185,6 +229,7 @@ def private_mode_diagnostics() -> dict:
             "ttl_seconds": SESSION_TTL_SECONDS,
         },
         "global_search_provider_configured": bool(capabilities.get("provider_configured")),
+        "cooperative_search_stop": True,
     }
 
 
@@ -226,6 +271,17 @@ def install_private_mode_routes(app, app_module=None, *, global_searcher: Callab
             return jsonify(_capability_payload())
         return jsonify({"mode": "public"})
 
+    def stop_view():
+        config = _config()
+        if not _session_active(config):
+            return _hide_private_route()
+        payload = _json_body()
+        search_id = _clean_search_id(payload.get("search_id"))
+        if not search_id:
+            return jsonify({"error": "Valid search_id is required"}), 400
+        active = _cancel_search(search_id)
+        return jsonify({"handled": True, "active": active, "search_id": search_id})
+
     def search_view():
         config = _config()
         if not _session_active(config):
@@ -238,18 +294,33 @@ def install_private_mode_routes(app, app_module=None, *, global_searcher: Callab
             return jsonify({"error": "Query must contain at most 2000 characters"}), 400
         category = str(payload.get("category") or "all").strip().lower()
         country = str(payload.get("country") or "EU").strip()
+        search_id = _clean_search_id(payload.get("search_id"))
+        event = _register_search(search_id) if search_id else None
+        kwargs = {"category": category, "country": country}
+        if event is not None:
+            kwargs["cancel_checker"] = event.is_set
         try:
-            result = global_searcher(query, category=category, country=country)
+            result = global_searcher(query, **kwargs)
+            if not isinstance(result, dict):
+                result = {"query": query, "results": [], "provider_status": "malformed"}
+            if event is not None and event.is_set():
+                result["stopped"] = True
+            if search_id:
+                result["search_id"] = search_id
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
         except Exception:
             app.logger.exception("Private global search failed")
             return jsonify({"error": "Temporary global search error"}), 503
+        finally:
+            if search_id:
+                _unregister_search(search_id)
         return jsonify(result)
 
     if limiter is not None:
         command_view = limiter.limit(DEFAULT_COMMAND_LIMIT)(command_view)
         search_view = limiter.limit(DEFAULT_SEARCH_LIMIT)(search_view)
+        stop_view = limiter.limit(DEFAULT_SEARCH_LIMIT)(stop_view)
 
     app.add_url_rule(
         "/api/private-mode/command",
@@ -267,6 +338,12 @@ def install_private_mode_routes(app, app_module=None, *, global_searcher: Callab
         "/api/private-mode/search",
         endpoint="private_mode_search",
         view_func=search_view,
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        "/api/private-mode/stop",
+        endpoint="private_mode_stop",
+        view_func=stop_view,
         methods=["POST"],
     )
 

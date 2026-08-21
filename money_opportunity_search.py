@@ -41,6 +41,15 @@ def _enabled_direct_verification() -> bool:
     return _flag("MONEY_DIRECT_VERIFICATION_ENABLED", "1")
 
 
+def _cancelled(cancel_checker) -> bool:
+    if cancel_checker is None:
+        return False
+    try:
+        return bool(cancel_checker())
+    except Exception:
+        return False
+
+
 def _is_onion(url: object) -> bool:
     try:
         return (urlsplit(str(url or "")).hostname or "").lower().endswith(".onion")
@@ -134,10 +143,14 @@ def _aggregate_status(statuses: list[str], result_count: int) -> str:
         return "unknown"
     if all(status == "rate_limited" for status in statuses):
         return "rate_limited"
+    if "stopped" in statuses:
+        return "stopped"
     return statuses[-1]
 
 
-def _safe_standard_call(lane, *, provider, providers, requester, poster):
+def _safe_standard_call(lane, *, provider, providers, requester, poster, cancel_checker=None):
+    if _cancelled(cancel_checker):
+        return "stopped", []
     try:
         status, rows = _run_standard(
             lane["query"], provider=provider, providers=providers,
@@ -150,32 +163,41 @@ def _safe_standard_call(lane, *, provider, providers, requester, poster):
     return status, rows
 
 
-def _search_standard_lanes(plan, *, provider, providers, requester, poster):
+def _search_standard_lanes(plan, *, provider, providers, requester, poster, cancel_checker=None):
     lanes = list(plan.get("lanes") or [])
     if not lanes:
         return [], []
+
     outcomes: dict[int, tuple[str, list]] = {}
+    executed = {0}
     outcomes[0] = _safe_standard_call(
         lanes[0], provider=provider, providers=providers,
-        requester=requester, poster=poster,
+        requester=requester, poster=poster, cancel_checker=cancel_checker,
     )
+    if _cancelled(cancel_checker):
+        return [outcomes[0]], [lanes[0]]
+
     remaining = list(enumerate(lanes[1:], start=1))
     if remaining:
         with ThreadPoolExecutor(max_workers=min(MAX_EXPANSION_CONCURRENCY, len(remaining))) as pool:
-            futures = {
-                pool.submit(
+            futures = {}
+            for index, lane in remaining:
+                if _cancelled(cancel_checker):
+                    break
+                executed.add(index)
+                futures[pool.submit(
                     _safe_standard_call, lane, provider=provider, providers=providers,
-                    requester=requester, poster=poster,
-                ): index
-                for index, lane in remaining
-            }
+                    requester=requester, poster=poster, cancel_checker=cancel_checker,
+                )] = index
             for future in as_completed(futures):
                 index = futures[future]
                 try:
                     outcomes[index] = future.result()
                 except Exception:
                     outcomes[index] = ("error", [])
-    return [outcomes.get(index, ("unknown", [])) for index in range(len(lanes))], lanes
+
+    ordered = sorted(executed)
+    return [outcomes.get(index, ("stopped", [])) for index in ordered], [lanes[index] for index in ordered]
 
 
 def _attach_direct_verification(result: dict, rows: list[dict]) -> dict:
@@ -253,7 +275,7 @@ def _apply_eligibility(result: dict, profile: dict) -> dict:
 
 def search_money_opportunities(
     query, *, category="all", country="EU", requester=requests.get, poster=requests.post,
-    evidence_fetcher=None,
+    evidence_fetcher=None, cancel_checker=None,
 ):
     plan = build_money_search_plan(query, country=country, category=category)
     profile = plan["profile"]
@@ -265,12 +287,14 @@ def search_money_opportunities(
             "search_plan": plan["queries"], "search_lanes": plan["lanes"],
             "intelligence_version": MONEY_OPPORTUNITY_SEARCH_VERSION,
             "truth_note": "No live provider is configured; no opportunity candidates were generated.",
+            "stopped": _cancelled(cancel_checker),
         }, profile=profile)
         return _apply_eligibility(result, profile)
 
     collected, seen, statuses = [], set(), []
     outcomes, executed_lanes = _search_standard_lanes(
         plan, provider=provider, providers=providers, requester=requester, poster=poster,
+        cancel_checker=cancel_checker,
     )
     for query_index, (lane, outcome) in enumerate(zip(executed_lanes, outcomes)):
         status, rows = outcome
@@ -280,8 +304,11 @@ def search_money_opportunities(
             query_index=query_index, collected=collected, seen=seen, transport="web",
         )
 
+    stopped = _cancelled(cancel_checker)
     tor_status, tor_rows = "not_attempted", []
-    if _enabled_tor() and providers.get("browser_eye"):
+    tor_attempted = False
+    if not stopped and _enabled_tor() and providers.get("browser_eye"):
+        tor_attempted = True
         try:
             tor_status, tor_rows = _run_tor_exact(profile["query"], providers, poster)
         except requests.RequestException:
@@ -294,33 +321,39 @@ def search_money_opportunities(
             query_index=0, collected=collected, seen=seen, transport="tor",
         )
 
+    stopped = stopped or _cancelled(cancel_checker)
     collected.sort(key=lambda row: (-int(row.get("official_source") or False), -int(row.get("retrieval_score") or 0), int(row.get("query_index") or 0)))
     raw_payload = {
         "query": profile["query"], "category": category, "country": profile["country"],
-        "provider": provider, "provider_status": _aggregate_status(statuses, len(collected)),
+        "provider": provider, "provider_status": "stopped" if stopped else _aggregate_status(statuses, len(collected)),
         "results": collected[:MAX_RAW_RESULTS],
         "search_plan": [lane["query"] for lane in executed_lanes],
         "search_lanes": executed_lanes, "money_query_plan": plan,
         "tor_retrieval": {
-            "attempted": bool(_enabled_tor() and providers.get("browser_eye")),
+            "attempted": tor_attempted,
             "provider_status": tor_status, "exact_query_once": True, "transport": "tor",
             "truth_semantics": "tor_retrieval_evidence_not_verified_fact",
         },
         "intelligence_version": MONEY_OPPORTUNITY_SEARCH_VERSION,
+        "stopped": stopped,
     }
 
-    direct_enabled = _enabled_direct_verification() and bool(providers.get("browser_eye"))
+    direct_enabled = _enabled_direct_verification() and bool(providers.get("browser_eye")) and not stopped
     enriched = enrich_payload(
         raw_payload, query=profile["query"], country=profile["country"], requester=requester,
-        verify_limit=0 if direct_enabled else 6,
+        verify_limit=0 if direct_enabled or stopped else 6,
     )
     verified_rows = enriched.get("results") or []
-    if direct_enabled:
+    if direct_enabled and not _cancelled(cancel_checker):
         if evidence_fetcher is None:
             verified_rows = apply_money_verification(verified_rows, limit=3)
         else:
             verified_rows = apply_money_verification(verified_rows, evidence_fetcher=evidence_fetcher, limit=3)
         enriched["results"] = verified_rows
+    elif _cancelled(cancel_checker):
+        stopped = True
+        enriched["stopped"] = True
+        enriched["provider_status"] = "stopped"
 
     result = normalize_money_payload(enriched, profile=profile)
     result = _attach_direct_verification(result, verified_rows)
@@ -329,9 +362,11 @@ def search_money_opportunities(
     result["intelligence_version"] = MONEY_OPPORTUNITY_SEARCH_VERSION
     result["requested_category"] = str(category or "all")
     result["material_opportunity_intent"] = bool(profile.get("money_intent"))
+    result["stopped"] = bool(stopped or _cancelled(cancel_checker))
     result["direct_verification"] = {
         "enabled": direct_enabled,
         "attempted_count": sum(1 for row in verified_rows if row.get("money_direct_verification")),
+        "skipped_due_to_stop": bool(result["stopped"] and not direct_enabled),
         "capabilities": money_verification_capabilities(),
     }
     return result
@@ -350,6 +385,8 @@ def money_opportunity_search_capabilities() -> dict:
         "standard_exact_query_first": True,
         "expansion_concurrency_max": MAX_EXPANSION_CONCURRENCY,
         "tor_exact_query_max_calls": 1,
+        "cooperative_cancellation": True,
+        "cancellation_boundaries": ["before_standard_lane", "before_tor", "before_direct_verification"],
         "poland_eu_priority": True,
         "off_market_scope": "publicly_discoverable_only",
         "automated_purchase_or_contact": False,
