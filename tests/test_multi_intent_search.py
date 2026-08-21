@@ -59,6 +59,14 @@ class MultiIntentPlannerTests(unittest.TestCase):
         self.assertIn("news", decision["routes"])
         self.assertLessEqual(len(decision["routes"]), 3)
 
+    def test_product_local_and_explicit_news_can_form_bounded_triple(self):
+        decision = classify_search_plan(
+            "latest iPhone 17 news, where to buy in warsaw today"
+        )
+        self.assertEqual(decision["route"], "multi")
+        self.assertEqual(set(decision["routes"]), {"product", "local", "news"})
+        self.assertEqual(len(decision["routes"]), 3)
+
     def test_simple_ceo_query_does_not_fan_out_into_person_lane(self):
         decision = classify_search_plan("Who is the CEO of Nvidia?")
         self.assertEqual(decision["route"], "company")
@@ -70,6 +78,20 @@ class MultiIntentPlannerTests(unittest.TestCase):
         self.assertIn("current", facets)
         decision = classify_search_plan("best price iPhone 17 today")
         self.assertEqual(decision["routes"], ["product"])
+
+    def test_existing_false_positive_guards_survive_v3_composition(self):
+        self.assertEqual(
+            classify_search_plan("weather today in Warsaw")["route"],
+            "general_web",
+        )
+        self.assertEqual(
+            classify_search_plan("best price Bitcoin today")["route"],
+            "general_web",
+        )
+        self.assertEqual(
+            classify_search_plan("What is investment banking?")["route"],
+            "general_web",
+        )
 
     def test_opportunity_precedence_remains_single_lane(self):
         decision = classify_search_plan(
