@@ -6,16 +6,35 @@ from flask import jsonify
 from telegram_bootstrap import app
 import app as app_module
 from global_search_provider_smoke import maybe_start_provider_smoke
+from money_opportunity_graph_search import search_money_opportunities as search_money_with_graph
 from private_mode import install_private_mode_routes, private_mode_diagnostics
 from private_research import install_private_research_routes, private_research_diagnostics
 from universal_search_tor import search_universal, universal_search_capabilities
 
 
-install_private_mode_routes(app, app_module, global_searcher=search_universal)
+def search_private_universal(
+    query, *, category="all", country="EU", requester=None, poster=None,
+    cancel_checker=None,
+):
+    """Keep Universal Search intact while making Money searches cooperatively cancellable."""
+    kwargs = {"category": category, "country": country}
+    if requester is not None:
+        kwargs["requester"] = requester
+    if poster is not None:
+        kwargs["poster"] = poster
+    if cancel_checker is not None:
+        def cancellable_money(*args, **money_kwargs):
+            money_kwargs["cancel_checker"] = cancel_checker
+            return search_money_with_graph(*args, **money_kwargs)
+        kwargs["opportunity_searcher"] = cancellable_money
+    return search_universal(query, **kwargs)
+
+
+install_private_mode_routes(app, app_module, global_searcher=search_private_universal)
 install_private_research_routes(app, app_module)
 maybe_start_provider_smoke()
 
-PRIVATE_GLOBAL_MODE_TAG = '<script src="/static/private_global_mode.js?v=2"></script>'
+PRIVATE_GLOBAL_MODE_TAG = '<script src="/static/private_global_mode.js?v=3"></script>'
 UNIVERSAL_GLOBAL_MODE_TAG = '<script src="/static/universal_global_mode.js?v=2"></script>'
 MONEY_OPPORTUNITY_UI_TAG = '<script src="/static/money_opportunity_ui.js?v=1"></script>'
 MONEY_ELIGIBILITY_UI_TAG = '<script src="/static/money_eligibility_ui.js?v=1"></script>'
