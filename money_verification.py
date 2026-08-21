@@ -10,12 +10,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Callable
 
+from money_eligibility import extract_eligibility_rules
 from money_sources import source_for_host
 from opportunity_intelligence import extract_amount, extract_deadline, extract_eligibility, infer_status
 from research_evidence import fetch_research_evidence
 
 
-MONEY_VERIFICATION_VERSION = "money-direct-verification-v1"
+MONEY_VERIFICATION_VERSION = "money-direct-verification-v1.1"
 DEFAULT_VERIFY_LIMIT = 3
 MAX_VERIFY_LIMIT = 5
 
@@ -48,7 +49,6 @@ def _is_program_like(row: dict) -> bool:
 
 
 def _active_program_verified(row: dict, evidence: dict, status: dict, deadline: dict | None) -> bool:
-    """Conservative current-call confirmation for official/public program pages."""
     source = source_for_host(row.get("url") or row.get("host"))
     tier = (source or {}).get("tier")
     if tier not in {"official", "public"} or not _is_program_like(row):
@@ -74,6 +74,7 @@ def verify_money_source(row: dict, *, evidence_fetcher: Callable = fetch_researc
             "source_observed": False,
             "current_call_verified": False,
             "checked_at": checked_at,
+            "eligibility_rules": [],
         }
     try:
         evidence = evidence_fetcher(url)
@@ -84,6 +85,7 @@ def verify_money_source(row: dict, *, evidence_fetcher: Callable = fetch_researc
             "source_observed": False,
             "current_call_verified": False,
             "checked_at": checked_at,
+            "eligibility_rules": [],
         }
     if not isinstance(evidence, dict):
         evidence = {}
@@ -95,6 +97,7 @@ def verify_money_source(row: dict, *, evidence_fetcher: Callable = fetch_researc
     eligibility = extract_eligibility(body) if observed else {
         "applicant_types": [], "individual_allowed": None, "company_required": None, "geography": []
     }
+    eligibility_rules = extract_eligibility_rules(body) if observed else []
     status = infer_status(body, deadline) if observed else {
         "value": "unknown", "confidence": 0.0, "reason": "source_not_observed"
     }
@@ -114,6 +117,7 @@ def verify_money_source(row: dict, *, evidence_fetcher: Callable = fetch_researc
         "amount": amount,
         "deadline": deadline,
         "eligibility": eligibility,
+        "eligibility_rules": eligibility_rules,
         "status": status,
         "public_contacts": evidence.get("public_contacts") or {},
         "truth_semantics": "direct_page_observation_not_legal_eligibility_or_profit_proof",
@@ -121,7 +125,6 @@ def verify_money_source(row: dict, *, evidence_fetcher: Callable = fetch_researc
 
 
 def apply_money_verification(rows: list[dict], *, evidence_fetcher: Callable = fetch_research_evidence, limit: int = DEFAULT_VERIFY_LIMIT) -> list[dict]:
-    """Verify a bounded top set concurrently and merge stronger direct evidence."""
     output = [dict(row) for row in rows if isinstance(row, dict)]
     limit = max(0, min(MAX_VERIFY_LIMIT, int(limit)))
     if not output or limit <= 0:
@@ -141,6 +144,7 @@ def apply_money_verification(rows: list[dict], *, evidence_fetcher: Callable = f
                     "source_observed": False,
                     "current_call_verified": False,
                     "checked_at": datetime.now(timezone.utc).isoformat(),
+                    "eligibility_rules": [],
                 }
 
     for index, verification in verified.items():
@@ -165,6 +169,7 @@ def apply_money_verification(rows: list[dict], *, evidence_fetcher: Callable = f
             "amount": verification.get("amount") or existing.get("amount"),
             "deadline": verification.get("deadline") or existing.get("deadline"),
             "eligibility": verification.get("eligibility") or existing.get("eligibility"),
+            "eligibility_rules": verification.get("eligibility_rules") or existing.get("eligibility_rules") or [],
             "status": verification.get("status") or existing.get("status"),
             "verification": source_verification,
         }
@@ -179,6 +184,7 @@ def money_verification_capabilities() -> dict:
         "concurrent_max": 3,
         "transport": "hardened_browser_eye_tor",
         "current_call_verification": "official_or_public_program_page_plus_direct_active_evidence",
+        "eligibility_rule_extraction": True,
         "market_listing_availability_inferred": False,
         "legal_eligibility_inferred": False,
         "profit_inferred": False,

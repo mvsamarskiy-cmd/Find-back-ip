@@ -1,10 +1,10 @@
-"""Broad Money / Material Opportunity Intelligence v2.1 search orchestrator.
+"""Broad Money / Material Opportunity Intelligence v2.2 search orchestrator.
 
-The exact user wording is always retrieval lane zero. Bounded deterministic
-expansions search mechanisms the user may not know by name. Expansion lanes run
-with bounded concurrency after the exact lane. A single Tor exact-query lane is
-additive. A small top set can then be inspected through the hardened read-only
-source-evidence transport before final normalization/ranking.
+The exact user wording is retrieval lane zero. Bounded mechanism expansions run
+concurrently after it. A single Tor exact-query lane is additive. A small top
+set is inspected through the hardened read-only source-evidence transport. The
+Eligibility Engine then compares observed mandatory rules only against explicit
+profile facts, preserving missing facts as unknown.
 """
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ import requests
 from urllib.parse import urlsplit
 
 import global_search as base_search
+from money_eligibility import money_eligibility_capabilities
+from money_eligibility_apply import apply_eligibility_to_payload, eligibility_apply_capabilities
 from money_intelligence import money_intelligence_capabilities, normalize_money_payload
 from money_query_planner import build_money_search_plan, money_query_planner_capabilities
 from money_sources import source_affinity, source_catalog_capabilities, source_for_host
@@ -22,7 +24,7 @@ from money_verification import apply_money_verification, money_verification_capa
 from opportunity_intelligence import enrich_payload
 
 
-MONEY_OPPORTUNITY_SEARCH_VERSION = "money-opportunity-search-v2.1"
+MONEY_OPPORTUNITY_SEARCH_VERSION = "money-opportunity-search-v2.2"
 MAX_RAW_RESULTS = 140
 MAX_EXPANSION_CONCURRENCY = 3
 
@@ -67,7 +69,7 @@ def _run_tor_exact(query, providers, poster):
         timeout=32,
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "NameMachine-money-opportunity/2.1",
+            "User-Agent": "NameMachine-money-opportunity/2.2",
             "X-Global-Search-Token": providers["browser_token"],
         },
     )
@@ -149,7 +151,6 @@ def _safe_standard_call(lane, *, provider, providers, requester, poster):
 
 
 def _search_standard_lanes(plan, *, provider, providers, requester, poster):
-    """Run exact lane first, then bounded expansion lanes concurrently."""
     lanes = list(plan.get("lanes") or [])
     if not lanes:
         return [], []
@@ -206,7 +207,6 @@ def _attach_direct_verification(result: dict, rows: list[dict]) -> dict:
 
 
 def _project_records_to_results(result: dict) -> dict:
-    """Expose v2.1 ranking in the legacy result list without losing compatibility."""
     records = result.get("money_records") or []
     record_by_url = {}
     for record in records:
@@ -230,17 +230,25 @@ def _project_records_to_results(result: dict) -> dict:
         row["category"] = record.get("opportunity_type") or row.get("category")
         row["fit"] = {
             "score": score,
-            "label": "blocked" if blockers else "high" if score >= 75 else "medium" if score >= 55 else "low",
+            "label": "blocked" if record.get("eligibility_state") == "ineligible" or blockers else "high" if score >= 75 else "medium" if score >= 55 else "low",
             "blockers": blockers,
         }
         projected.append(row)
     projected.sort(key=lambda row: (
+        {"eligible_candidate": 0, "possible": 1, "unknown": 2, "ineligible": 3}.get(str((row.get("money_record") or {}).get("eligibility_state")), 2),
         -int(((row.get("money_record") or {}).get("practical_ranking") or {}).get("score") or 0),
         -int(row.get("official_source") or False),
         -int(row.get("retrieval_score") or 0),
     ))
     result["results"] = projected
     return result
+
+
+def _apply_eligibility(result: dict, profile: dict) -> dict:
+    eligibility_profile = profile.get("eligibility_profile") or {
+        "facts": {}, "known_fields": [], "truth_semantics": "no_explicit_eligibility_profile_facts"
+    }
+    return apply_eligibility_to_payload(result, eligibility_profile=eligibility_profile)
 
 
 def search_money_opportunities(
@@ -251,13 +259,14 @@ def search_money_opportunities(
     profile = plan["profile"]
     provider, providers = _provider_choice()
     if provider == "none":
-        return normalize_money_payload({
+        result = normalize_money_payload({
             "query": profile["query"], "category": category, "country": profile["country"],
             "provider": "none", "provider_status": "unconfigured", "results": [],
             "search_plan": plan["queries"], "search_lanes": plan["lanes"],
             "intelligence_version": MONEY_OPPORTUNITY_SEARCH_VERSION,
             "truth_note": "No live provider is configured; no opportunity candidates were generated.",
         }, profile=profile)
+        return _apply_eligibility(result, profile)
 
     collected, seen, statuses = [], set(), []
     outcomes, executed_lanes = _search_standard_lanes(
@@ -315,6 +324,7 @@ def search_money_opportunities(
 
     result = normalize_money_payload(enriched, profile=profile)
     result = _attach_direct_verification(result, verified_rows)
+    result = _apply_eligibility(result, profile)
     result = _project_records_to_results(result)
     result["intelligence_version"] = MONEY_OPPORTUNITY_SEARCH_VERSION
     result["requested_category"] = str(category or "all")
@@ -335,13 +345,15 @@ def money_opportunity_search_capabilities() -> dict:
         "sources": source_catalog_capabilities(),
         "intelligence": money_intelligence_capabilities(),
         "direct_verification": money_verification_capabilities(),
+        "eligibility": money_eligibility_capabilities(),
+        "eligibility_application": eligibility_apply_capabilities(),
         "standard_exact_query_first": True,
         "expansion_concurrency_max": MAX_EXPANSION_CONCURRENCY,
         "tor_exact_query_max_calls": 1,
         "poland_eu_priority": True,
         "off_market_scope": "publicly_discoverable_only",
         "automated_purchase_or_contact": False,
-        "truth_semantics": "discovery_not_current_status_not_eligibility_not_profit_guarantee",
+        "truth_semantics": "discovery_not_current_status_not_legal_eligibility_not_profit_guarantee",
     }
 
 
