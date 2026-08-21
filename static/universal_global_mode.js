@@ -19,7 +19,11 @@
     if (prompt) {
       prompt.placeholder = 'Пиши будь-який глобальний запит — система сама вибере пошуковий маршрут…';
     }
-    if (category?.options?.length && category.options[0]?.value === 'all') {
+    if (
+      category?.options?.length &&
+      category.options[0]?.value === 'all' &&
+      category.options[0]?.textContent !== 'Авто'
+    ) {
       category.options[0].textContent = 'Авто';
     }
     if (status?.textContent === 'Opportunity Intelligence активний.') {
