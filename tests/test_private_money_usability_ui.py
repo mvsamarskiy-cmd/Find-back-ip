@@ -34,17 +34,17 @@ class PrivateMoneyUsabilityUiTests(unittest.TestCase):
         self.assertIn("function deadlineOf(row)", self.source)
         self.assertIn("function observedAt(row)", self.source)
 
-    def test_stop_preserves_visible_results(self):
-        self.assertIn("privateController.abort()", self.source)
-        self.assertIn("Пошук зупинено. Переглядай уже показані результати.", self.source)
-        self.assertIn("Уже показані результати залишено на екрані.", self.source)
+    def test_stop_uses_server_cancellation_and_preserves_results(self):
+        self.assertIn("/api/private-mode/stop", self.source)
+        self.assertIn("search_id:currentSearchId", self.source)
+        self.assertIn("Команду Stop прийнято", self.source)
+        self.assertIn("знайдених результатів залишено для перегляду", self.source)
+        self.assertIn("privateController?.abort()", self.source)
 
-    def test_all_money_types_and_tor_state_are_visible(self):
-        self.assertIn("Усі 47 типів", self.source)
-        self.assertIn("off_market_public", self.source)
-        self.assertIn("market_dislocation", self.source)
-        self.assertIn("Tor: авто", self.source)
-        self.assertIn("tor_retrieval", self.source)
+    def test_taxonomy_and_transport_are_delegated_to_v24_overlay(self):
+        self.assertIn('id="nmPrivateCategory"', self.source)
+        self.assertNotIn('id="nmPrivateType"', self.source)
+        self.assertNotIn('id="nmTorState"', self.source)
 
 
 if __name__ == "__main__":
