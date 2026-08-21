@@ -1,1 +1,1 @@
-web: gunicorn telegram_bootstrap:app
+web: gunicorn private_global_bootstrap:app
