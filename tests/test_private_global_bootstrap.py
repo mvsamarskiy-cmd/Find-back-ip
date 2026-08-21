@@ -11,9 +11,9 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("/static/search_actions_v2.js?v=1", body)
         self.assertIn("/static/flow_clarity_v4.js?v=1", body)
-        self.assertIn("/static/private_global_mode.js?v=1", body)
-        self.assertLess(body.index("/static/search_actions_v2.js?v=1"), body.index("/static/private_global_mode.js?v=1"))
-        self.assertLess(body.index("/static/flow_clarity_v4.js?v=1"), body.index("/static/private_global_mode.js?v=1"))
+        self.assertIn("/static/private_global_mode.js?v=2", body)
+        self.assertLess(body.index("/static/search_actions_v2.js?v=1"), body.index("/static/private_global_mode.js?v=2"))
+        self.assertLess(body.index("/static/flow_clarity_v4.js?v=1"), body.index("/static/private_global_mode.js?v=2"))
 
     def test_private_diagnostics_expose_state_not_secrets(self):
         payload = self.client.get("/api/private-mode/diagnostics").get_json()
