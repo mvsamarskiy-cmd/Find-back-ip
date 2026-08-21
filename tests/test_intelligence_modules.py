@@ -74,6 +74,10 @@ class IntelligenceModuleTests(unittest.TestCase):
             classify_research_module("weather near me")["route"],
             "local",
         )
+        self.assertEqual(
+            classify_research_module("What is investment banking?")["route"],
+            "general_web",
+        )
 
     def test_local_and_product_beat_incidental_current_words(self):
         self.assertEqual(
