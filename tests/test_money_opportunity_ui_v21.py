@@ -24,9 +24,16 @@ class MoneyOpportunityUiV21Tests(unittest.TestCase):
         source = (ROOT / "static" / "money_opportunity_ui.js").read_text(encoding="utf-8")
         self.assertIn("гарантована доступність", source)
         self.assertIn("source_urls", source)
-        self.assertIn("target='_blank'", source.replace('target =', 'target=')) if False else None
         self.assertIn("a.target='_blank'", source)
         self.assertIn("noopener noreferrer", source)
+
+    def test_ui_clears_stale_money_state_on_non_money_response(self):
+        source = (ROOT / "static" / "money_opportunity_ui.js").read_text(encoding="utf-8")
+        self.assertIn("function clearMoneyUi()", source)
+        self.assertIn("latest=null", source)
+        self.assertIn("nmMoneySummary", source)
+        self.assertIn(".nmm-v21", source)
+        self.assertIn("queueMicrotask(clearMoneyUi)", source)
 
 
 if __name__ == "__main__":
