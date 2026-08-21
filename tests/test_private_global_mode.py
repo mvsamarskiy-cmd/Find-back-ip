@@ -9,6 +9,16 @@ from global_search import build_search_plan, search_global
 from private_mode import hash_secret_for_env, install_private_mode_routes, verify_secret
 
 
+class FakeResponse:
+    def __init__(self, status_code=200, payload=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.content = b"{}"
+
+    def json(self):
+        return self._payload
+
+
 class PrivateGlobalModeTests(unittest.TestCase):
     def env(self):
         return {
@@ -38,6 +48,7 @@ class PrivateGlobalModeTests(unittest.TestCase):
 
     def test_unlock_search_and_lock_are_server_side(self):
         calls = []
+
         def fake_search(query, **kwargs):
             calls.append((query, kwargs))
             return {"query": query, "provider_status": "complete", "results": [{"title": "Verified test row", "url": "https://example.test"}]}
@@ -47,7 +58,9 @@ class PrivateGlobalModeTests(unittest.TestCase):
             unlock = client.post("/api/private-mode/command", json={"command": "open-test-mode"}, base_url="https://localhost")
             self.assertEqual(unlock.get_json()["mode"], "private")
             cookie = unlock.headers.get("Set-Cookie", "")
-            self.assertIn("HttpOnly", cookie); self.assertIn("Secure", cookie); self.assertIn("SameSite=Strict", cookie)
+            self.assertIn("HttpOnly", cookie)
+            self.assertIn("Secure", cookie)
+            self.assertIn("SameSite=Strict", cookie)
             self.assertEqual(client.get("/api/private-mode/state", base_url="https://localhost").get_json()["mode"], "private")
             search = client.post("/api/private-mode/search", json={"query": "AI grants", "category": "grant", "country": "PL"}, base_url="https://localhost")
             self.assertEqual(search.status_code, 200)
@@ -62,11 +75,44 @@ class PrivateGlobalModeTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"handled": False})
 
     def test_global_search_never_fabricates_when_provider_is_missing(self):
-        with patch.dict(os.environ, {"BRAVE_SEARCH_API_KEY": ""}, clear=False):
+        env = {
+            "BRAVE_SEARCH_API_KEY": "",
+            "BROWSER_EYE_URL": "",
+            "GLOBAL_SEARCH_BROWSER_TOKEN": "",
+        }
+        with patch.dict(os.environ, env, clear=False):
             payload = search_global("AI grants for startups", category="grant", country="PL")
         self.assertEqual(payload["provider_status"], "unconfigured")
         self.assertEqual(payload["results"], [])
         self.assertTrue(payload["search_plan"])
+
+    def test_browser_eye_is_used_when_brave_is_not_configured(self):
+        calls = []
+
+        def fake_post(url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse(200, {
+                "provider_status": "complete",
+                "results": [{
+                    "title": "PARP funding call",
+                    "description": "Open application call for SMEs",
+                    "url": "https://www.parp.gov.pl/example-call",
+                }],
+            })
+
+        env = {
+            "BRAVE_SEARCH_API_KEY": "",
+            "BROWSER_EYE_URL": "http://browser-eye.internal",
+            "GLOBAL_SEARCH_BROWSER_TOKEN": "test-browser-token",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            payload = search_global("AI funding", category="business_aid", country="PL", poster=fake_post)
+
+        self.assertEqual(payload["provider"], "browser_eye_google")
+        self.assertTrue(payload["results"])
+        self.assertTrue(payload["results"][0]["official_source"])
+        self.assertEqual(calls[0][0], "http://browser-eye.internal/v1/web-search")
+        self.assertEqual(calls[0][1]["headers"]["X-Global-Search-Token"], "test-browser-token")
 
     def test_search_plan_has_challenge_sources(self):
         plan = build_search_plan("AI robotics", category="challenge", country="EU")
