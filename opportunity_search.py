@@ -32,14 +32,23 @@ INTENT_PATTERNS = {
     ),
 }
 
+BROAD_MONEY_OPPORTUNITY_PATTERNS = (
+    r"\b(?:money|financial|material) opportunit\w*\b",
+    r"\bwhere (?:is|are) the money\b",
+    r"\bmożliwoś\w* (?:finansow\w*|zarobk\w*|biznesow\w*)\b",
+    r"\bgdzie (?:są|sa) pieni[aą]dze\b",
+    r"\b(?:матеріальн|фінансов|грошов)\w* можливост\w*\b",
+    r"\bде (?:є|знайти) грош\w*\b",
+    r"\bусі можливост\w*.*(?:грош|зароб|фінанс)\w*\b",
+)
+
 
 def infer_query_category(query):
     """Infer one high-confidence opportunity vertical from natural language.
 
     Legacy categories stay stable. Actionable money/material needs that do not
     name a legacy mechanism are routed as ``material`` so the universal router
-    can select the broader Money Opportunity v2 lane without mislabelling them
-    as grants or generic funding.
+    can select the broader Money Opportunity v2 lane without mislabelling them.
     """
     text = " ".join(str(query or "").split()).casefold()
     scores = {}
@@ -49,6 +58,8 @@ def infer_query_category(query):
             scores[category] = score
     if scores:
         return sorted(scores, key=lambda category: (-scores[category], list(INTENT_PATTERNS).index(category)))[0]
+    if any(re.search(pattern, text, flags=re.I) for pattern in BROAD_MONEY_OPPORTUNITY_PATTERNS):
+        return "material"
     if looks_like_material_opportunity(query):
         return "material"
     return "all"
