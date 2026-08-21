@@ -44,6 +44,10 @@ class IntelligenceModuleTests(unittest.TestCase):
             classify_research_module("cost to start a company")["route"],
             "product",
         )
+        self.assertNotEqual(
+            classify_research_module("best price Bitcoin today")["route"],
+            "product",
+        )
 
     def test_local_route_needs_place_context_and_geography_or_proximity(self):
         self.assertEqual(
@@ -59,8 +63,16 @@ class IntelligenceModuleTests(unittest.TestCase):
             "local",
         )
         self.assertEqual(
+            classify_research_module("sushi near me")["route"],
+            "local",
+        )
+        self.assertEqual(
             classify_research_module("weather today in Warsaw")["route"],
             "general_web",
+        )
+        self.assertNotEqual(
+            classify_research_module("weather near me")["route"],
+            "local",
         )
 
     def test_local_and_product_beat_incidental_current_words(self):
