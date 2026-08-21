@@ -1,8 +1,8 @@
 """Deterministic taxonomy for Money / Material Opportunity Intelligence v2.
 
-The taxonomy is intentionally broader than grants.  It covers legal/publicly
+The taxonomy is intentionally broader than grants. It covers legal/publicly
 retrievable ways to obtain capital, revenue, assets, savings or economically
-useful access.  Classification is evidence routing only: matching a type does
+useful access. Classification is evidence routing only: matching a type does
 not prove that an opportunity is active, profitable or available to the user.
 """
 from __future__ import annotations
@@ -27,8 +27,6 @@ class MoneyType:
     competition: int
 
 
-# Scores use a simple 1..5 ordinal scale.  They are priors only and are exposed
-# as such by the ranker; evidence from a concrete call/deal must dominate them.
 _TYPES = (
     MoneyType("grant", "funding", "non_repayable", False, (r"\bgrant\w*\b", r"\bdotacj\w*\b", r"\bгрант\w*\b"), 2, 4, 2, 4),
     MoneyType("subsidy", "funding", "non_repayable", False, (r"\bsubsid\w*\b", r"\bdofinansowan\w*\b", r"\bдотац\w*\b", r"\bсубсид\w*\b"), 2, 4, 2, 4),
@@ -46,15 +44,13 @@ _TYPES = (
     MoneyType("research_funding", "funding", "non_repayable_or_mixed", None, (r"\bresearch funding\b", r"\bgrant\w* badawcz\w*\b", r"\bfinansowan\w* bada[nń]\b", r"\bфінансув\w* дослідж\w*\b"), 2, 4, 2, 4),
     MoneyType("corporate_open_call", "funding", "mixed_support", None, (r"\bopen call\b", r"\bcorporate challenge\b", r"\bprogram partnersk\w*\b", r"\bвідкрит\w* набір\b"), 3, 3, 1, 3),
     MoneyType("paid_open_call", "revenue", "paid_call", False, (r"\bpaid open call\b", r"\bp[łl]atn\w* open call\b", r"\bоплачуван\w* open call\b"), 3, 3, 1, 3),
-
-    MoneyType("vc", "capital", "equity", False, (r"\bventure capital\b", r"\b\bvc\b", r"\bfundusz\w* vc\b", r"\bвенчур\w* фонд\w*\b"), 2, 4, 1, 5),
+    MoneyType("vc", "capital", "equity", False, (r"\bventure capital\b", r"\bvc\b", r"\bfundusz\w* vc\b", r"\bвенчур\w* фонд\w*\b"), 2, 4, 1, 5),
     MoneyType("angel", "capital", "equity", False, (r"\bangel investor\w*\b", r"\banio[łl]\w* biznesu\b", r"\bбізнес.?ангел\w*\b"), 2, 4, 1, 5),
     MoneyType("equity_program", "capital", "equity", False, (r"\bequity program\w*\b", r"\binvestment program\w*\b", r"\bprogram inwestycyjn\w*\b", r"\bінвестиційн\w* програм\w*\b"), 2, 4, 1, 5),
     MoneyType("crowdfunding", "capital", "equity_or_reward", None, (r"\bcrowdfund\w*\b", r"\bfinansowanie spo[łl]eczno\w*\b", r"\bкраудфанд\w*\b"), 3, 4, 2, 4),
-
     MoneyType("preferential_loan", "finance", "loan", True, (r"\bpreferential loan\w*\b", r"\bsoft loan\w*\b", r"\bpo[zż]yczk\w* preferencyjn\w*\b", r"\bпільгов\w* кредит\w*\b"), 3, 3, 3, 3),
     MoneyType("guarantee", "finance", "guarantee", None, (r"\bloan guarantee\w*\b", r"\bgwarancj\w*\b", r"\bpor[eę]czen\w*\b", r"\bгаранті\w* кредит\w*\b"), 3, 3, 2, 3),
-    MoneyType("leasing", "finance", "leasing", True, (r"\bleasing\w*\b", r"\bleasing\w*\b", r"\bлізинг\w*\b"), 4, 2, 2, 2),
+    MoneyType("leasing", "finance", "leasing", True, (r"\bleasing\w*\b", r"\bлізинг\w*\b"), 4, 2, 2, 2),
     MoneyType("factoring", "finance", "factoring", True, (r"\bfactor(?:ing)?\b", r"\bfaktoring\w*\b", r"\bфакторинг\w*\b"), 4, 2, 2, 2),
     MoneyType("equipment_financing", "finance", "asset_finance", True, (r"\bequipment financ\w*\b", r"\bfinansowan\w* maszyn\w*\b", r"\bfinansowan\w* sprz[eę]t\w*\b", r"\bфінансув\w* обладнан\w*\b"), 3, 3, 3, 3),
     MoneyType("tax_relief", "savings", "tax_relief", False, (r"\btax (?:credit|relief|deduction)\b", r"\bulg\w* podatkow\w*\b", r"\bподатков\w* пільг\w*\b"), 3, 3, 1, 2),
@@ -64,15 +60,13 @@ _TYPES = (
     MoneyType("export_support", "savings", "export_support", None, (r"\bexport support\b", r"\bwsparci\w* eksport\w*\b", r"\bекспортн\w* підтрим\w*\b"), 2, 3, 2, 3),
     MoneyType("innovation_voucher", "savings", "voucher", False, (r"\binnovation voucher\w*\b", r"\bbon\w* na innowac\w*\b", r"\bваучер\w* інновац\w*\b"), 2, 3, 1, 3),
     MoneyType("green_energy_support", "savings", "subsidy_or_finance", None, (r"\benergy efficien\w* support\b", r"\bgreen energy\w* support\b", r"\boze\b", r"\befektywno[śs]\w* energetycz\w*\b", r"\bенергоефектив\w* підтрим\w*\b"), 2, 4, 2, 3),
-
     MoneyType("procurement", "revenue", "contract_revenue", False, (r"\bprocurement\w*\b", r"\btender\w*\b", r"\bprzetarg\w*\b", r"\bzam[oó]wien\w* publiczn\w*\b", r"\bтендер\w*\b", r"\bзакупівл\w*\b"), 3, 4, 2, 4),
     MoneyType("job_contract", "revenue", "earned_income", False, (r"\bjob contract\w*\b", r"\bcontract work\b", r"\bzlecen\w*\b", r"\bofert\w* prac\w*\b", r"\bконтракт\w* робот\w*\b"), 4, 2, 1, 3),
     MoneyType("subcontract", "revenue", "contract_revenue", False, (r"\bsubcontract\w*\b", r"\bpodwykonawc\w*\b", r"\bпідряд\w*\b", r"\bсубпідряд\w*\b"), 4, 3, 2, 3),
     MoneyType("supplier_demand", "revenue", "sales_demand", False, (r"\bsupplier wanted\b", r"\blooking for supplier\b", r"\bszukam dostawc\w*\b", r"\bzapotrzebowan\w* dostawc\w*\b", r"\bшука\w* постачальник\w*\b"), 4, 2, 2, 2),
-
     MoneyType("business_for_sale", "assets", "asset_acquisition", None, (r"\bbusiness for sale\b", r"\bsprzedam firm\w*\b", r"\bgotow\w* biznes\w*\b", r"\bбізнес.*продаж\b"), 3, 3, 5, 3),
     MoneyType("asset_sale", "assets", "asset_acquisition", None, (r"\basset sale\b", r"\bsprzeda[zż] maj[aą]tk\w*\b", r"\bsprzeda[zż] maszyn\w*\b", r"\bпродаж\w* актив\w*\b", r"\bпродаж\w* обладнан\w*\b"), 4, 2, 3, 2),
-    MoneyType("liquidation", "assets", "distressed_asset", None, (r"\bliquidation sale\b", r"\bliquidation stock\b", r"\blikwi?dacj\w*\b", r"\bwyprzeda[zż] likwidacyjn\w*\b", r"\bліквідаційн\w* продаж\w*\b"), 4, 2, 3, 2),
+    MoneyType("liquidation", "assets", "distressed_asset", None, (r"\bliquidation\w*\b", r"\bcloseout\w*\b", r"\blikwidacj\w*\b", r"\blikwidacyjn\w*\b", r"\bліквідац\w*\b"), 4, 2, 3, 2),
     MoneyType("real_estate_opportunity", "assets", "real_estate", None, (r"\bdistressed real estate\b", r"\bnieruchomo[śs]\w* okazj\w*\b", r"\bforeclosure\w*\b", r"\bнерухом\w* аукціон\w*\b"), 3, 3, 5, 3),
     MoneyType("public_auction", "assets", "auction", None, (r"\bpublic auction\b", r"\bauction notice\b", r"\blicytacj\w*\b", r"\baukcj\w* publiczn\w*\b", r"\bпублічн\w* аукціон\w*\b"), 4, 2, 3, 3),
     MoneyType("classified_offer", "local", "market_offer", None, (r"\bclassified\w*\b", r"\bog[łl]oszen\w*\b", r"\bolx\b", r"\bоголошен\w*\b"), 5, 1, 2, 2),
@@ -87,9 +81,6 @@ TYPE_BY_ID = {item.id: item for item in _TYPES}
 FAMILIES = tuple(dict.fromkeys(item.family for item in _TYPES))
 TYPE_IDS = tuple(item.id for item in _TYPES)
 
-
-# Strong action/context phrases.  These prevent educational queries such as
-# "What is investment banking?" from being routed into opportunity search.
 _ACTION_PATTERNS = (
     r"\bfind\w*\b", r"\blooking for\b", r"\bavailable\b", r"\bopen now\b", r"\bapply\w*\b",
     r"\bneed\w*\b", r"\bwant to (?:raise|get|earn|buy|sell|finance)\b", r"\bwhere can i\b",
@@ -110,7 +101,6 @@ def _text(value: object) -> str:
 
 
 def infer_money_types(query: object, *, limit: int = 8) -> list[str]:
-    """Return evidence-routing money types in deterministic confidence order."""
     text = _text(query)
     scored: list[tuple[int, int, str]] = []
     for index, item in enumerate(_TYPES):
@@ -131,7 +121,6 @@ def infer_money_families(query: object, *, limit: int = 5) -> list[str]:
 
 
 def looks_like_material_opportunity(query: object) -> bool:
-    """High-confidence router predicate for actionable money/material searches."""
     text = _text(query)
     if not text:
         return False
@@ -139,8 +128,6 @@ def looks_like_material_opportunity(query: object) -> bool:
     has_action = any(re.search(pattern, text, flags=re.I) for pattern in _ACTION_PATTERNS)
     if type_hits and has_action:
         return True
-    # Natural-language needs often omit mechanism words.  Route them only when
-    # both a tangible need and an action/need signal are present.
     has_need_subject = any(re.search(pattern, text, flags=re.I) for pattern in _NEED_PATTERNS)
     money_need = bool(re.search(r"(?:\b\d[\d\s.,]*\s*(?:pln|eur|usd|z[łl]|€|\$)\b|\b(?:money|capital|financ\w*|fund\w*|pieni[aą]d\w*|kapita[łl]\w*|finans\w*|грош\w*|капітал\w*|фінанс\w*)\b)", text, flags=re.I))
     return bool(has_action and has_need_subject and money_need)
