@@ -35,9 +35,9 @@ _LOCAL_COMMERCE_CUES = (
     r"\bodbiór osobisty\b",
 )
 _LOCAL_GEOGRAPHY_CUES = (
-    r"\b(?:in|near)\s+(?!stock\b|store\b|the\b|a\b|an\b|this\b|that\b)[A-ZÀ-Ž][\wÀ-ž.-]{1,}\b",
-    r"\b(?:у|в|біля)\s+(?!наявност\w*\b|магазин\w*\b)[А-ЯІЇЄҐ][\wА-Яа-яІіЇїЄєҐґ.-]{1,}\b",
-    r"\b(?:w|koło|obok|blisko)\s+(?!magazyn\w*\b|sklep\w*\b)[A-ZĄĆĘŁŃÓŚŹŻ][\wÀ-ž.-]{1,}\b",
+    r"\b(?:in|near)\s+(?!stock\b|store\b|stores\b|the\b|a\b|an\b|this\b|that\b|general\b)[\wÀ-ž.-]{2,}\b",
+    r"\b(?:у|в|біля)\s+(?!наявност\w*\b|магазин\w*\b)[\wА-Яа-яІіЇїЄєҐґ.-]{2,}\b",
+    r"\b(?:w|koło|obok|blisko)\s+(?!magazyn\w*\b|sklep\w*\b)[\wÀ-ž.-]{2,}\b",
 )
 
 
@@ -93,13 +93,19 @@ def classify_module_candidates(query: object) -> list[dict]:
 
 
 def _has_local_commerce_context(query: str) -> bool:
-    has_commerce = any(re.search(pattern, query, flags=re.I) for pattern in _LOCAL_COMMERCE_CUES)
-    has_geography = any(re.search(pattern, query) for pattern in _LOCAL_GEOGRAPHY_CUES)
+    has_commerce = any(
+        re.search(pattern, query, flags=re.I) for pattern in _LOCAL_COMMERCE_CUES
+    )
+    has_geography = any(
+        re.search(pattern, query, flags=re.I) for pattern in _LOCAL_GEOGRAPHY_CUES
+    )
     return bool(has_commerce and has_geography)
 
 
 def _compatible(route: str, selected: list[str]) -> bool:
-    return all(frozenset((route, existing)) in MULTI_ROUTE_PAIRS for existing in selected)
+    return all(
+        frozenset((route, existing)) in MULTI_ROUTE_PAIRS for existing in selected
+    )
 
 
 def plan_research_routes(query: object) -> dict:
@@ -108,7 +114,11 @@ def plan_research_routes(query: object) -> dict:
     candidates = classify_module_candidates(cleaned)
 
     routes_present = {item["route"] for item in candidates}
-    if "product" in routes_present and "local" not in routes_present and _has_local_commerce_context(cleaned):
+    if (
+        "product" in routes_present
+        and "local" not in routes_present
+        and _has_local_commerce_context(cleaned)
+    ):
         local = next(module for module in MODULES if module.name == "local")
         candidates.append({
             "route": "local",
