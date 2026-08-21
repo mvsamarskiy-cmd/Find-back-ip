@@ -27,7 +27,7 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
         self.assertNotIn("session_key", payload)
 
         universal = payload["universal_search"]
-        self.assertEqual(universal["intelligence_version"], "universal-router-v4")
+        self.assertEqual(universal["intelligence_version"], "universal-router-v5")
         self.assertTrue(universal["natural_language_multi_intent_planning"])
         self.assertEqual(universal["multi_intent"]["version"], "multi-intent-v1")
         self.assertEqual(universal["multi_intent"]["max_routes"], 3)
@@ -38,6 +38,13 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
             universal["answer_synthesis"]["truth_semantics"],
             "retrieval_evidence_not_verified_fact",
         )
+        entity = universal["entity_resolution"]
+        self.assertEqual(entity["version"], "entity-resolution-v1")
+        self.assertEqual(entity["scope"], "product_evidence")
+        self.assertTrue(entity["family_resolution"])
+        self.assertTrue(entity["variant_resolution"])
+        self.assertTrue(entity["comparison_requires_exact_variant_evidence"])
+        self.assertFalse(entity["external_catalog_lookup"])
         self.assertEqual(
             set(universal["modules"]),
             {"local", "product", "technical", "news", "company", "person"},
