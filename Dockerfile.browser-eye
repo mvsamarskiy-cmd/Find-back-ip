@@ -13,6 +13,7 @@ COPY browser_eye_service.py ./
 COPY browser_eye_hardening.py ./
 COPY browser_eye_global_search.py ./
 COPY browser_eye_tor.py ./
+COPY browser_eye_tor_hardening.py ./
 COPY browser_eye_ready.py ./
 COPY browser_eye_start.sh ./
 RUN chmod 0755 /app/browser_eye_start.sh
