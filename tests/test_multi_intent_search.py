@@ -37,12 +37,14 @@ class MultiIntentPlannerTests(unittest.TestCase):
         self.assertIn("current", decision["general_intents"])
         self.assertIn("comparison", decision["general_intents"])
 
-    def test_local_commerce_composition_works_in_ukrainian_and_polish(self):
-        ukrainian = plan_research_routes("де купити ноутбук у Варшаві сьогодні")
-        polish = plan_research_routes("gdzie kupić laptop w Warszawie dzisiaj")
+    def test_local_commerce_composition_works_in_ukrainian_polish_and_lowercase(self):
+        ukrainian = plan_research_routes("де купити ноутбук у варшаві сьогодні")
+        polish = plan_research_routes("gdzie kupić laptop w warszawie dzisiaj")
+        english = plan_research_routes("where to buy laptop in warsaw today")
 
         self.assertEqual(ukrainian["routes"], ["product", "local"])
         self.assertEqual(polish["routes"], ["product", "local"])
+        self.assertEqual(english["routes"], ["product", "local"])
 
     def test_price_by_country_without_physical_buy_intent_stays_product_only(self):
         decision = classify_search_plan("iPhone 17 price in Poland")
