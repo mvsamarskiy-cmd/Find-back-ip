@@ -7,14 +7,14 @@ from telegram_bootstrap import app
 import app as app_module
 from global_search_provider_smoke import maybe_start_provider_smoke
 from private_mode import install_private_mode_routes, private_mode_diagnostics
-from universal_search import search_universal
+from universal_search import search_universal, universal_search_capabilities
 
 
 install_private_mode_routes(app, app_module, global_searcher=search_universal)
 maybe_start_provider_smoke()
 
 PRIVATE_GLOBAL_MODE_TAG = '<script src="/static/private_global_mode.js?v=2"></script>'
-UNIVERSAL_GLOBAL_MODE_TAG = '<script src="/static/universal_global_mode.js?v=1"></script>'
+UNIVERSAL_GLOBAL_MODE_TAG = '<script src="/static/universal_global_mode.js?v=2"></script>'
 PRIVATE_GLOBAL_MODE_BUNDLE = PRIVATE_GLOBAL_MODE_TAG + "\n" + UNIVERSAL_GLOBAL_MODE_TAG
 
 
@@ -40,7 +40,9 @@ if append_private_global_controller in _callbacks:
 
 @app.get("/api/private-mode/diagnostics")
 def api_private_mode_diagnostics():
-    return jsonify(private_mode_diagnostics())
+    payload = private_mode_diagnostics()
+    payload["universal_search"] = universal_search_capabilities()
+    return jsonify(payload)
 
 
 __all__ = ["app"]
