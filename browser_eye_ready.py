@@ -13,13 +13,16 @@ import os
 from flask import jsonify
 
 import browser_eye_service as browser_eye_module
+import browser_eye_tor as browser_eye_tor_module
 from browser_eye_global_search import install_browser_global_search
 from browser_eye_hardening import install_browser_eye_hardening
 from browser_eye_service import RUNTIME, app
 from browser_eye_tor import install_browser_tor_routes, tor_diagnostics, wait_for_tor_socket
+from browser_eye_tor_hardening import install_tor_hardening
 
 
 install_browser_eye_hardening(browser_eye_module)
+install_tor_hardening(browser_eye_tor_module)
 install_browser_global_search(app, RUNTIME)
 install_browser_tor_routes(app, RUNTIME)
 
@@ -40,14 +43,14 @@ def ready_health():
             "service": "browser-eye",
             "ready": False,
             "error_type": "TorSocksUnavailable",
-            "tor": tor_diagnostics(),
+            "tor": browser_eye_tor_module.tor_diagnostics(),
         }), 503
     return jsonify({
         "status": "ok",
         "service": "browser-eye",
         "ready": True,
         "global_web_search": bool(os.environ.get("GLOBAL_SEARCH_BROWSER_TOKEN")),
-        "tor": tor_diagnostics(),
+        "tor": browser_eye_tor_module.tor_diagnostics(),
         **RUNTIME.diagnostics(),
     })
 
