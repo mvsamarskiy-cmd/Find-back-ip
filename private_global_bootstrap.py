@@ -6,12 +6,14 @@ from flask import jsonify
 from telegram_bootstrap import app
 import app as app_module
 from global_search_provider_smoke import maybe_start_provider_smoke
+from opportunity_pipeline_smoke import maybe_start_pipeline_smoke
 from opportunity_search import search_global as opportunity_search
 from private_mode import install_private_mode_routes, private_mode_diagnostics
 
 
 install_private_mode_routes(app, app_module, global_searcher=opportunity_search)
 maybe_start_provider_smoke()
+maybe_start_pipeline_smoke()
 
 PRIVATE_GLOBAL_MODE_TAG = '<script src="/static/private_global_mode.js?v=2"></script>'
 
