@@ -6,6 +6,7 @@ import re
 import requests
 
 from global_search import global_search_capabilities, search_global as _search_global
+from money_taxonomy import looks_like_material_opportunity
 from opportunity_intelligence import enrich_payload
 
 
@@ -33,24 +34,33 @@ INTENT_PATTERNS = {
 
 
 def infer_query_category(query):
-    """Infer one high-confidence opportunity vertical from natural language."""
+    """Infer one high-confidence opportunity vertical from natural language.
+
+    Legacy categories stay stable. Actionable money/material needs that do not
+    name a legacy mechanism are routed as ``material`` so the universal router
+    can select the broader Money Opportunity v2 lane without mislabelling them
+    as grants or generic funding.
+    """
     text = " ".join(str(query or "").split()).casefold()
     scores = {}
     for category, patterns in INTENT_PATTERNS.items():
         score = sum(1 for pattern in patterns if re.search(pattern, text, flags=re.I))
         if score:
             scores[category] = score
-    if not scores:
-        return "all"
-    return sorted(scores, key=lambda category: (-scores[category], list(INTENT_PATTERNS).index(category)))[0]
+    if scores:
+        return sorted(scores, key=lambda category: (-scores[category], list(INTENT_PATTERNS).index(category)))[0]
+    if looks_like_material_opportunity(query):
+        return "material"
+    return "all"
 
 
 def search_global(query, *, category="all", country="EU", requester=requests.get, poster=requests.post):
     requested_category = str(category or "all").strip().lower()
     routed_category = infer_query_category(query) if requested_category == "all" else requested_category
+    base_category = "all" if routed_category == "material" else routed_category
     payload = _search_global(
         query,
-        category=routed_category,
+        category=base_category,
         country=country,
         requester=requester,
         poster=poster,
@@ -65,12 +75,13 @@ def search_global(query, *, category="all", country="EU", requester=requests.get
 def opportunity_search_capabilities():
     payload = dict(global_search_capabilities())
     payload.update({
-        "intelligence_version": "opportunity-v1",
+        "intelligence_version": "opportunity-v1+material-router-v2",
         "normalized_fields": ["amount", "deadline", "status", "eligibility", "verification", "fit"],
         "priority_scope": ["PL", "EU"],
-        "priority_categories": ["grant", "challenge", "funding", "business_aid", "research"],
+        "priority_categories": ["grant", "challenge", "funding", "business_aid", "research", "material"],
         "deep_source_verification": True,
         "natural_language_intent_routing": True,
+        "material_opportunity_router": True,
     })
     return payload
 
