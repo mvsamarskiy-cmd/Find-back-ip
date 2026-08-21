@@ -1,12 +1,14 @@
-"""Broad Money / Material Opportunity Intelligence v2 search orchestrator.
+"""Broad Money / Material Opportunity Intelligence v2.1 search orchestrator.
 
-The exact user wording is always retrieval lane zero.  Bounded deterministic
-expansions then search mechanisms the user may not know by name.  A single Tor
-exact-query lane is additive when Browser Eye is configured.  All outputs remain
-retrieval/evidence candidates until source rules and economics are verified.
+The exact user wording is always retrieval lane zero. Bounded deterministic
+expansions search mechanisms the user may not know by name. Expansion lanes run
+with bounded concurrency after the exact lane. A single Tor exact-query lane is
+additive. A small top set can then be inspected through the hardened read-only
+source-evidence transport before final normalization/ranking.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import requests
 from urllib.parse import urlsplit
@@ -16,15 +18,25 @@ from money_intelligence import money_intelligence_capabilities, normalize_money_
 from money_query_planner import build_money_search_plan, money_query_planner_capabilities
 from money_sources import source_affinity, source_catalog_capabilities, source_for_host
 from money_taxonomy import infer_money_types, taxonomy_capabilities
+from money_verification import apply_money_verification, money_verification_capabilities
 from opportunity_intelligence import enrich_payload
 
 
-MONEY_OPPORTUNITY_SEARCH_VERSION = "money-opportunity-search-v2"
+MONEY_OPPORTUNITY_SEARCH_VERSION = "money-opportunity-search-v2.1"
 MAX_RAW_RESULTS = 140
+MAX_EXPANSION_CONCURRENCY = 3
+
+
+def _flag(name: str, default: str = "1") -> bool:
+    return str(os.environ.get(name, default)).strip().casefold() not in {"0", "false", "no", "off"}
 
 
 def _enabled_tor() -> bool:
-    return str(os.environ.get("TOR_OPPORTUNITY_SEARCH_ENABLED", "1")).strip().casefold() not in {"0", "false", "no", "off"}
+    return _flag("TOR_OPPORTUNITY_SEARCH_ENABLED", "1")
+
+
+def _enabled_direct_verification() -> bool:
+    return _flag("MONEY_DIRECT_VERIFICATION_ENABLED", "1")
 
 
 def _is_onion(url: object) -> bool:
@@ -55,7 +67,7 @@ def _run_tor_exact(query, providers, poster):
         timeout=32,
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "NameMachine-money-opportunity/2",
+            "User-Agent": "NameMachine-money-opportunity/2.1",
             "X-Global-Search-Token": providers["browser_token"],
         },
     )
@@ -75,19 +87,13 @@ def _decorate(raw_rows, *, query, profile, lane, query_index, collected, seen, t
         description = base_search._clean_text(raw.get("description"), 1200)
         url = base_search._clean_text(raw.get("url"), 1600)
         canonical = base_search._canonical_url(url)
-        if not title or not canonical:
-            continue
-        # One URL can be rediscovered by several mechanisms. Keep the strongest
-        # first row here; cross-source duplicate titles are handled later by
-        # Money Intelligence's entity-like fingerprint.
-        if canonical in seen:
+        if not title or not canonical or canonical in seen:
             continue
         seen.add(canonical)
         host = base_search._host(url)
         source = source_for_host(host)
         observed_types = infer_money_types(f"{title} {description}", limit=4)
         type_id = observed_types[0] if observed_types else (requested_types[0] if requested_types else "other_monetizable_signal")
-        family = None
         try:
             from money_taxonomy import TYPE_BY_ID
             family = TYPE_BY_ID[type_id].family
@@ -129,38 +135,136 @@ def _aggregate_status(statuses: list[str], result_count: int) -> str:
     return statuses[-1]
 
 
-def search_money_opportunities(query, *, category="all", country="EU", requester=requests.get, poster=requests.post):
+def _safe_standard_call(lane, *, provider, providers, requester, poster):
+    try:
+        status, rows = _run_standard(
+            lane["query"], provider=provider, providers=providers,
+            requester=requester, poster=poster,
+        )
+    except requests.RequestException:
+        status, rows = "network_error", []
+    except (TypeError, ValueError):
+        status, rows = "malformed", []
+    return status, rows
+
+
+def _search_standard_lanes(plan, *, provider, providers, requester, poster):
+    """Run exact lane first, then bounded expansion lanes concurrently."""
+    lanes = list(plan.get("lanes") or [])
+    if not lanes:
+        return [], []
+    outcomes: dict[int, tuple[str, list]] = {}
+    outcomes[0] = _safe_standard_call(
+        lanes[0], provider=provider, providers=providers,
+        requester=requester, poster=poster,
+    )
+    remaining = list(enumerate(lanes[1:], start=1))
+    if remaining:
+        with ThreadPoolExecutor(max_workers=min(MAX_EXPANSION_CONCURRENCY, len(remaining))) as pool:
+            futures = {
+                pool.submit(
+                    _safe_standard_call, lane, provider=provider, providers=providers,
+                    requester=requester, poster=poster,
+                ): index
+                for index, lane in remaining
+            }
+            for future in as_completed(futures):
+                index = futures[future]
+                try:
+                    outcomes[index] = future.result()
+                except Exception:
+                    outcomes[index] = ("error", [])
+    return [outcomes.get(index, ("unknown", [])) for index in range(len(lanes))], lanes
+
+
+def _attach_direct_verification(result: dict, rows: list[dict]) -> dict:
+    by_url = {
+        str(row.get("url") or ""): row.get("money_direct_verification")
+        for row in rows if isinstance(row.get("money_direct_verification"), dict)
+    }
+    for record in result.get("money_records") or []:
+        verification = None
+        for url in record.get("source_urls") or []:
+            if by_url.get(url):
+                verification = by_url[url]
+                break
+        if not verification:
+            continue
+        record["direct_verification"] = verification
+        record["current_call_verified"] = bool(verification.get("current_call_verified"))
+        record["source_observed"] = bool(record.get("source_observed") or verification.get("source_observed"))
+        if verification.get("source_observed"):
+            record["verification"] = {
+                **(record.get("verification") or {}),
+                "source_verified": True,
+                "state": "direct_source_observed",
+                "checked_at": verification.get("observed_at"),
+                "snapshot_sha256": verification.get("snapshot_sha256"),
+                "final_url": verification.get("final_url"),
+            }
+    return result
+
+
+def _project_records_to_results(result: dict) -> dict:
+    """Expose v2.1 ranking in the legacy result list without losing compatibility."""
+    records = result.get("money_records") or []
+    record_by_url = {}
+    for record in records:
+        for url in record.get("source_urls") or []:
+            record_by_url[url] = record
+    projected = []
+    seen_records = set()
+    for raw in result.get("results") or []:
+        row = dict(raw)
+        record = record_by_url.get(str(row.get("url") or ""))
+        if not record:
+            projected.append(row)
+            continue
+        record_id = record.get("opportunity_id")
+        if record_id in seen_records:
+            continue
+        seen_records.add(record_id)
+        score = int((record.get("practical_ranking") or {}).get("score") or 0)
+        blockers = list(record.get("blockers") or [])
+        row["money_record"] = record
+        row["category"] = record.get("opportunity_type") or row.get("category")
+        row["fit"] = {
+            "score": score,
+            "label": "blocked" if blockers else "high" if score >= 75 else "medium" if score >= 55 else "low",
+            "blockers": blockers,
+        }
+        projected.append(row)
+    projected.sort(key=lambda row: (
+        -int(((row.get("money_record") or {}).get("practical_ranking") or {}).get("score") or 0),
+        -int(row.get("official_source") or False),
+        -int(row.get("retrieval_score") or 0),
+    ))
+    result["results"] = projected
+    return result
+
+
+def search_money_opportunities(
+    query, *, category="all", country="EU", requester=requests.get, poster=requests.post,
+    evidence_fetcher=None,
+):
     plan = build_money_search_plan(query, country=country)
     profile = plan["profile"]
     provider, providers = _provider_choice()
     if provider == "none":
         return normalize_money_payload({
-            "query": profile["query"],
-            "category": category,
-            "country": profile["country"],
-            "provider": "none",
-            "provider_status": "unconfigured",
-            "results": [],
-            "search_plan": plan["queries"],
-            "search_lanes": plan["lanes"],
+            "query": profile["query"], "category": category, "country": profile["country"],
+            "provider": "none", "provider_status": "unconfigured", "results": [],
+            "search_plan": plan["queries"], "search_lanes": plan["lanes"],
             "intelligence_version": MONEY_OPPORTUNITY_SEARCH_VERSION,
             "truth_note": "No live provider is configured; no opportunity candidates were generated.",
         }, profile=profile)
 
     collected, seen, statuses = [], set(), []
-    executed_lanes = []
-    for query_index, lane in enumerate(plan["lanes"]):
-        search_query = lane["query"]
-        executed_lanes.append(dict(lane))
-        try:
-            status, rows = _run_standard(
-                search_query, provider=provider, providers=providers,
-                requester=requester, poster=poster,
-            )
-        except requests.RequestException:
-            status, rows = "network_error", []
-        except (TypeError, ValueError):
-            status, rows = "malformed", []
+    outcomes, executed_lanes = _search_standard_lanes(
+        plan, provider=provider, providers=providers, requester=requester, poster=poster,
+    )
+    for query_index, (lane, outcome) in enumerate(zip(executed_lanes, outcomes)):
+        status, rows = outcome
         statuses.append(status)
         _decorate(
             rows, query=profile["query"], profile=profile, lane=lane,
@@ -183,32 +287,43 @@ def search_money_opportunities(query, *, category="all", country="EU", requester
 
     collected.sort(key=lambda row: (-int(row.get("official_source") or False), -int(row.get("retrieval_score") or 0), int(row.get("query_index") or 0)))
     raw_payload = {
-        "query": profile["query"],
-        "category": category,
-        "country": profile["country"],
-        "provider": provider,
-        "provider_status": _aggregate_status(statuses, len(collected)),
+        "query": profile["query"], "category": category, "country": profile["country"],
+        "provider": provider, "provider_status": _aggregate_status(statuses, len(collected)),
         "results": collected[:MAX_RAW_RESULTS],
         "search_plan": [lane["query"] for lane in executed_lanes],
-        "search_lanes": executed_lanes,
-        "money_query_plan": plan,
+        "search_lanes": executed_lanes, "money_query_plan": plan,
         "tor_retrieval": {
             "attempted": bool(_enabled_tor() and providers.get("browser_eye")),
-            "provider_status": tor_status,
-            "exact_query_once": True,
-            "transport": "tor",
+            "provider_status": tor_status, "exact_query_once": True, "transport": "tor",
             "truth_semantics": "tor_retrieval_evidence_not_verified_fact",
         },
         "intelligence_version": MONEY_OPPORTUNITY_SEARCH_VERSION,
     }
 
-    # Reuse the stable v1 extractors/source verifier where applicable, then
-    # compile the broader v2 record/ranking layer over every result.
-    enriched = enrich_payload(raw_payload, query=profile["query"], country=profile["country"], requester=requester, verify_limit=6)
+    direct_enabled = _enabled_direct_verification() and bool(providers.get("browser_eye"))
+    enriched = enrich_payload(
+        raw_payload, query=profile["query"], country=profile["country"], requester=requester,
+        verify_limit=0 if direct_enabled else 6,
+    )
+    verified_rows = enriched.get("results") or []
+    if direct_enabled:
+        if evidence_fetcher is None:
+            verified_rows = apply_money_verification(verified_rows, limit=3)
+        else:
+            verified_rows = apply_money_verification(verified_rows, evidence_fetcher=evidence_fetcher, limit=3)
+        enriched["results"] = verified_rows
+
     result = normalize_money_payload(enriched, profile=profile)
+    result = _attach_direct_verification(result, verified_rows)
+    result = _project_records_to_results(result)
     result["intelligence_version"] = MONEY_OPPORTUNITY_SEARCH_VERSION
     result["requested_category"] = str(category or "all")
     result["material_opportunity_intent"] = bool(profile.get("money_intent"))
+    result["direct_verification"] = {
+        "enabled": direct_enabled,
+        "attempted_count": sum(1 for row in verified_rows if row.get("money_direct_verification")),
+        "capabilities": money_verification_capabilities(),
+    }
     return result
 
 
@@ -219,7 +334,9 @@ def money_opportunity_search_capabilities() -> dict:
         "planner": money_query_planner_capabilities(),
         "sources": source_catalog_capabilities(),
         "intelligence": money_intelligence_capabilities(),
+        "direct_verification": money_verification_capabilities(),
         "standard_exact_query_first": True,
+        "expansion_concurrency_max": MAX_EXPANSION_CONCURRENCY,
         "tor_exact_query_max_calls": 1,
         "poland_eu_priority": True,
         "off_market_scope": "publicly_discoverable_only",
@@ -229,6 +346,6 @@ def money_opportunity_search_capabilities() -> dict:
 
 
 __all__ = [
-    "MONEY_OPPORTUNITY_SEARCH_VERSION", "money_opportunity_search_capabilities",
-    "search_money_opportunities",
+    "MAX_EXPANSION_CONCURRENCY", "MONEY_OPPORTUNITY_SEARCH_VERSION",
+    "money_opportunity_search_capabilities", "search_money_opportunities",
 ]
