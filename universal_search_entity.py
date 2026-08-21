@@ -149,8 +149,9 @@ def apply_entity_resolution(payload: dict) -> dict:
     synthesis["entity_resolution"] = resolution
     synthesis["entity_price_comparisons"] = _price_comparisons(synthesis, resolution)
     synthesis["entity_conflict_candidates"] = _entity_conflicts(synthesis, resolution)
-    synthesis["truth_status"]["entity_resolution_available"] = True
-    synthesis["truth_status"]["entity_resolved_price_comparison_is_verified"] = False
+    truth_status = synthesis.setdefault("truth_status", {})
+    truth_status["entity_resolution_available"] = True
+    truth_status["entity_resolved_price_comparison_is_verified"] = False
     return payload
 
 
