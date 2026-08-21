@@ -1,10 +1,10 @@
-"""Universal Search v5 with Money / Material Opportunity Intelligence + Opportunity Graph."""
+"""Universal Search v5 with Money Source Expansion and Opportunity Graph."""
 from __future__ import annotations
 
 import requests
 
 import universal_search_entity as entity_search
-from money_opportunity_graph_search import money_opportunity_search_capabilities, search_money_opportunities
+from money_source_expansion_search import money_opportunity_search_capabilities, search_money_opportunities
 
 
 def search_universal(
