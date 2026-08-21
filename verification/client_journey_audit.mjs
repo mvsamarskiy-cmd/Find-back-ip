@@ -229,6 +229,10 @@ async function clickSearchAndWait(page, browserName, label, expectGrowth = true)
   if (expectGrowth && after <= before) failures.push(`${browserName}: ${label} produced no new visible candidate (${before}->${after})`);
 }
 
+function firstVisible(page, selector) {
+  return page.locator(`${selector}:visible`).first();
+}
+
 async function feedbackClicks(page, browserName) {
   await page.locator('[data-tab="feed"]').click();
   const actions = [
@@ -238,21 +242,29 @@ async function feedbackClicks(page, browserName) {
     ['direction-btn', 'OvenRise'],
   ];
   for (const [cls, name] of actions) {
-    const button = page.locator(`.${cls}[data-name="${name}"]`).first();
+    const selector = `.${cls}[data-name="${name}"]`;
+    const button = firstVisible(page, selector);
     if (!await button.count()) {
-      failures.push(`${browserName}: missing feedback control ${cls} for ${name}`);
+      failures.push(`${browserName}: missing visible feedback control ${cls} for ${name}`);
       continue;
     }
-    await button.click();
+    await button.waitFor({ state: 'visible', timeout: 5_000 });
+    await button.click({ timeout: 5_000 });
     line(browserName, 'FEEDBACK CLICK', `${cls} ${name}`);
   }
-  const comment = page.locator('.comment-toggle[data-name="GrainGlow"]').first();
+  const comment = firstVisible(page, '.comment-toggle[data-name="GrainGlow"]');
   if (!await comment.count()) {
-    failures.push(`${browserName}: missing comment control for GrainGlow`);
+    failures.push(`${browserName}: missing visible comment control for GrainGlow`);
     return;
   }
-  await comment.click();
-  const box = page.locator('[data-commentbox="GrainGlow"]').first();
+  await comment.waitFor({ state: 'visible', timeout: 5_000 });
+  await comment.click({ timeout: 5_000 });
+  const box = firstVisible(page, '[data-commentbox="GrainGlow"]');
+  if (!await box.count()) {
+    failures.push(`${browserName}: missing visible comment box for GrainGlow`);
+    return;
+  }
+  await box.waitFor({ state: 'visible', timeout: 5_000 });
   await box.locator('.comment-input').fill('Подобається зв’язок із зерном, але хочу ще сильніше відчуття хліба й випічки.');
   await box.locator('.save-comment').click();
   line(browserName, 'FEEDBACK COMMENT', 'GrainGlow -> semantic bread/bakery guidance');
@@ -339,7 +351,7 @@ async function run(browserType, browserName, device) {
       const modal = page.locator('#clientReportPreview');
       await modal.waitFor({ state: 'visible', timeout: 5_000 });
       line(browserName, 'REPORT PREVIEW', 'opened');
-      const close = page.locator('[data-report-close]').first();
+      const close = firstVisible(page, '[data-report-close]');
       if (await close.count()) await close.click();
       line(browserName, 'REPORT PREVIEW', 'closed');
     }
