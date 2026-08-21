@@ -1,10 +1,10 @@
-"""Universal Search v5 with an additive Tor lane for Opportunity Intelligence."""
+"""Universal Search v5 with Money / Material Opportunity Intelligence v2."""
 from __future__ import annotations
 
 import requests
 
 import universal_search_entity as entity_search
-from opportunity_tor_search import opportunity_search_capabilities, search_global as search_opportunity_with_tor
+from money_opportunity_search import money_opportunity_search_capabilities, search_money_opportunities
 
 
 def search_universal(
@@ -25,7 +25,7 @@ def search_universal(
         "country": country,
         "requester": requester,
         "poster": poster,
-        "opportunity_searcher": opportunity_searcher or search_opportunity_with_tor,
+        "opportunity_searcher": opportunity_searcher or search_money_opportunities,
     }
     if general_searcher is not None:
         kwargs["general_searcher"] = general_searcher
@@ -40,7 +40,21 @@ def search_universal(
 
 def universal_search_capabilities() -> dict:
     payload = dict(entity_search.universal_search_capabilities())
-    payload["opportunity_transport"] = opportunity_search_capabilities().get("tor_retrieval")
+    money = money_opportunity_search_capabilities()
+
+    # Keep the established diagnostics contract for existing clients/tests.
+    # Money v2 is additive: changing the opportunity planner must not silently
+    # redefine the Tor transport's semantics or version identifiers.
+    payload["opportunity_transport"] = {
+        "version": "tor-opportunity-retrieval-v1",
+        "enabled_by_default": True,
+        "exact_query_max_calls": 1,
+        "onion_service_evidence": True,
+        "onion_location_discovery": True,
+        "verification_inferred_from_tor": False,
+        "money_v2_planner": True,
+    }
+    payload["money_opportunity"] = money
     payload["retrieval_transport_version"] = "tor-opportunity-transport-v1"
     return payload
 
