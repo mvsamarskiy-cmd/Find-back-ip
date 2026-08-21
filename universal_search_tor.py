@@ -1,10 +1,10 @@
-"""Universal Search v5 with an additive Tor lane for Opportunity Intelligence."""
+"""Universal Search v5 with Money / Material Opportunity Intelligence v2."""
 from __future__ import annotations
 
 import requests
 
 import universal_search_entity as entity_search
-from opportunity_tor_search import opportunity_search_capabilities, search_global as search_opportunity_with_tor
+from money_opportunity_search import money_opportunity_search_capabilities, search_money_opportunities
 
 
 def search_universal(
@@ -25,7 +25,7 @@ def search_universal(
         "country": country,
         "requester": requester,
         "poster": poster,
-        "opportunity_searcher": opportunity_searcher or search_opportunity_with_tor,
+        "opportunity_searcher": opportunity_searcher or search_money_opportunities,
     }
     if general_searcher is not None:
         kwargs["general_searcher"] = general_searcher
@@ -40,8 +40,14 @@ def search_universal(
 
 def universal_search_capabilities() -> dict:
     payload = dict(entity_search.universal_search_capabilities())
-    payload["opportunity_transport"] = opportunity_search_capabilities().get("tor_retrieval")
-    payload["retrieval_transport_version"] = "tor-opportunity-transport-v1"
+    money = money_opportunity_search_capabilities()
+    payload["opportunity_transport"] = {
+        "tor_retrieval": money.get("tor_exact_query_max_calls"),
+        "exact_query_first": money.get("standard_exact_query_first"),
+        "truth_semantics": money.get("truth_semantics"),
+    }
+    payload["money_opportunity"] = money
+    payload["retrieval_transport_version"] = "money-opportunity-v2+tor"
     return payload
 
 
