@@ -75,7 +75,7 @@ MODULES = (
     IntelligenceModule(
         name="person",
         version="person-v1",
-        threshold=4,
+        threshold=3,
         priority=20,
         patterns=(
             (r"\b(?:who is|biography|bio|born|age|career|profile|interview)\b", 3),
@@ -95,7 +95,12 @@ def _clean_query(value: object) -> str:
 
 
 def _module_score(module: IntelligenceModule, text: str) -> int:
-    return sum(weight for pattern, weight in module.patterns if re.search(pattern, text, flags=re.I))
+    score = 0
+    for pattern, weight in module.patterns:
+        matches = re.findall(pattern, text, flags=re.I)
+        if matches:
+            score += weight * min(2, len(matches))
+    return score
 
 
 def classify_research_module(query: object) -> dict:
