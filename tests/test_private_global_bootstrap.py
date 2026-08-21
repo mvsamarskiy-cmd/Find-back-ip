@@ -27,10 +27,17 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
         self.assertNotIn("session_key", payload)
 
         universal = payload["universal_search"]
-        self.assertEqual(universal["intelligence_version"], "universal-router-v3")
+        self.assertEqual(universal["intelligence_version"], "universal-router-v4")
         self.assertTrue(universal["natural_language_multi_intent_planning"])
         self.assertEqual(universal["multi_intent"]["version"], "multi-intent-v1")
         self.assertEqual(universal["multi_intent"]["max_routes"], 3)
+        self.assertEqual(universal["answer_synthesis"]["version"], "evidence-synthesis-v1")
+        self.assertTrue(universal["answer_synthesis"]["deterministic"])
+        self.assertTrue(universal["answer_synthesis"]["conflict_candidates"])
+        self.assertEqual(
+            universal["answer_synthesis"]["truth_semantics"],
+            "retrieval_evidence_not_verified_fact",
+        )
         self.assertEqual(
             set(universal["modules"]),
             {"local", "product", "technical", "news", "company", "person"},
