@@ -11,8 +11,6 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
-from opportunity_intelligence import extract_amount
-
 
 MONEY_ELIGIBILITY_VERSION = "money-eligibility-v2.2"
 
@@ -48,7 +46,7 @@ def _money_value(raw: object, suffix: object = None) -> int | None:
     if value is None:
         return None
     suffix = str(suffix or "").lower().rstrip(".")
-    mult = 1_000 if suffix in {"k", "tys", "thousand"} else 1_000_000 if suffix in {"m", "mln", "million"} else 1
+    mult = 1_000 if suffix in {"k", "tys", "thousand", "тис"} else 1_000_000 if suffix in {"m", "mln", "million", "млн"} else 1
     return int(round(value * mult))
 
 
@@ -80,7 +78,6 @@ def extract_eligibility_rules(text: object) -> list[dict]:
             for match in re.finditer(pattern, lower, flags=re.I):
                 add(Rule(f"applicant:{applicant}", "applicant_type", "contains", applicant, _context(raw, match.start(), match.end()), 0.9))
 
-    # Explicit exclusions are stronger than generic mentions.
     exclusion_patterns = {
         "individual": (r"individuals? (?:are )?not eligible", r"osoby fizyczne (?:nie są|nie sa) uprawnione", r"фізичні особи не (?:можуть|мають права)"),
         "company": (r"companies (?:are )?not eligible", r"przedsiębiorc\w* (?:nie są|nie sa) uprawn", r"компанії не (?:можуть|мають права)"),
@@ -90,7 +87,6 @@ def extract_eligibility_rules(text: object) -> list[dict]:
             for match in re.finditer(pattern, lower, flags=re.I):
                 add(Rule(f"exclude_applicant:{applicant}", "applicant_type", "excludes", applicant, _context(raw, match.start(), match.end()), 0.95))
 
-    # Geography / registration requirements.
     country_aliases = {
         "PL": ("poland", "polska", "polsce", "polski", "польщі", "польща"),
         "EU": ("european union", "eu member state", "member states of the eu", "unia europejska", "państwa członkowskie ue", "європейського союзу", "країнах єс"),
@@ -103,7 +99,6 @@ def extract_eligibility_rules(text: object) -> list[dict]:
                 if any(marker in context for marker in geo_markers):
                     add(Rule(f"geography:{code}", "geography", "contains", code, _context(raw, match.start(), match.end()), 0.82))
 
-    # Company age / operation duration.
     age_patterns = [
         (r"(?:operating|established|registered|in business)\s+(?:for\s+)?(?:at least|minimum)\s+(\d{1,2})\s+years?", "gte"),
         (r"(?:no more than|maximum|less than)\s+(\d{1,2})\s+years?\s+(?:old|in operation)", "lte"),
@@ -116,7 +111,6 @@ def extract_eligibility_rules(text: object) -> list[dict]:
         for match in re.finditer(pattern, lower, flags=re.I):
             add(Rule(f"company_age:{operator}", "company_age_years", operator, int(match.group(1)), _context(raw, match.start(), match.end()), 0.9))
 
-    # Employee count rules.
     employee_patterns = [
         (r"(?:at least|minimum)\s+(\d{1,6})\s+(?:employees|staff)", "gte"),
         (r"(?:fewer than|less than|maximum|no more than)\s+(\d{1,6})\s+(?:employees|staff)", "lte"),
@@ -129,24 +123,20 @@ def extract_eligibility_rules(text: object) -> list[dict]:
         for match in re.finditer(pattern, lower, flags=re.I):
             add(Rule(f"employees:{operator}", "employees", operator, int(match.group(1)), _context(raw, match.start(), match.end()), 0.9))
 
-    # Turnover requirements.
     turnover_patterns = [
-        (r"(?:annual )?(?:turnover|revenue)\s+(?:of )?(?:at least|minimum)\s+([\d.,\s]+)\s*(k|m|million|thousand)?\s*(pln|eur|usd|zł|zl|€|\$)", "gte"),
-        (r"(?:annual )?(?:turnover|revenue)\s+(?:below|under|no more than|maximum)\s+([\d.,\s]+)\s*(k|m|million|thousand)?\s*(pln|eur|usd|zł|zl|€|\$)", "lte"),
+        (r"(?:annual )?(?:turnover|revenue)\s+(?:of )?(?:at least|minimum)\s+([\d.,\s]+)\s*(k|m|mln|tys|million|thousand)?\s*(pln|eur|usd|zł|zl|€|\$)", "gte"),
+        (r"(?:annual )?(?:turnover|revenue)\s+(?:below|under|no more than|maximum)\s+([\d.,\s]+)\s*(k|m|mln|tys|million|thousand)?\s*(pln|eur|usd|zł|zl|€|\$)", "lte"),
         (r"(?:obrót|przychód)\s+(?:co najmniej|min(?:imum)?)\s+([\d.,\s]+)\s*(tys|mln)?\s*(pln|eur|zł|zl|€)", "gte"),
         (r"(?:obrót|przychód)\s+(?:poniżej|do|maksymalnie)\s+([\d.,\s]+)\s*(tys|mln)?\s*(pln|eur|zł|zl|€)", "lte"),
         (r"(?:оборот|виручк\w*)\s+(?:щонайменше|мінімум)\s+([\d.,\s]+)\s*(тис|млн)?\s*(pln|eur|usd|zł|€|\$)", "gte"),
     ]
     for pattern, operator in turnover_patterns:
         for match in re.finditer(pattern, lower, flags=re.I):
-            suffix = match.group(2)
-            if suffix == "тис": suffix = "tys"
-            value = _money_value(match.group(1), suffix)
+            value = _money_value(match.group(1), match.group(2))
             currency = _currency(match.group(3))
             if value is not None and currency:
                 add(Rule(f"turnover:{operator}:{currency}", "annual_turnover", operator, {"amount": value, "currency": currency}, _context(raw, match.start(), match.end()), 0.9))
 
-    # Own contribution / co-financing.
     contribution_patterns = [
         r"(?:own contribution|co-?financing)\s+(?:of |at least |minimum )?(\d{1,3}(?:[.,]\d+)?)\s*%",
         r"(?:wkład własny|wklad wlasny)\s+(?:co najmniej|min(?:imum)? )?(\d{1,3}(?:[.,]\d+)?)\s*%",
@@ -158,7 +148,6 @@ def extract_eligibility_rules(text: object) -> list[dict]:
             if value is not None and 0 <= value <= 100:
                 add(Rule("own_contribution:gte", "own_contribution_percent", "gte", value, _context(raw, match.start(), match.end()), 0.92))
 
-    # Individual age constraints.
     individual_age_patterns = [
         (r"(?:applicants?|participants?)\s+(?:must be )?(?:at least|aged)\s+(\d{1,2})\+?", "gte"),
         (r"(?:under|below|younger than)\s+(\d{1,2})\s+years?", "lt"),
@@ -171,7 +160,6 @@ def extract_eligibility_rules(text: object) -> list[dict]:
         for match in re.finditer(pattern, lower, flags=re.I):
             add(Rule(f"person_age:{operator}", "person_age", operator, int(match.group(1)), _context(raw, match.start(), match.end()), 0.8))
 
-    # Employment-state requirements.
     status_patterns = {
         "unemployed": (r"must be unemployed", r"osob\w* bezrobotn", r"безробітн"),
         "employed": (r"must be employed", r"osob\w* zatrudnion", r"працевлаштован"),
@@ -193,11 +181,9 @@ def compile_eligibility_profile(query: object, *, country: object = "EU", base_p
     profile.setdefault("applicant_types", list(profile.get("applicant_types") or []))
     facts: dict[str, Any] = {}
 
-    # Applicant type is already deterministically compiled by Money v2 planner.
     if profile.get("applicant_types"):
         facts["applicant_type"] = list(profile["applicant_types"])
 
-    # Residence/registration must be explicit; search country alone is not user residence.
     geography_patterns = {
         "PL": (r"(?:resident|registered|based|live|living)\s+in\s+poland", r"(?:mieszkam|rezydent|zarejestrowan\w*)\s+(?:w\s+)?polsce", r"(?:живу|резидент|зареєстрован\w*)\s+(?:у|в)\s*польщ"),
         "EU": (r"(?:resident|registered|based)\s+in\s+(?:the )?eu", r"(?:rezydent|zarejestrowan\w*)\s+w\s+ue", r"(?:резидент|зареєстрован\w*)\s+(?:у|в)\s*єс"),
@@ -230,16 +216,14 @@ def compile_eligibility_profile(query: object, *, country: object = "EU", base_p
             facts["employees"] = int(match.group(1)); break
 
     turnover_patterns = (
-        r"(?:our |annual )?(?:turnover|revenue)\s+(?:is\s+)?([\d.,\s]+)\s*(k|m|million|thousand)?\s*(pln|eur|usd|zł|zl|€|\$)",
+        r"(?:our |annual )?(?:turnover|revenue)\s+(?:is\s+)?([\d.,\s]+)\s*(k|m|mln|tys|million|thousand)?\s*(pln|eur|usd|zł|zl|€|\$)",
         r"(?:nasz |roczny )?(?:obrót|przychód)\s+(?:to\s+)?([\d.,\s]+)\s*(tys|mln)?\s*(pln|eur|zł|zl|€)",
         r"(?:наш |річний )?(?:оборот|дохід|виручк\w*)\s+([\d.,\s]+)\s*(тис|млн)?\s*(pln|eur|usd|zł|€|\$)",
     )
     for pattern in turnover_patterns:
         match = re.search(pattern, lower, flags=re.I)
         if match:
-            suffix = match.group(2)
-            if suffix == "тис": suffix = "tys"
-            value = _money_value(match.group(1), suffix)
+            value = _money_value(match.group(1), match.group(2))
             currency = _currency(match.group(3))
             if value is not None and currency:
                 facts["annual_turnover"] = {"amount": value, "currency": currency}; break
@@ -362,7 +346,6 @@ def enrich_record_eligibility(record: dict, *, source_text: object = "", profile
     output["eligibility"] = evaluation
     output["eligibility_state"] = evaluation["state"]
     output["likely_eligible"] = evaluation["state"] == "eligible_candidate"
-    # Observed rule failures are strong blockers; missing facts remain unknowns.
     blockers = list(output.get("blockers") or [])
     unknowns = list(output.get("unknown_requirements") or [])
     for check in evaluation["checks"]:
@@ -386,6 +369,7 @@ def money_eligibility_capabilities() -> dict:
             "own_contribution_percent", "person_age", "employment_status",
         ],
         "explicit_profile_facts_only": True,
+        "mixed_money_unit_abbreviations": ["k", "m", "tys", "mln", "тис", "млн", "thousand", "million"],
         "absence_means_false": False,
         "legal_eligibility_verified": False,
         "truth_semantics": "observed_rules_plus_explicit_profile_facts_only",
