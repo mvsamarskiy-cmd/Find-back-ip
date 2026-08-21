@@ -121,6 +121,8 @@ class PrivateGlobalModeTests(unittest.TestCase):
     def test_client_contains_no_server_hash_variables(self):
         source = Path("static/private_global_mode.js").read_text(encoding="utf-8")
         self.assertIn("/api/private-mode/command", source)
+        self.assertIn("t.length<8||t.length>512", source)
+        self.assertIn("!/\\s/u.test(t)||t.length>=24", source)
         self.assertNotIn("PRIVATE_MODE_UNLOCK_HASH", source)
         self.assertNotIn("PRIVATE_MODE_LOCK_HASH", source)
 
