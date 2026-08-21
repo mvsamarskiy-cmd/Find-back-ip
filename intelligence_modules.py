@@ -22,6 +22,53 @@ class IntelligenceModule:
 
 MODULES = (
     IntelligenceModule(
+        name="local",
+        version="local-v1",
+        threshold=6,
+        priority=50,
+        patterns=(
+            (r"\b(?:near me|nearby|closest|around me|open now|walking distance)\b", 6),
+            (r"\b(?:directions|address)\b", 3),
+            (r"\b(?:in|near|around)\s+[\wÀ-žА-Яа-яІіЇїЄєҐґ.-]{2,}\b", 3),
+            (r"\b(?:(?:restaurant|hotel|cafe|coffee shop|bar|pharmacy|hospital|clinic|dentist|gym|salon|mechanic|parking|museum|park|attraction|airport|station|store|shop|atm|school|police)\w*|banks?)\b", 3),
+            (r"\b(?:поруч|біля мене|найближч\w*|відкрит\w* зараз)\b", 6),
+            (r"\b(?:адрес\w*|маршрут\w*)\b", 3),
+            (r"\b(?:у|в|біля|поруч з)\s+[\wÀ-žА-Яа-яІіЇїЄєҐґ.-]{2,}\b", 3),
+            (r"\b(?:ресторан\w*|готел\w*|кафе|кав'ярн\w*|бар\w*|аптек\w*|лікарн\w*|клінік\w*|стоматолог\w*|спортзал\w*|салон\w*|парков\w*|музе\w*|парк\w*|аеропорт\w*|вокзал\w*|магазин\w*|банк\w*|банкомат\w*|школ\w*|поліці\w*)\b", 3),
+            (r"\b(?:w pobliżu|blisko mnie|najbliższ\w*|otwarte teraz)\b", 6),
+            (r"\b(?:adres\w*|dojazd\w*)\b", 3),
+            (r"\b(?:w|koło|obok|blisko)\s+[\wÀ-žА-Яа-яІіЇїЄєҐґ.-]{2,}\b", 3),
+            (r"\b(?:restauracj\w*|hotel\w*|kawiarni\w*|bar\w*|aptek\w*|szpital\w*|klinik\w*|dentyst\w*|siłowni\w*|salon\w*|parking\w*|muze\w*|park\w*|lotnisk\w*|dworzec\w*|sklep\w*|bank\w*|bankomat\w*|szkoł\w*|policj\w*)\b", 3),
+        ),
+        query_suffixes=("address opening hours official website", "reviews directions"),
+        preferred_hosts=(
+            "tripadvisor.com", "yelp.com", "booking.com", "openstreetmap.org",
+            "foursquare.com", "mapquest.com",
+        ),
+    ),
+    IntelligenceModule(
+        name="product",
+        version="product-v1",
+        threshold=6,
+        priority=45,
+        patterns=(
+            (r"\b(?:where to buy|buy|purchase|shopping|for sale|in stock|best price|cheapest|discount|deal|price comparison|compare prices)\b", 6),
+            (r"\b(?:price|cost|specs?|specifications?|reviews?)\b", 3),
+            (r"\b(?:iphone|ipad|macbook|pixel|galaxy|playstation|xbox|laptop|phone|smartphone|camera|headphones|earbuds|television|tv|monitor|router|vacuum|watch|shoes|sneakers|bike|bicycle)\w*\b", 3),
+            (r"\b(?:де купити|купити|продається|в наявності|найдешевш\w*|краща ціна|знижк\w*|акці\w*|порівняти ціни)\b", 6),
+            (r"\b(?:ціна|вартіст\w*|характеристик\w*|огляд\w*|відгук\w*)\b", 3),
+            (r"\b(?:айфон\w*|макбук\w*|ноутбук\w*|телефон\w*|смартфон\w*|камер\w*|навушник\w*|телевізор\w*|монітор\w*|роутер\w*|пилосос\w*|годинник\w*|взутт\w*|велосипед\w*)\b", 3),
+            (r"\b(?:gdzie kupić|kupić|na sprzedaż|dostępn\w*|najtaniej|najlepsza cena|promocj\w*|rabat\w*|porównaj ceny)\b", 6),
+            (r"\b(?:cena|koszt|specyfikacj\w*|recenzj\w*|opini\w*)\b", 3),
+            (r"\b(?:iphone\w*|macbook\w*|laptop\w*|telefon\w*|smartfon\w*|aparat\w*|słuchawk\w*|telewizor\w*|monitor\w*|router\w*|odkurzacz\w*|zegarek\w*|but\w*|rower\w*)\b", 3),
+        ),
+        query_suffixes=("price availability specifications reviews", "best deal retailer"),
+        preferred_hosts=(
+            "ceneo.pl", "idealo.de", "allegro.pl", "amazon.com", "amazon.de",
+            "ebay.com", "bestbuy.com", "walmart.com",
+        ),
+    ),
+    IntelligenceModule(
         name="technical",
         version="technical-v1",
         threshold=4,
@@ -89,6 +136,15 @@ MODULES = (
 
 MODULE_BY_NAME = {module.name: module for module in MODULES}
 
+LOCAL_INFORMATION_GUARD = re.compile(
+    r"\b(?:weather|forecast|temperature|погод\w*|температур\w*|прогноз погод\w*|pogod\w*|temperatur\w*|prognoz\w*)\b",
+    flags=re.I,
+)
+PRODUCT_FINANCE_GUARD = re.compile(
+    r"\b(?:bitcoin|btc|ethereum|eth|crypto\w*|stock\w*|share price|forex|exchange rate|currency rate|курс валют\w*|акці[яї]\w*|крипт\w*|kurs walut\w*|akcj\w*)\b",
+    flags=re.I,
+)
+
 
 def _clean_query(value: object) -> str:
     return " ".join(str(value or "").split()).strip()
@@ -103,12 +159,22 @@ def _module_score(module: IntelligenceModule, text: str) -> int:
     return score
 
 
+def _module_is_guarded(module: IntelligenceModule, text: str) -> bool:
+    if module.name == "local" and LOCAL_INFORMATION_GUARD.search(text):
+        return True
+    if module.name == "product" and PRODUCT_FINANCE_GUARD.search(text):
+        return True
+    return False
+
+
 def classify_research_module(query: object) -> dict:
     """Choose a high-confidence specialized research module or generic fallback."""
     cleaned = _clean_query(query)
     text = cleaned.casefold()
     candidates = []
     for module in MODULES:
+        if _module_is_guarded(module, text):
+            continue
         score = _module_score(module, text)
         if score >= module.threshold:
             candidates.append((score, module.priority, module.name))
