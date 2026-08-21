@@ -1,42 +1,70 @@
+import importlib.util
+import json
 import os
-import unittest
 from pathlib import Path
+from unittest import TestCase
 from unittest.mock import patch
-
-import gunicorn.conf as gunicorn_conf
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class ProductionConfigTests(unittest.TestCase):
-    def test_railway_uses_the_checked_in_gunicorn_config(self):
-        railway = (ROOT / "railway.json").read_text(encoding="utf-8")
-        self.assertIn("gunicorn -c gunicorn.conf.py private_global_bootstrap:app", railway)
+def load_gunicorn_config():
+    spec = importlib.util.spec_from_file_location("gunicorn_config", ROOT / "gunicorn.conf.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class ProductionConfigTests(TestCase):
+    def test_default_worker_timeout_allows_slow_ai_requests(self):
+        with patch.dict(os.environ, {}, clear=True):
+            config = load_gunicorn_config()
+        self.assertEqual(config.bind, "0.0.0.0:8080")
+        self.assertGreaterEqual(config.timeout, 120)
 
     def test_default_web_runtime_is_threaded_for_long_streams(self):
-        self.assertEqual(gunicorn_conf.worker_class, "gthread")
-        self.assertGreaterEqual(gunicorn_conf.threads, 2)
-        self.assertGreaterEqual(gunicorn_conf.timeout, 30)
+        with patch.dict(os.environ, {}, clear=True):
+            config = load_gunicorn_config()
+        self.assertEqual(config.workers, 1)
+        self.assertEqual(config.worker_class, "gthread")
+        self.assertGreaterEqual(config.threads, 4)
 
     def test_timeout_port_threads_and_workers_can_be_overridden(self):
-        source = (ROOT / "gunicorn.conf.py").read_text(encoding="utf-8")
-        self.assertIn('os.environ.get("PORT", \'8080\')', source)
-        self.assertIn('"WEB_CONCURRENCY"', source)
-        self.assertIn('"GUNICORN_THREADS"', source)
-        self.assertIn('"GUNICORN_TIMEOUT"', source)
+        with patch.dict(os.environ, {"PORT": "9000", "GUNICORN_TIMEOUT": "240", "GUNICORN_THREADS": "8", "WEB_CONCURRENCY": "2"}, clear=True):
+            config = load_gunicorn_config()
+        self.assertEqual(config.bind, "0.0.0.0:9000")
+        self.assertEqual(config.timeout, 240)
+        self.assertEqual(config.threads, 8)
+        self.assertEqual(config.workers, 2)
 
     def test_invalid_runtime_integers_fall_back_or_are_bounded(self):
-        self.assertGreaterEqual(gunicorn_conf._bounded_int("__NM_MISSING_INT__", 4, 2, 8), 2)
-        with patch.dict(os.environ, {"__NM_BAD_INT__": "nope"}, clear=False):
-            self.assertEqual(gunicorn_conf._bounded_int("__NM_BAD_INT__", 4, 2, 8), 4)
-        with patch.dict(os.environ, {"__NM_LOW_INT__": "-9"}, clear=False):
-            self.assertEqual(gunicorn_conf._bounded_int("__NM_LOW_INT__", 4, 2, 8), 2)
-        with patch.dict(os.environ, {"__NM_HIGH_INT__": "99"}, clear=False):
-            self.assertEqual(gunicorn_conf._bounded_int("__NM_HIGH_INT__", 4, 2, 8), 8)
+        with patch.dict(os.environ, {"GUNICORN_TIMEOUT": "bad", "GUNICORN_THREADS": "999", "WEB_CONCURRENCY": "0"}, clear=True):
+            config = load_gunicorn_config()
+        self.assertEqual(config.timeout, 180)
+        self.assertEqual(config.threads, 16)
+        self.assertEqual(config.workers, 1)
 
-    def test_default_worker_timeout_allows_slow_ai_requests(self):
-        self.assertGreaterEqual(gunicorn_conf.timeout, 120)
+    def test_railway_uses_the_checked_in_gunicorn_config(self):
+        railway = json.loads((ROOT / "railway.json").read_text())
+        self.assertEqual(railway["deploy"]["startCommand"], "gunicorn private_global_bootstrap:app --config gunicorn.conf.py")
+        self.assertEqual(railway["deploy"]["healthcheckPath"], "/health")
+
+    def test_browser_eye_railway_start_command_runs_tor_bootstrap(self):
+        railway = json.loads((ROOT / "railway.browser-eye.json").read_text())
+        self.assertEqual(railway["deploy"]["startCommand"], "sh browser_eye_start.sh")
+        self.assertEqual(railway["deploy"]["healthcheckPath"], "/health")
+        self.assertEqual(railway["deploy"]["healthcheckTimeout"], 30)
+
+    def test_tor_startup_uses_one_explicit_verified_torrc(self):
+        source = (ROOT / "browser_eye_start.sh").read_text(encoding="utf-8")
+        self.assertNotIn("TOR_ARGS=", source)
+        self.assertNotIn("-f /dev/null", source)
+        self.assertIn("TORRC=/tmp/browser-eye-torrc", source)
+        self.assertIn("Log notice stdout", source)
+        self.assertIn('tor --verify-config -f "$TORRC"', source)
+        self.assertIn('tor -f "$TORRC" &', source)
+        self.assertIn("SOCKS5 listener ready on 127.0.0.1:9050", source)
 
     def test_procfile_does_not_duplicate_runtime_settings(self):
         self.assertEqual((ROOT / "Procfile").read_text().strip(), "web: gunicorn private_global_bootstrap:app")
@@ -76,4 +104,5 @@ class ProductionConfigTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    import unittest
     unittest.main()
