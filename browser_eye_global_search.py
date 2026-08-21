@@ -7,6 +7,7 @@ award status, legal status, or truth beyond what the source page/search snippet 
 from __future__ import annotations
 
 import asyncio
+import hmac
 import os
 from time import perf_counter
 from urllib.parse import parse_qs, quote_plus, urlsplit
@@ -74,10 +75,8 @@ def normalize_serp_rows(rows, limit=MAX_RESULTS):
 
 def _authorized():
     expected = str(os.environ.get("GLOBAL_SEARCH_BROWSER_TOKEN") or "").strip()
-    if not expected:
-        return False
     supplied = str(request.headers.get("X-Global-Search-Token") or "").strip()
-    return bool(supplied) and supplied == expected
+    return bool(expected and supplied) and hmac.compare_digest(supplied, expected)
 
 
 async def _search_async(runtime, query, limit):
@@ -95,7 +94,7 @@ async def _search_async(runtime, query, limit):
             await page.goto(
                 "https://www.google.com/search?q=" + quote_plus(query) + "&num=20&hl=en",
                 wait_until="domcontentloaded",
-                timeout=max(3500, int(getattr(runtime, "PROFILE_TIMEOUT_MS", 3500) or 3500)),
+                timeout=3500,
             )
             await page.wait_for_timeout(250)
             snapshot = await page.evaluate("""() => {
