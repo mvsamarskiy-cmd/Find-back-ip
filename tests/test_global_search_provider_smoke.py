@@ -12,12 +12,31 @@ class FakeResponse:
     def json(self):
         return {
             "provider_status": "complete",
+            "engine": "bing",
             "results": [
                 {"title": "one", "url": "https://example.test/one"},
                 {"title": "two", "url": "https://example.test/two"},
             ],
             "captcha": False,
             "latency_ms": 321,
+            "attempts": [
+                {
+                    "engine": "google",
+                    "provider_status": "error",
+                    "error_stage": "goto",
+                    "error_code": "navigation_failed",
+                    "error_type": "Error",
+                    "result_count": 0,
+                    "latency_ms": 55,
+                    "url": "https://must-not-leak.example/search?q=secret",
+                },
+                {
+                    "engine": "bing",
+                    "provider_status": "complete",
+                    "result_count": 2,
+                    "latency_ms": 120,
+                },
+            ],
         }
 
 
@@ -43,11 +62,16 @@ class GlobalSearchProviderSmokeTests(unittest.TestCase):
 
         self.assertEqual(result["http_status"], 200)
         self.assertEqual(result["provider_status"], "complete")
+        self.assertEqual(result["engine"], "bing")
         self.assertEqual(result["result_count"], 2)
         self.assertFalse(result["captcha"])
         self.assertEqual(result["latency_ms"], 321)
+        self.assertEqual(result["attempts"][0]["error_code"], "navigation_failed")
+        self.assertEqual(result["attempts"][1]["engine"], "bing")
         self.assertNotIn(secret, repr(result))
         self.assertNotIn("browser-eye.example.test", repr(result))
+        self.assertNotIn("must-not-leak.example", repr(result))
+        self.assertNotIn("secret", repr(result))
         self.assertEqual(calls[0][1]["headers"]["X-Global-Search-Token"], secret)
         self.assertEqual(calls[0][1]["json"]["limit"], 3)
 
@@ -65,6 +89,7 @@ class GlobalSearchProviderSmokeTests(unittest.TestCase):
         self.assertFalse(result["configured"])
         self.assertEqual(result["provider_status"], "unconfigured")
         self.assertEqual(result["result_count"], 0)
+        self.assertEqual(result["attempts"], [])
 
 
 if __name__ == "__main__":
