@@ -19,12 +19,14 @@ PRIVATE_GLOBAL_MODE_TAG = '<script src="/static/private_global_mode.js?v=2"></sc
 UNIVERSAL_GLOBAL_MODE_TAG = '<script src="/static/universal_global_mode.js?v=2"></script>'
 MONEY_OPPORTUNITY_UI_TAG = '<script src="/static/money_opportunity_ui.js?v=1"></script>'
 MONEY_ELIGIBILITY_UI_TAG = '<script src="/static/money_eligibility_ui.js?v=1"></script>'
+MONEY_GRAPH_UI_TAG = '<script src="/static/money_graph_ui.js?v=1"></script>'
 PRIVATE_RESEARCH_BROWSER_TAG = '<script src="/static/private_research_browser.js?v=1"></script>'
 PRIVATE_GLOBAL_MODE_BUNDLE = "\n".join((
     PRIVATE_GLOBAL_MODE_TAG,
     UNIVERSAL_GLOBAL_MODE_TAG,
     MONEY_OPPORTUNITY_UI_TAG,
     MONEY_ELIGIBILITY_UI_TAG,
+    MONEY_GRAPH_UI_TAG,
     PRIVATE_RESEARCH_BROWSER_TAG,
 ))
 

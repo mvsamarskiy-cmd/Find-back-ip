@@ -48,6 +48,7 @@ jobs:
       - run: node --check static/universal_global_mode.js
       - run: node --check static/money_opportunity_ui.js
       - run: node --check static/money_eligibility_ui.js
+      - run: node --check static/money_graph_ui.js
       - run: node --check static/private_research_browser.js
 
   postgres-session-store:

@@ -1,10 +1,10 @@
-"""Universal Search v5 with Money / Material Opportunity Intelligence v2."""
+"""Universal Search v5 with Money / Material Opportunity Intelligence + Opportunity Graph."""
 from __future__ import annotations
 
 import requests
 
 import universal_search_entity as entity_search
-from money_opportunity_search import money_opportunity_search_capabilities, search_money_opportunities
+from money_opportunity_graph_search import money_opportunity_search_capabilities, search_money_opportunities
 
 
 def search_universal(
@@ -41,10 +41,6 @@ def search_universal(
 def universal_search_capabilities() -> dict:
     payload = dict(entity_search.universal_search_capabilities())
     money = money_opportunity_search_capabilities()
-
-    # Keep the established diagnostics contract for existing clients/tests.
-    # Money v2 is additive: changing the opportunity planner must not silently
-    # redefine the Tor transport's semantics or version identifiers.
     payload["opportunity_transport"] = {
         "version": "tor-opportunity-retrieval-v1",
         "enabled_by_default": True,
