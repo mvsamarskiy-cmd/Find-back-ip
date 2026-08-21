@@ -30,12 +30,13 @@
       status.textContent = 'Universal Search активний.';
     }
     if (status?.textContent?.includes('Шукаю → нормалізую → перевіряю джерела → рахую fit')) {
-      status.textContent = 'Шукаю → визначаю намір → вибираю маршрут → перевіряю джерела…';
+      status.textContent = 'Шукаю → визначаю намір → вибираю intelligence-модуль → перевіряю джерела…';
     }
   }
 
-  function cleanGeneralCards() {
-    if (document.body.dataset.nmIntelligenceRoute !== 'general_web') return;
+  function cleanResearchCards() {
+    const route = document.body.dataset.nmIntelligenceRoute || '';
+    if (!route || route === 'opportunity') return;
     for (const card of document.querySelectorAll('#nmPrivateResults .nmpg-card')) {
       for (const badge of card.querySelectorAll('.nmpg-badge')) {
         if ((badge.textContent || '').trim() === 'STATUS ?') badge.remove();
@@ -48,7 +49,7 @@
 
   function refresh() {
     normalizePrivateCopy();
-    cleanGeneralCards();
+    cleanResearchCards();
   }
 
   window.fetch = async (...args) => {
@@ -64,6 +65,11 @@
           document.body.dataset.nmGeneralIntent = String(payload.general_intent);
         } else {
           delete document.body.dataset.nmGeneralIntent;
+        }
+        if (payload.module_version) {
+          document.body.dataset.nmModuleVersion = String(payload.module_version);
+        } else {
+          delete document.body.dataset.nmModuleVersion;
         }
         queueMicrotask(refresh);
       }).catch(() => {});
