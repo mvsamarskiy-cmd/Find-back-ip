@@ -24,7 +24,7 @@ OPPORTUNITY_CONTEXT_PATTERNS = (
     r"\bstartup\w*\b", r"\bsme\b", r"\bprize\w*\b", r"\bgrant\w*\b",
     r"\bopportunit\w*\b", r"\bfind\b", r"\bavailable\b",
     r"\bподат\w*\b", r"\bзаявк\w*\b", r"\bдедлайн\w*\b", r"\bстартап\w*\b",
-    r"\bприз\w*\b", r"\bможливост\w*\b", r"\bзнайд\w*\b", r"\bвідкрит\w*\b",
+    r"\bприз(?:и|ів|ом|ами|у|а)?\b", r"\bможливост\w*\b", r"\bзнайд\w*\b", r"\bвідкрит\w*\b",
     r"\bwniosk\w*\b", r"\bnab[oó]r\w*\b", r"\btermin\w*\b", r"\bstartup\w*\b",
     r"\bnagrod\w*\b", r"\bmożliwoś\w*\b", r"\bznajd\w*\b", r"\botwart\w*\b",
 )
