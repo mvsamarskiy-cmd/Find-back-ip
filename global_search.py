@@ -1,8 +1,8 @@
-"""Private global/opportunity search layer built on NameMachine's search principles.
+"""Private global/opportunity search layer built on NameMachine search principles.
 
-This module deliberately distinguishes source provenance from claim verification.
-An official-domain hit is an official source observation, not proof that the user
-is eligible for a grant, prize, tender, benefit, auction, or other opportunity.
+Source provenance is kept separate from claim verification. An official-domain
+hit is an observed official source, not proof of eligibility, deadline, amount,
+award status, legal status, or availability.
 """
 from __future__ import annotations
 
@@ -85,7 +85,10 @@ def _host(url):
 
 def _source_for_host(host):
     host = str(host or "").lower().removeprefix("www.")
-    matches = [source for source in SOURCE_CATALOG if host == source["domain"] or host.endswith("." + source["domain"])]
+    matches = [
+        source for source in SOURCE_CATALOG
+        if host == source["domain"] or host.endswith("." + source["domain"])
+    ]
     if not matches:
         return None
     return sorted(matches, key=lambda row: len(row["domain"]), reverse=True)[0]
@@ -106,7 +109,11 @@ def normalize_country(value):
 
 def normalize_category(value):
     category = _clean_text(value or "all", 40).lower().replace("-", "_")
-    aliases = {"grants": "grant", "challenges": "challenge", "tenders": "tender", "auctions": "auction", "benefits": "benefit", "business": "business_aid", "business_support": "business_aid"}
+    aliases = {
+        "grants": "grant", "challenges": "challenge", "tenders": "tender",
+        "auctions": "auction", "benefits": "benefit", "business": "business_aid",
+        "business_support": "business_aid",
+    }
     category = aliases.get(category, category)
     if category not in ALLOWED_CATEGORIES:
         raise ValueError("Unknown global-search category")
@@ -156,11 +163,21 @@ def build_search_plan(query, *, category="all", country="EU"):
             continue
         seen.add(key)
         unique.append(item[:1800])
-    return {"query": query, "category": category, "country": country_code, "country_name": country_name, "queries": unique[:5]}
+    return {
+        "query": query,
+        "category": category,
+        "country": country_code,
+        "country_name": country_name,
+        "queries": unique[:5],
+    }
 
 
 def _query_tokens(query):
-    return {token.casefold() for token in re.findall(r"[\wÀ-žА-Яа-яІіЇїЄєҐґ]{3,}", str(query), flags=re.UNICODE) if token.casefold() not in {"the", "and", "for", "with", "from", "that", "this"}}
+    return {
+        token.casefold()
+        for token in re.findall(r"[\wÀ-žА-Яа-яІіЇїЄєҐґ]{3,}", str(query), flags=re.UNICODE)
+        if token.casefold() not in {"the", "and", "for", "with", "from", "that", "this"}
+    }
 
 
 def _score_result(title, description, source, query, provider_rank):
@@ -190,10 +207,29 @@ def _canonical_url(url):
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}"
 
 
-def global_search_capabilities():
+def _provider_config():
+    brave_key = str(os.environ.get("BRAVE_SEARCH_API_KEY") or "").strip()
+    browser_url = str(os.environ.get("BROWSER_EYE_URL") or "").strip().rstrip("/")
+    browser_token = str(os.environ.get("GLOBAL_SEARCH_BROWSER_TOKEN") or "").strip()
     return {
-        "provider": "brave_web",
-        "provider_configured": bool(os.environ.get("BRAVE_SEARCH_API_KEY", "").strip()),
+        "brave": bool(brave_key),
+        "browser_eye": bool(browser_url and browser_token),
+        "brave_key": brave_key,
+        "browser_url": browser_url,
+        "browser_token": browser_token,
+    }
+
+
+def global_search_capabilities():
+    providers = _provider_config()
+    active = "brave_web" if providers["brave"] else "browser_eye_google" if providers["browser_eye"] else "none"
+    return {
+        "provider": active,
+        "provider_configured": active != "none",
+        "providers": {
+            "brave_web": providers["brave"],
+            "browser_eye_google": providers["browser_eye"],
+        },
         "categories": sorted(ALLOWED_CATEGORIES),
         "countries": [{"code": code, "name": name} for code, name in EU_COUNTRIES.items()],
         "eu_wide": True,
@@ -204,52 +240,149 @@ def global_search_capabilities():
     }
 
 
-def search_global(query, *, category="all", country="EU", requester=requests.get):
-    plan = build_search_plan(query, category=category, country=country)
-    api_key = os.environ.get("BRAVE_SEARCH_API_KEY", "").strip()
-    if not api_key:
-        return {"query": plan["query"], "category": plan["category"], "country": plan["country"], "provider": "brave_web", "provider_status": "unconfigured", "results": [], "search_plan": plan["queries"], "truth_note": "No live web provider is configured; no opportunity claims were generated."}
+def _brave_query(search_query, api_key, requester):
+    response = requester(
+        BRAVE_SEARCH_URL,
+        headers={"Accept": "application/json", "X-Subscription-Token": api_key},
+        params={"q": search_query, "count": 20, "safesearch": "moderate"},
+        timeout=10,
+    )
+    if response.status_code == 429:
+        return "rate_limited", []
+    if response.status_code != 200:
+        return f"provider_http_{response.status_code}", []
+    payload = response.json() if response.content else {}
+    return "complete", [
+        {
+            "title": row.get("title"),
+            "description": row.get("description"),
+            "url": row.get("url"),
+        }
+        for row in ((payload.get("web") or {}).get("results") or [])[:20]
+        if isinstance(row, dict)
+    ]
 
-    headers = {"Accept": "application/json", "X-Subscription-Token": api_key}
+
+def _browser_eye_query(search_query, browser_url, browser_token, poster):
+    response = poster(
+        browser_url + "/v1/web-search",
+        json={"query": search_query, "limit": 20},
+        timeout=14,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "NameMachine-global-search/1",
+            "X-Global-Search-Token": browser_token,
+        },
+    )
+    if response.status_code == 429:
+        return "rate_limited", []
+    if response.status_code != 200:
+        return f"provider_http_{response.status_code}", []
+    payload = response.json() if response.content else {}
+    return str(payload.get("provider_status") or "complete"), [
+        {
+            "title": row.get("title"),
+            "description": row.get("description"),
+            "url": row.get("url"),
+        }
+        for row in (payload.get("results") or [])[:20]
+        if isinstance(row, dict)
+    ]
+
+
+def _decorate_rows(raw_rows, plan, query_index, collected, seen):
+    for provider_rank, raw in enumerate(raw_rows):
+        title = _clean_text(raw.get("title"), 300)
+        description = _clean_text(raw.get("description"), 900)
+        url = _clean_text(raw.get("url"), 1000)
+        canonical = _canonical_url(url)
+        if not title or not canonical or canonical in seen:
+            continue
+        seen.add(canonical)
+        host = _host(url)
+        source = _source_for_host(host)
+        result_category = infer_category(title, description, plan["category"])
+        score = _score_result(title, description, source, plan["query"], query_index * 20 + provider_rank)
+        collected.append({
+            "title": title,
+            "description": description,
+            "url": url,
+            "host": host,
+            "category": result_category,
+            "retrieval_score": score,
+            "source_tier": source["tier"] if source else "web",
+            "source_name": source["name"] if source else host,
+            "source_country": source["country"] if source else None,
+            "official_source": bool(source and source["tier"] == "official"),
+            "query_index": query_index,
+        })
+
+
+def search_global(query, *, category="all", country="EU", requester=requests.get, poster=requests.post):
+    plan = build_search_plan(query, category=category, country=country)
+    providers = _provider_config()
+    provider = "brave_web" if providers["brave"] else "browser_eye_google" if providers["browser_eye"] else "none"
+    if provider == "none":
+        return {
+            "query": plan["query"],
+            "category": plan["category"],
+            "country": plan["country"],
+            "provider": "none",
+            "provider_status": "unconfigured",
+            "results": [],
+            "search_plan": plan["queries"],
+            "truth_note": "No live web provider is configured; no opportunity claims were generated.",
+        }
+
     collected = []
     seen = set()
     provider_status = "complete"
     for query_index, search_query in enumerate(plan["queries"]):
         try:
-            response = requester(BRAVE_SEARCH_URL, headers=headers, params={"q": search_query, "count": 20, "safesearch": "moderate"}, timeout=10)
+            if provider == "brave_web":
+                status, rows = _brave_query(search_query, providers["brave_key"], requester)
+            else:
+                status, rows = _browser_eye_query(
+                    search_query,
+                    providers["browser_url"],
+                    providers["browser_token"],
+                    poster,
+                )
         except requests.RequestException:
             provider_status = "partial_network_error" if collected else "network_error"
             continue
-        if response.status_code == 429:
-            provider_status = "partial_rate_limited" if collected else "rate_limited"
-            break
-        if response.status_code != 200:
-            provider_status = "partial_provider_error" if collected else f"provider_http_{response.status_code}"
-            continue
-        try:
-            payload = response.json() if response.content else {}
         except (TypeError, ValueError):
             provider_status = "partial_malformed" if collected else "malformed"
             continue
-        rows = ((payload.get("web") or {}).get("results") or [])[:20]
-        for provider_rank, raw in enumerate(rows):
-            if not isinstance(raw, dict):
-                continue
-            title = _clean_text(raw.get("title"), 300)
-            description = _clean_text(raw.get("description"), 900)
-            url = _clean_text(raw.get("url"), 1000)
-            canonical = _canonical_url(url)
-            if not title or not canonical or canonical in seen:
-                continue
-            seen.add(canonical)
-            host = _host(url)
-            source = _source_for_host(host)
-            result_category = infer_category(title, description, plan["category"])
-            score = _score_result(title, description, source, plan["query"], query_index * 20 + provider_rank)
-            collected.append({"title": title, "description": description, "url": url, "host": host, "category": result_category, "retrieval_score": score, "source_tier": source["tier"] if source else "web", "source_name": source["name"] if source else host, "source_country": source["country"] if source else None, "official_source": bool(source and source["tier"] == "official"), "query_index": query_index})
 
-    collected.sort(key=lambda row: (-int(row.get("official_source", False)), -int(row.get("retrieval_score", 0)), str(row.get("title", "")).casefold()))
-    return {"query": plan["query"], "category": plan["category"], "country": plan["country"], "provider": "brave_web", "provider_status": provider_status, "results": collected[:60], "search_plan": plan["queries"], "truth_note": "Results are discovered evidence. Official-source status does not prove eligibility, availability, award amount, or deadline; each item must be checked at its source."}
+        if status in {"rate_limited", "challenge"}:
+            provider_status = f"partial_{status}" if collected else status
+            if not rows:
+                break
+        elif status != "complete":
+            provider_status = f"partial_{status}" if collected else status
+        _decorate_rows(rows, plan, query_index, collected, seen)
+
+    collected.sort(
+        key=lambda row: (
+            -int(row.get("official_source", False)),
+            -int(row.get("retrieval_score", 0)),
+            str(row.get("title", "")).casefold(),
+        )
+    )
+    return {
+        "query": plan["query"],
+        "category": plan["category"],
+        "country": plan["country"],
+        "provider": provider,
+        "provider_status": provider_status,
+        "results": collected[:60],
+        "search_plan": plan["queries"],
+        "truth_note": "Results are discovered evidence. Official-source status does not prove eligibility, availability, award amount, or deadline; each item must be checked at its source.",
+    }
 
 
-__all__ = ["ALLOWED_CATEGORIES", "EU_COUNTRIES", "SOURCE_CATALOG", "build_search_plan", "global_search_capabilities", "search_global"]
+__all__ = [
+    "ALLOWED_CATEGORIES", "EU_COUNTRIES", "SOURCE_CATALOG", "build_search_plan",
+    "global_search_capabilities", "search_global",
+]
