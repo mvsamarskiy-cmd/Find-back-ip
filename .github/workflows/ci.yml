@@ -44,6 +44,7 @@ jobs:
       - run: node --check static/ui_cleanup_r8.js
       - run: node --check static/variant_expansion_ui.js
       - run: node --check static/variant_expansion_sync.js
+      - run: node --check static/private_global_mode.js
 
   postgres-session-store:
     runs-on: ubuntu-latest
