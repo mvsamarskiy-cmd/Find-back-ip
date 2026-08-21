@@ -11,12 +11,13 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from money_eligibility import extract_eligibility_rules
+from money_source_expansion import expanded_source_for_host
 from money_sources import source_for_host
 from opportunity_intelligence import extract_amount, extract_deadline, extract_eligibility, infer_status
 from research_evidence import fetch_research_evidence
 
 
-MONEY_VERIFICATION_VERSION = "money-direct-verification-v1.1"
+MONEY_VERIFICATION_VERSION = "money-direct-verification-v1.2"
 DEFAULT_VERIFY_LIMIT = 3
 MAX_VERIFY_LIMIT = 5
 
@@ -25,8 +26,12 @@ def _clean(value: object, limit: int = 2000) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
+def _known_source(value: object) -> dict | None:
+    return source_for_host(value) or expanded_source_for_host(value)
+
+
 def _verification_candidate(row: dict) -> tuple:
-    source = source_for_host(row.get("url") or row.get("host"))
+    source = _known_source(row.get("url") or row.get("host"))
     tier = (source or {}).get("tier") or row.get("source_tier") or "web"
     tier_rank = {"official": 0, "public": 1, "platform": 2, "market": 3, "web": 4, "tor": 5}.get(str(tier), 6)
     return (
@@ -49,7 +54,7 @@ def _is_program_like(row: dict) -> bool:
 
 
 def _active_program_verified(row: dict, evidence: dict, status: dict, deadline: dict | None) -> bool:
-    source = source_for_host(row.get("url") or row.get("host"))
+    source = _known_source(row.get("url") or row.get("host"))
     tier = (source or {}).get("tier")
     if tier not in {"official", "public"} or not _is_program_like(row):
         return False
@@ -102,6 +107,7 @@ def verify_money_source(row: dict, *, evidence_fetcher: Callable = fetch_researc
         "value": "unknown", "confidence": 0.0, "reason": "source_not_observed"
     }
     current_call_verified = _active_program_verified(row, evidence, status, deadline)
+    known_source = _known_source(url)
     return {
         "version": MONEY_VERIFICATION_VERSION,
         "state": "direct_source_observed" if observed else state,
@@ -114,6 +120,11 @@ def verify_money_source(row: dict, *, evidence_fetcher: Callable = fetch_researc
         "snapshot_sha256": evidence.get("snapshot_sha256"),
         "onion_service": bool(evidence.get("onion_service")),
         "onion_location": evidence.get("onion_location"),
+        "known_source": {
+            "name": (known_source or {}).get("name"),
+            "tier": (known_source or {}).get("tier"),
+            "source_class": (known_source or {}).get("source_class"),
+        } if known_source else None,
         "amount": amount,
         "deadline": deadline,
         "eligibility": eligibility,
@@ -184,6 +195,7 @@ def money_verification_capabilities() -> dict:
         "concurrent_max": 3,
         "transport": "hardened_browser_eye_tor",
         "current_call_verification": "official_or_public_program_page_plus_direct_active_evidence",
+        "expanded_source_registry_supported": True,
         "eligibility_rule_extraction": True,
         "market_listing_availability_inferred": False,
         "legal_eligibility_inferred": False,
