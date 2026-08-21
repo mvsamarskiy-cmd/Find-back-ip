@@ -7,6 +7,7 @@ on:
       - 'templates/**'
       - 'telegram_bootstrap.py'
       - 'verification/ui_click_smoke.mjs'
+      - 'verification/client_journey_audit.mjs'
       - '.github/workflows/ui-click-regression.yml'
   workflow_dispatch:
 
@@ -16,7 +17,7 @@ permissions:
 jobs:
   click-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,6 +50,19 @@ jobs:
         env:
           NAMEMACHINE_TEST_URL: http://127.0.0.1:8080
         run: node verification/ui_click_smoke.mjs
+      - name: Run client journey matrix and write TXT history
+        env:
+          NAMEMACHINE_TEST_URL: http://127.0.0.1:8080
+          NAMEMACHINE_AUDIT_TXT: namemachine-client-journey-audit.txt
+        run: node verification/client_journey_audit.mjs
+      - name: Upload client audit history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: namemachine-client-journey-audit
+          path: namemachine-client-journey-audit.txt
+          if-no-files-found: warn
+          retention-days: 14
       - name: Dump server log on failure
         if: failure()
         run: cat /tmp/namemachine.log || true
