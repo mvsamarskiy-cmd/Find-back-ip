@@ -2,15 +2,24 @@ FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tor \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements-browser-eye.txt ./
 RUN pip install --no-cache-dir -r requirements-browser-eye.txt
 
 COPY browser_eye_service.py ./
 COPY browser_eye_hardening.py ./
 COPY browser_eye_global_search.py ./
+COPY browser_eye_tor.py ./
 COPY browser_eye_ready.py ./
+COPY browser_eye_start.sh ./
+RUN chmod 0755 /app/browser_eye_start.sh
 
 ENV PORT=8080
+ENV TOR_SEARCH_ENABLED=1
+ENV TOR_SOCKS_PROXY=socks5://127.0.0.1:9050
 EXPOSE 8080
 
-CMD ["gunicorn", "browser_eye_ready:app", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "30"]
+CMD ["/app/browser_eye_start.sh"]
