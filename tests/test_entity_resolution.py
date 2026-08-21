@@ -128,8 +128,8 @@ class EntityClusteringTests(unittest.TestCase):
 
 
 class EntitySynthesisIntegrationTests(unittest.TestCase):
-    def test_safe_entity_builds_price_comparison_without_claiming_verification(self):
-        payload = {
+    def _safe_product_payload(self, observations):
+        return {
             "query": "iPhone 17 Pro 256GB Black price",
             "intelligence_route": "product",
             "intelligence_routes": ["product"],
@@ -138,13 +138,15 @@ class EntitySynthesisIntegrationTests(unittest.TestCase):
                     source("Apple iPhone 17 Pro 256GB Black", "https://a.example/iphone", "a.example"),
                     source("iPhone 17 Pro 256 GB Black Apple", "https://b.example/iphone", "b.example"),
                 ],
-                "observations": [
-                    {"type": "price_mention", "currency": "PLN", "value": 4999.0, "source_url": "https://a.example/iphone", "source_host": "a.example", "retrieved_at": "2026-08-21T15:00:00Z", "independently_verified": False},
-                    {"type": "price_mention", "currency": "PLN", "value": 5099.0, "source_url": "https://b.example/iphone", "source_host": "b.example", "retrieved_at": "2026-08-21T15:00:00Z", "independently_verified": False},
-                ],
-                "truth_status": {},
+                "observations": observations,
             },
         }
+
+    def test_safe_entity_builds_price_comparison_without_claiming_verification(self):
+        payload = self._safe_product_payload([
+            {"type": "price_mention", "currency": "PLN", "value": 4999.0, "source_url": "https://a.example/iphone", "source_host": "a.example", "retrieved_at": "2026-08-21T15:00:00Z", "independently_verified": False},
+            {"type": "price_mention", "currency": "PLN", "value": 5099.0, "source_url": "https://b.example/iphone", "source_host": "b.example", "retrieved_at": "2026-08-21T15:00:00Z", "independently_verified": False},
+        ])
         result = apply_entity_resolution(payload)
         synthesis = result["synthesis"]
         self.assertEqual(synthesis["entity_resolution"]["comparison_safe_group_count"], 1)
@@ -154,6 +156,20 @@ class EntitySynthesisIntegrationTests(unittest.TestCase):
         self.assertEqual(comparison["max_observed"], 5099.0)
         self.assertEqual(comparison["spread"], 100.0)
         self.assertFalse(comparison["verified_price_comparison"])
+        self.assertFalse(synthesis["truth_status"]["entity_resolved_price_comparison_is_verified"])
+
+    def test_safe_entity_preserves_availability_conflict_for_direct_verification(self):
+        payload = self._safe_product_payload([
+            {"type": "availability_mention", "value": "available", "source_url": "https://a.example/iphone", "source_host": "a.example"},
+            {"type": "availability_mention", "value": "unavailable", "source_url": "https://b.example/iphone", "source_host": "b.example"},
+        ])
+        synthesis = apply_entity_resolution(payload)["synthesis"]
+        self.assertEqual(len(synthesis["entity_conflict_candidates"]), 1)
+        conflict = synthesis["entity_conflict_candidates"][0]
+        self.assertEqual(conflict["kind"], "availability_conflict")
+        self.assertEqual(conflict["observed_values"], ["available", "unavailable"])
+        self.assertFalse(conflict["verified_conflict"])
+        self.assertEqual(conflict["status"], "entity_resolved_conflict_needs_direct_verification")
 
     def test_different_variants_do_not_create_price_comparison(self):
         payload = {
