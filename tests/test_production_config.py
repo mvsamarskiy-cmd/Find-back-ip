@@ -83,6 +83,16 @@ class ProductionConfigTests(TestCase):
             "web: gunicorn private_global_bootstrap:app",
         )
 
+    def test_browser_eye_image_contains_all_imported_runtime_modules(self):
+        dockerfile = (ROOT / "Dockerfile.browser-eye").read_text(encoding="utf-8")
+        ready = (ROOT / "browser_eye_ready.py").read_text(encoding="utf-8")
+
+        self.assertIn("from browser_eye_global_search import install_browser_global_search", ready)
+        self.assertIn("COPY browser_eye_global_search.py ./", dockerfile)
+        self.assertIn("COPY browser_eye_hardening.py ./", dockerfile)
+        self.assertIn("COPY browser_eye_service.py ./", dockerfile)
+        self.assertIn("COPY browser_eye_ready.py ./", dockerfile)
+
     def test_bootstrap_installs_telegram_integration_before_importing_app(self):
         source = (ROOT / "telegram_bootstrap.py").read_text(encoding="utf-8")
         self.assertLess(source.index("install()"), source.index("from app import app"))
