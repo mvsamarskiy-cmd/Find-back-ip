@@ -1,9 +1,10 @@
 """Readiness wrapper for the private Browser Eye service.
 
 Railway must not mark the service healthy merely because Flask/Gunicorn booted.
-The readiness probe warms Playwright and launches both Chromium and WebKit once,
-so a missing browser runtime fails deployment instead of failing later on the
-first real NameMachine candidate.
+The readiness probe warms Playwright and launches both Chromium and WebKit once.
+Tor is additive: when enabled, readiness also requires the local SOCKS listener,
+while full Tor-network bootstrap is visible in daemon logs and can be exercised by
+private Tor routes without making normal Browser Eye dependent on external Tor exits.
 """
 from __future__ import annotations
 
@@ -15,15 +16,12 @@ import browser_eye_service as browser_eye_module
 from browser_eye_global_search import install_browser_global_search
 from browser_eye_hardening import install_browser_eye_hardening
 from browser_eye_service import RUNTIME, app
+from browser_eye_tor import install_browser_tor_routes, tor_diagnostics, wait_for_tor_socket
 
 
-# Harden identity interpretation before the first real or readiness-triggered
-# browser task. A requested URL/error shell can no longer count as occupancy.
 install_browser_eye_hardening(browser_eye_module)
-
-# Generic global web search is a separate private route/token and does not change
-# the conservative social-profile occupancy/claimability semantics above.
 install_browser_global_search(app, RUNTIME)
+install_browser_tor_routes(app, RUNTIME)
 
 
 def ready_health():
@@ -36,18 +34,24 @@ def ready_health():
             "ready": False,
             "error_type": type(error).__name__,
         }), 503
+    if not wait_for_tor_socket(timeout=8.0):
+        return jsonify({
+            "status": "error",
+            "service": "browser-eye",
+            "ready": False,
+            "error_type": "TorSocksUnavailable",
+            "tor": tor_diagnostics(),
+        }), 503
     return jsonify({
         "status": "ok",
         "service": "browser-eye",
         "ready": True,
         "global_web_search": bool(os.environ.get("GLOBAL_SEARCH_BROWSER_TOKEN")),
+        "tor": tor_diagnostics(),
         **RUNTIME.diagnostics(),
     })
 
 
-# Replace the existing lightweight Flask view while retaining the same /health
-# route and endpoint name. Normal application imports remain Playwright-free;
-# only the dedicated service entrypoint activates this readiness contract.
 app.view_functions["health"] = ready_health
 
 
