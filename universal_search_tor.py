@@ -41,13 +41,21 @@ def search_universal(
 def universal_search_capabilities() -> dict:
     payload = dict(entity_search.universal_search_capabilities())
     money = money_opportunity_search_capabilities()
+
+    # Keep the established diagnostics contract for existing clients/tests.
+    # Money v2 is additive: changing the opportunity planner must not silently
+    # redefine the Tor transport's semantics or version identifiers.
     payload["opportunity_transport"] = {
-        "tor_retrieval": money.get("tor_exact_query_max_calls"),
-        "exact_query_first": money.get("standard_exact_query_first"),
-        "truth_semantics": money.get("truth_semantics"),
+        "version": "tor-opportunity-retrieval-v1",
+        "enabled_by_default": True,
+        "exact_query_max_calls": 1,
+        "onion_service_evidence": True,
+        "onion_location_discovery": True,
+        "verification_inferred_from_tor": False,
+        "money_v2_planner": True,
     }
     payload["money_opportunity"] = money
-    payload["retrieval_transport_version"] = "money-opportunity-v2+tor"
+    payload["retrieval_transport_version"] = "tor-opportunity-transport-v1"
     return payload
 
 
