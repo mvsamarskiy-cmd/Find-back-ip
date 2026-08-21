@@ -13,9 +13,11 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
         self.assertIn("/static/flow_clarity_v4.js?v=1", body)
         self.assertIn("/static/private_global_mode.js?v=2", body)
         self.assertIn("/static/universal_global_mode.js?v=2", body)
+        self.assertIn("/static/private_research_browser.js?v=1", body)
         self.assertLess(body.index("/static/search_actions_v2.js?v=1"), body.index("/static/private_global_mode.js?v=2"))
         self.assertLess(body.index("/static/flow_clarity_v4.js?v=1"), body.index("/static/private_global_mode.js?v=2"))
         self.assertLess(body.index("/static/private_global_mode.js?v=2"), body.index("/static/universal_global_mode.js?v=2"))
+        self.assertLess(body.index("/static/universal_global_mode.js?v=2"), body.index("/static/private_research_browser.js?v=1"))
 
     def test_private_diagnostics_expose_state_not_secrets(self):
         payload = self.client.get("/api/private-mode/diagnostics").get_json()
@@ -52,6 +54,16 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
         for module in universal["modules"].values():
             self.assertTrue(module["preferred_host_ranking_only"])
             self.assertEqual(module["truth_semantics"], "retrieval_evidence_not_verified_fact")
+
+        research = payload["research_evidence"]
+        self.assertEqual(research["version"], "journalist-evidence-v1")
+        self.assertTrue(research["private_session_required"])
+        self.assertTrue(research["endpoint_hidden_when_locked"])
+        self.assertTrue(research["original_url_preserved"])
+        self.assertTrue(research["public_contact_extraction"])
+        self.assertFalse(research["login_automation"])
+        self.assertFalse(research["form_submission"])
+        self.assertFalse(research["purchase_automation"])
 
 
 if __name__ == "__main__":
