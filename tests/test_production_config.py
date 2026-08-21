@@ -50,6 +50,12 @@ class ProductionConfigTests(TestCase):
         self.assertEqual(railway["deploy"]["startCommand"], "gunicorn private_global_bootstrap:app --config gunicorn.conf.py")
         self.assertEqual(railway["deploy"]["healthcheckPath"], "/health")
 
+    def test_browser_eye_railway_start_command_runs_tor_bootstrap(self):
+        railway = json.loads((ROOT / "railway.browser-eye.json").read_text())
+        self.assertEqual(railway["deploy"]["startCommand"], "sh browser_eye_start.sh")
+        self.assertEqual(railway["deploy"]["healthcheckPath"], "/health")
+        self.assertEqual(railway["deploy"]["healthcheckTimeout"], 30)
+
     def test_procfile_does_not_duplicate_runtime_settings(self):
         self.assertEqual((ROOT / "Procfile").read_text().strip(), "web: gunicorn private_global_bootstrap:app")
 
