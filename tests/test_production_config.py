@@ -56,11 +56,20 @@ class ProductionConfigTests(TestCase):
         self.assertEqual(railway["deploy"]["healthcheckPath"], "/health")
         self.assertEqual(railway["deploy"]["healthcheckTimeout"], 30)
 
-    def test_tor_startup_keeps_log_destination_as_one_argument(self):
+    def test_tor_startup_uses_explicit_owned_torrc(self):
         source = (ROOT / "browser_eye_start.sh").read_text(encoding="utf-8")
-        self.assertNotIn("TOR_ARGS=", source)
-        self.assertGreaterEqual(source.count('--Log "notice stdout"'), 2)
-        self.assertIn("tor --verify-config", source)
+        self.assertNotIn("-f /dev/null", source)
+        self.assertIn("TORRC=/tmp/tor-data/torrc", source)
+        self.assertIn("User debian-tor", source)
+        self.assertIn("DataDirectory /tmp/tor-data", source)
+        self.assertIn("SocksPort 127.0.0.1:9050", source)
+        self.assertIn("ClientOnly 1", source)
+        self.assertIn("SafeLogging 1", source)
+        self.assertIn("Log notice stdout", source)
+        self.assertIn('chown debian-tor:debian-tor "$TORRC"', source)
+        self.assertIn('chmod 0600 "$TORRC"', source)
+        self.assertIn('tor --verify-config -f "$TORRC"', source)
+        self.assertIn('tor -f "$TORRC" &', source)
         self.assertIn("SOCKS5 listener ready on 127.0.0.1:9050", source)
 
     def test_procfile_does_not_duplicate_runtime_settings(self):
