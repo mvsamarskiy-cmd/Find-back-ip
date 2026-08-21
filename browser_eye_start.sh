@@ -5,14 +5,21 @@ if [ "${TOR_SEARCH_ENABLED:-1}" = "1" ]; then
   echo "[browser-eye-tor] preparing local Tor SOCKS transport"
   install -d -m 0700 -o debian-tor -g debian-tor /tmp/tor-data
 
-  TOR_ARGS="-f /dev/null --User debian-tor --SocksPort 127.0.0.1:9050 --DataDirectory /tmp/tor-data --Log notice stdout"
   echo "[browser-eye-tor] verifying Tor configuration"
-  # shellcheck disable=SC2086
-  tor --verify-config $TOR_ARGS
+  tor --verify-config \
+    -f /dev/null \
+    --User debian-tor \
+    --SocksPort 127.0.0.1:9050 \
+    --DataDirectory /tmp/tor-data \
+    --Log "notice stdout"
 
   echo "[browser-eye-tor] starting Tor daemon"
-  # shellcheck disable=SC2086
-  tor $TOR_ARGS &
+  tor \
+    -f /dev/null \
+    --User debian-tor \
+    --SocksPort 127.0.0.1:9050 \
+    --DataDirectory /tmp/tor-data \
+    --Log "notice stdout" &
   TOR_PID=$!
   echo "[browser-eye-tor] pid=${TOR_PID}"
 

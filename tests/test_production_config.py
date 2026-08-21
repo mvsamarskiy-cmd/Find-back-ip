@@ -56,6 +56,13 @@ class ProductionConfigTests(TestCase):
         self.assertEqual(railway["deploy"]["healthcheckPath"], "/health")
         self.assertEqual(railway["deploy"]["healthcheckTimeout"], 30)
 
+    def test_tor_startup_keeps_log_destination_as_one_argument(self):
+        source = (ROOT / "browser_eye_start.sh").read_text(encoding="utf-8")
+        self.assertNotIn("TOR_ARGS=", source)
+        self.assertGreaterEqual(source.count('--Log "notice stdout"'), 2)
+        self.assertIn("tor --verify-config", source)
+        self.assertIn("SOCKS5 listener ready on 127.0.0.1:9050", source)
+
     def test_procfile_does_not_duplicate_runtime_settings(self):
         self.assertEqual((ROOT / "Procfile").read_text().strip(), "web: gunicorn private_global_bootstrap:app")
 
