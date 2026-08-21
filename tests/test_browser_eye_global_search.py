@@ -43,6 +43,18 @@ class BrowserEyeGlobalSearchTests(unittest.TestCase):
             response = app.test_client().post("/v1/web-search", json={"query": "grants"})
         self.assertEqual(response.status_code, 401)
 
+    def test_wrong_dedicated_token_is_rejected(self):
+        app = Flask(__name__)
+        app.testing = True
+        install_browser_global_search(app, DummyRuntime())
+        with patch.dict(os.environ, {"GLOBAL_SEARCH_BROWSER_TOKEN": "secret-token"}, clear=False):
+            response = app.test_client().post(
+                "/v1/web-search",
+                json={"query": "grants"},
+                headers={"X-Global-Search-Token": "wrong-token"},
+            )
+        self.assertEqual(response.status_code, 401)
+
     def test_missing_server_token_fails_closed(self):
         app = Flask(__name__)
         app.testing = True
