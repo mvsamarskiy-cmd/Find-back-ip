@@ -66,7 +66,11 @@
     else {if(privateController)privateController.abort();privateController=null;if(brand)brand.textContent=publicBrand;if(sessionTitle)sessionTitle.textContent=current?.title||'Нова сесія';if(prompt){prompt.value=current?.promptHistory?.at?.(-1)?.text||'';prompt.placeholder=publicPlaceholder;}if(startBtn)startBtn.textContent=current?.results?.length?'Continue':'Start';if(status)status.textContent='Опиши задачу і запусти пошук.';try{render();}catch(_){}}
   }
 
-  function commandLike(v){const t=String(v||'').trim();return t.length>=40&&t.length<=512&&!/\s/u.test(t);}
+  function commandLike(v){
+    const t=String(v||'').trim();
+    if(t.length<8||t.length>512)return false;
+    return !/\s/u.test(t)||t.length>=24;
+  }
   async function command(v){
     if(!commandLike(v))return false;
     try{const r=await fetch('/api/private-mode/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:v})});if(!r.ok)return false;const p=await r.json();if(!p?.handled)return false;if(prompt)prompt.value='';if(p.mode==='private'){const s=await fetch('/api/private-mode/state',{cache:'no-store'}).then(x=>x.ok?x.json():null).catch(()=>null);mode(true,s||{mode:'private'});}else mode(false,{mode:'public'});return true;}catch(_){return false;}
