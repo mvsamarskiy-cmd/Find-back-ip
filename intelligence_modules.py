@@ -30,7 +30,7 @@ MODULES = (
             (r"\b(?:near me|nearby|closest|around me|open now|walking distance)\b", 6),
             (r"\b(?:directions|address)\b", 3),
             (r"\b(?:in|near|around)\s+[\wÀ-žА-Яа-яІіЇїЄєҐґ.-]{2,}\b", 3),
-            (r"\b(?:restaurant|hotel|cafe|coffee shop|bar|pharmacy|hospital|clinic|dentist|gym|salon|mechanic|parking|museum|park|attraction|airport|station|store|shop|bank|atm|school|police)\w*\b", 3),
+            (r"\b(?:(?:restaurant|hotel|cafe|coffee shop|bar|pharmacy|hospital|clinic|dentist|gym|salon|mechanic|parking|museum|park|attraction|airport|station|store|shop|atm|school|police)\w*|banks?)\b", 3),
             (r"\b(?:поруч|біля мене|найближч\w*|відкрит\w* зараз)\b", 6),
             (r"\b(?:адрес\w*|маршрут\w*)\b", 3),
             (r"\b(?:у|в|біля|поруч з)\s+[\wÀ-žА-Яа-яІіЇїЄєҐґ.-]{2,}\b", 3),
