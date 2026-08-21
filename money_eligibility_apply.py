@@ -29,13 +29,87 @@ def _eligibility_score(evaluation: dict) -> int:
     total = max(1, int(evaluation.get("mandatory_rules") or 0))
     passed = int(evaluation.get("passed") or 0)
     unknown = int(evaluation.get("unknown") or 0)
-    if state == "ineligible":
-        return 0
-    if state == "eligible_candidate":
-        return 100
-    if state == "possible":
-        return max(35, min(85, round(100 * passed / total - 8 * unknown)))
+    if state == "ineligible": return 0
+    if state == "eligible_candidate": return 100
+    if state == "possible": return max(35, min(85, round(100 * passed / total - 8 * unknown)))
     return 25 if evaluation.get("rules_observed") else 15
+
+
+def _compatible_geo(expected: str, actual_values: set[str]) -> bool:
+    if expected in actual_values:
+        return True
+    if expected == "EU" and "PL" in actual_values:
+        return True
+    return False
+
+
+def _alternative_check(field: str, rules: list[dict], profile: dict) -> dict:
+    facts = dict((profile or {}).get("facts") or {})
+    actual = facts.get(field)
+    expected = [rule.get("value") for rule in rules]
+    evidence = [rule.get("evidence") for rule in rules if rule.get("evidence")]
+    if actual is None:
+        return {
+            "rule_id": f"{field}:one_of", "field": field, "operator": "one_of", "expected": expected,
+            "profile_value": None, "state": "unknown", "reason": f"missing_profile_fact:{field}",
+            "evidence": evidence, "confidence": max([float(rule.get("confidence") or 0) for rule in rules] or [0]),
+            "mandatory": True,
+        }
+    values = set(actual if isinstance(actual, list) else [actual])
+    matched = any(_compatible_geo(str(item), values) for item in expected) if field == "geography" else bool(values & set(expected))
+    return {
+        "rule_id": f"{field}:one_of", "field": field, "operator": "one_of", "expected": expected,
+        "profile_value": actual, "state": "pass" if matched else "fail",
+        "reason": f"{field}_alternative_match" if matched else f"{field}_alternative_mismatch",
+        "evidence": evidence, "confidence": max([float(rule.get("confidence") or 0) for rule in rules] or [0]),
+        "mandatory": True,
+    }
+
+
+def _evaluate_grouped(rules: list[dict], profile: dict) -> dict:
+    """Treat allowed applicant/geography values as OR groups; all other rules remain AND."""
+    grouped, remaining = {}, []
+    for rule in rules or []:
+        field = rule.get("field")
+        operator = rule.get("operator")
+        if field in {"applicant_type", "geography"} and operator == "contains":
+            grouped.setdefault(field, []).append(rule)
+        else:
+            remaining.append(rule)
+
+    base = evaluate_eligibility(remaining, profile)
+    checks = list(base.get("checks") or [])
+    for field, alternatives in grouped.items():
+        checks.append(_alternative_check(field, alternatives, profile))
+
+    mandatory = [check for check in checks if check.get("mandatory", True)]
+    failed = [check for check in mandatory if check.get("state") == "fail"]
+    unknown = [check for check in mandatory if check.get("state") == "unknown"]
+    passed = [check for check in mandatory if check.get("state") == "pass"]
+    if failed:
+        state = "ineligible"
+    elif mandatory and not unknown and len(passed) == len(mandatory):
+        state = "eligible_candidate"
+    elif mandatory and passed:
+        state = "possible"
+    else:
+        state = "unknown"
+    missing = sorted({check.get("field") for check in unknown if check.get("field")})
+    return {
+        "version": base.get("version"),
+        "state": state,
+        "rules_observed": len(rules or []),
+        "mandatory_rules": len(mandatory),
+        "passed": len(passed),
+        "failed": len(failed),
+        "unknown": len(unknown),
+        "missing_profile_fields": missing,
+        "checks": checks,
+        "alternative_groups": {field: [rule.get("value") for rule in alternatives] for field, alternatives in grouped.items()},
+        "legal_eligibility_verified": False,
+        "award_probability_inferred": False,
+        "truth_semantics": "eligible_candidate_means_all_observed_rule_groups_match_not_all_legal_rules_known",
+    }
 
 
 def _adjust_record(record: dict, evaluation: dict, rules: list[dict], evidence_level: str) -> dict:
@@ -52,12 +126,10 @@ def _adjust_record(record: dict, evaluation: dict, rules: list[dict], evidence_l
     for check in evaluation.get("checks") or []:
         if check.get("state") == "fail":
             token = f"eligibility:{check.get('rule_id')}"
-            if token not in blockers:
-                blockers.append(token)
+            if token not in blockers: blockers.append(token)
     for field in evaluation.get("missing_profile_fields") or []:
         token = f"eligibility_fact:{field}"
-        if token not in unknowns:
-            unknowns.append(token)
+        if token not in unknowns: unknowns.append(token)
     row["blockers"] = blockers
     row["unknown_requirements"] = unknowns
 
@@ -88,7 +160,7 @@ def apply_eligibility_to_payload(payload: dict, *, eligibility_profile: dict) ->
         direct = _direct_rules(record)
         rules = direct or _fallback_rules(record)
         evidence_level = "direct_source" if direct else "retrieval_snippet"
-        evaluation = evaluate_eligibility(rules, eligibility_profile or {})
+        evaluation = _evaluate_grouped(rules, eligibility_profile or {})
         records.append(_adjust_record(record, evaluation, rules, evidence_level))
 
     records.sort(key=lambda row: (
@@ -120,8 +192,9 @@ def eligibility_apply_capabilities() -> dict:
         "version": ELIGIBILITY_APPLY_VERSION,
         "direct_source_rules_preferred": True,
         "snippet_rules_fallback": True,
+        "alternative_applicant_and_geography_rules_are_or_groups": True,
         "ineligible_requires_observed_rule_failure": True,
-        "eligible_candidate_requires_all_observed_mandatory_rules_pass": True,
+        "eligible_candidate_requires_all_observed_mandatory_rule_groups_pass": True,
         "unknown_profile_fields_preserved": True,
         "legal_eligibility_verified": False,
     }
