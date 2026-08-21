@@ -22,6 +22,50 @@ class IntelligenceModule:
 
 MODULES = (
     IntelligenceModule(
+        name="local",
+        version="local-v1",
+        threshold=6,
+        priority=50,
+        patterns=(
+            (r"\b(?:near me|nearby|closest|around me|open now|walking distance|directions|address)\b", 4),
+            (r"\b(?:in|near|around)\s+[\wÀ-žА-Яа-яІіЇїЄєҐґ.-]{2,}\b", 3),
+            (r"\b(?:restaurant|hotel|cafe|coffee shop|bar|pharmacy|hospital|clinic|dentist|gym|salon|mechanic|parking|museum|park|attraction|airport|station|store|shop)\w*\b", 3),
+            (r"\b(?:поруч|біля мене|найближч\w*|відкрит\w* зараз|адрес\w*|маршрут\w*)\b", 4),
+            (r"\b(?:у|в|біля|поруч з)\s+[\wÀ-žА-Яа-яІіЇїЄєҐґ.-]{2,}\b", 3),
+            (r"\b(?:ресторан\w*|готел\w*|кафе|кав'ярн\w*|бар\w*|аптек\w*|лікарн\w*|клінік\w*|стоматолог\w*|спортзал\w*|салон\w*|парков\w*|музе\w*|парк\w*|аеропорт\w*|вокзал\w*|магазин\w*)\b", 3),
+            (r"\b(?:w pobliżu|blisko mnie|najbliższ\w*|otwarte teraz|adres\w*|dojazd\w*)\b", 4),
+            (r"\b(?:w|koło|obok|blisko)\s+[\wÀ-žА-Яа-яІіЇїЄєҐґ.-]{2,}\b", 3),
+            (r"\b(?:restauracj\w*|hotel\w*|kawiarni\w*|bar\w*|aptek\w*|szpital\w*|klinik\w*|dentyst\w*|siłowni\w*|salon\w*|parking\w*|muze\w*|park\w*|lotnisk\w*|dworzec\w*|sklep\w*)\b", 3),
+        ),
+        query_suffixes=("address opening hours official website", "reviews directions"),
+        preferred_hosts=(
+            "tripadvisor.com", "yelp.com", "booking.com", "openstreetmap.org",
+            "foursquare.com", "mapquest.com",
+        ),
+    ),
+    IntelligenceModule(
+        name="product",
+        version="product-v1",
+        threshold=6,
+        priority=45,
+        patterns=(
+            (r"\b(?:where to buy|buy|purchase|shopping|for sale|in stock|best price|cheapest|discount|deal|price comparison|compare prices)\b", 6),
+            (r"\b(?:price|cost|specs?|specifications?|reviews?)\b", 3),
+            (r"\b(?:iphone|ipad|macbook|pixel|galaxy|playstation|xbox|laptop|phone|smartphone|camera|headphones|earbuds|television|\btv\b|monitor|router|vacuum|watch|shoes|sneakers|bike|bicycle)\w*\b", 3),
+            (r"\b(?:де купити|купити|продається|в наявності|найдешевш\w*|краща ціна|знижк\w*|акці\w*|порівняти ціни)\b", 6),
+            (r"\b(?:ціна|вартіст\w*|характеристик\w*|огляд\w*|відгук\w*)\b", 3),
+            (r"\b(?:айфон\w*|макбук\w*|ноутбук\w*|телефон\w*|смартфон\w*|камер\w*|навушник\w*|телевізор\w*|монітор\w*|роутер\w*|пилосос\w*|годинник\w*|взутт\w*|велосипед\w*)\b", 3),
+            (r"\b(?:gdzie kupić|kupić|na sprzedaż|dostępn\w*|najtaniej|najlepsza cena|promocj\w*|rabat\w*|porównaj ceny)\b", 6),
+            (r"\b(?:cena|koszt|specyfikacj\w*|recenzj\w*|opini\w*)\b", 3),
+            (r"\b(?:iphone\w*|macbook\w*|laptop\w*|telefon\w*|smartfon\w*|aparat\w*|słuchawk\w*|telewizor\w*|monitor\w*|router\w*|odkurzacz\w*|zegarek\w*|but\w*|rower\w*)\b", 3),
+        ),
+        query_suffixes=("price availability specifications reviews", "best deal retailer"),
+        preferred_hosts=(
+            "ceneo.pl", "idealo.de", "allegro.pl", "amazon.com", "amazon.de",
+            "ebay.com", "bestbuy.com", "walmart.com",
+        ),
+    ),
+    IntelligenceModule(
         name="technical",
         version="technical-v1",
         threshold=4,
