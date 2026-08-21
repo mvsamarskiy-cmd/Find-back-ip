@@ -27,7 +27,10 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
         self.assertNotIn("session_key", payload)
 
         universal = payload["universal_search"]
-        self.assertEqual(universal["intelligence_version"], "universal-router-v2")
+        self.assertEqual(universal["intelligence_version"], "universal-router-v3")
+        self.assertTrue(universal["natural_language_multi_intent_planning"])
+        self.assertEqual(universal["multi_intent"]["version"], "multi-intent-v1")
+        self.assertEqual(universal["multi_intent"]["max_routes"], 3)
         self.assertEqual(
             set(universal["modules"]),
             {"local", "product", "technical", "news", "company", "person"},

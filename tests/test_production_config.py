@@ -100,7 +100,7 @@ class ProductionConfigTests(TestCase):
     def test_private_bootstrap_layers_universal_search_over_canonical_bootstrap(self):
         source = (ROOT / "private_global_bootstrap.py").read_text(encoding="utf-8")
         self.assertIn("from telegram_bootstrap import app", source)
-        self.assertIn("from universal_search import search_universal", source)
+        self.assertIn("from universal_search_multi import search_universal", source)
         self.assertIn("global_searcher=search_universal", source)
 
     def test_ui_has_one_source_of_truth(self):

@@ -7,7 +7,7 @@ from telegram_bootstrap import app
 import app as app_module
 from global_search_provider_smoke import maybe_start_provider_smoke
 from private_mode import install_private_mode_routes, private_mode_diagnostics
-from universal_search import search_universal, universal_search_capabilities
+from universal_search_multi import search_universal, universal_search_capabilities
 
 
 install_private_mode_routes(app, app_module, global_searcher=search_universal)
