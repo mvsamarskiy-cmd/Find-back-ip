@@ -312,6 +312,7 @@ async def tor_fetch_async(runtime, url: str) -> dict:
         final_url = _clean(snapshot.get("final_url"), MAX_URL)
         host = (urlsplit(final_url).hostname or "").lower() if final_url else ""
         onion_location = safe_tor_url(headers.get("onion-location") or "")
+        body_text = str(snapshot.get("body_text") or "")[:50000]
         return {
             "provider": "browser_eye_tor_fetch",
             "provider_status": "complete",
@@ -323,8 +324,8 @@ async def tor_fetch_async(runtime, url: str) -> dict:
             "http_status": response.status if response else None,
             "title": _clean(snapshot.get("title"), 300),
             "canonical": _clean(snapshot.get("canonical"), MAX_URL),
-            "description": _clean(snapshot.get("body_text"), 1200),
-            "body_text": _clean(snapshot.get("body_text"), 50000),
+            "description": _clean(body_text, 1200),
+            "body_text": body_text,
             "links": [row for row in snapshot.get("links", []) if isinstance(row, dict)][:80],
             "onion_location": onion_location or None,
             "latency_ms": int((perf_counter() - started) * 1000),

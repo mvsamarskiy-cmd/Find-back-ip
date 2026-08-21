@@ -7,15 +7,22 @@ from telegram_bootstrap import app
 import app as app_module
 from global_search_provider_smoke import maybe_start_provider_smoke
 from private_mode import install_private_mode_routes, private_mode_diagnostics
+from private_research import install_private_research_routes, private_research_diagnostics
 from universal_search_tor import search_universal, universal_search_capabilities
 
 
 install_private_mode_routes(app, app_module, global_searcher=search_universal)
+install_private_research_routes(app, app_module)
 maybe_start_provider_smoke()
 
 PRIVATE_GLOBAL_MODE_TAG = '<script src="/static/private_global_mode.js?v=2"></script>'
 UNIVERSAL_GLOBAL_MODE_TAG = '<script src="/static/universal_global_mode.js?v=2"></script>'
-PRIVATE_GLOBAL_MODE_BUNDLE = PRIVATE_GLOBAL_MODE_TAG + "\n" + UNIVERSAL_GLOBAL_MODE_TAG
+PRIVATE_RESEARCH_BROWSER_TAG = '<script src="/static/private_research_browser.js?v=1"></script>'
+PRIVATE_GLOBAL_MODE_BUNDLE = "\n".join((
+    PRIVATE_GLOBAL_MODE_TAG,
+    UNIVERSAL_GLOBAL_MODE_TAG,
+    PRIVATE_RESEARCH_BROWSER_TAG,
+))
 
 
 @app.after_request
@@ -38,6 +45,7 @@ if append_private_global_controller in _callbacks:
 def api_private_mode_diagnostics():
     payload = private_mode_diagnostics()
     payload["universal_search"] = universal_search_capabilities()
+    payload["research_evidence"] = private_research_diagnostics()
     return jsonify(payload)
 
 
