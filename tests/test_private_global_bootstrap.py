@@ -34,10 +34,7 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
         self.assertEqual(universal["answer_synthesis"]["version"], "evidence-synthesis-v1")
         self.assertTrue(universal["answer_synthesis"]["deterministic"])
         self.assertTrue(universal["answer_synthesis"]["conflict_candidates"])
-        self.assertEqual(
-            universal["answer_synthesis"]["truth_semantics"],
-            "retrieval_evidence_not_verified_fact",
-        )
+        self.assertEqual(universal["answer_synthesis"]["truth_semantics"], "retrieval_evidence_not_verified_fact")
         entity = universal["entity_resolution"]
         self.assertEqual(entity["version"], "entity-resolution-v1")
         self.assertEqual(entity["scope"], "product_evidence")
@@ -45,16 +42,16 @@ class PrivateGlobalBootstrapTests(unittest.TestCase):
         self.assertTrue(entity["variant_resolution"])
         self.assertTrue(entity["comparison_requires_exact_variant_evidence"])
         self.assertFalse(entity["external_catalog_lookup"])
-        self.assertEqual(
-            set(universal["modules"]),
-            {"local", "product", "technical", "news", "company", "person"},
-        )
+        tor = universal["opportunity_transport"]
+        self.assertEqual(tor["version"], "tor-opportunity-retrieval-v1")
+        self.assertTrue(tor["onion_service_evidence"])
+        self.assertTrue(tor["onion_location_discovery"])
+        self.assertFalse(tor["verification_inferred_from_tor"])
+        self.assertEqual(universal["retrieval_transport_version"], "tor-opportunity-transport-v1")
+        self.assertEqual(set(universal["modules"]), {"local", "product", "technical", "news", "company", "person"})
         for module in universal["modules"].values():
             self.assertTrue(module["preferred_host_ranking_only"])
-            self.assertEqual(
-                module["truth_semantics"],
-                "retrieval_evidence_not_verified_fact",
-            )
+            self.assertEqual(module["truth_semantics"], "retrieval_evidence_not_verified_fact")
 
 
 if __name__ == "__main__":
