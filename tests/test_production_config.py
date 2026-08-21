@@ -97,11 +97,11 @@ class ProductionConfigTests(TestCase):
         source = (ROOT / "telegram_bootstrap.py").read_text(encoding="utf-8")
         self.assertLess(source.index("install()"), source.index("from app import app"))
 
-    def test_private_bootstrap_layers_opportunity_search_over_canonical_bootstrap(self):
+    def test_private_bootstrap_layers_universal_search_over_canonical_bootstrap(self):
         source = (ROOT / "private_global_bootstrap.py").read_text(encoding="utf-8")
         self.assertIn("from telegram_bootstrap import app", source)
-        self.assertIn("from opportunity_search import search_global as opportunity_search", source)
-        self.assertIn("global_searcher=opportunity_search", source)
+        self.assertIn("from universal_search import search_universal", source)
+        self.assertIn("global_searcher=search_universal", source)
 
     def test_ui_has_one_source_of_truth(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")

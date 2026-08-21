@@ -6,14 +6,16 @@ from flask import jsonify
 from telegram_bootstrap import app
 import app as app_module
 from global_search_provider_smoke import maybe_start_provider_smoke
-from opportunity_search import search_global as opportunity_search
 from private_mode import install_private_mode_routes, private_mode_diagnostics
+from universal_search import search_universal
 
 
-install_private_mode_routes(app, app_module, global_searcher=opportunity_search)
+install_private_mode_routes(app, app_module, global_searcher=search_universal)
 maybe_start_provider_smoke()
 
 PRIVATE_GLOBAL_MODE_TAG = '<script src="/static/private_global_mode.js?v=2"></script>'
+UNIVERSAL_GLOBAL_MODE_TAG = '<script src="/static/universal_global_mode.js?v=1"></script>'
+PRIVATE_GLOBAL_MODE_BUNDLE = PRIVATE_GLOBAL_MODE_TAG + "\n" + UNIVERSAL_GLOBAL_MODE_TAG
 
 
 @app.after_request
@@ -21,7 +23,7 @@ def append_private_global_controller(response):
     if response.mimetype == "text/html":
         body = response.get_data(as_text=True)
         if PRIVATE_GLOBAL_MODE_TAG not in body and "</body>" in body:
-            response.set_data(body.replace("</body>", PRIVATE_GLOBAL_MODE_TAG + "\n</body>", 1))
+            response.set_data(body.replace("</body>", PRIVATE_GLOBAL_MODE_BUNDLE + "\n</body>", 1))
             response.headers.pop("Content-Length", None)
     return response
 
