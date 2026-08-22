@@ -55,8 +55,10 @@ jobs:
       - run: node --check static/private_results_page_scroll_fix.js
       - run: node --check static/private_money_report.js
       - run: node --check static/private_report_run_identity.js
+      - run: node --check static/private_result_explainer.js
       - run: node --check verification/private_page_scroll_smoke.mjs
       - run: node --check verification/private_money_report_smoke.mjs
+      - run: node --check verification/private_mobile_result_quality_smoke.mjs
 
   postgres-session-store:
     runs-on: ubuntu-latest
