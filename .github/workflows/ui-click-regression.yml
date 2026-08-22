@@ -7,6 +7,7 @@ on:
       - 'templates/**'
       - 'telegram_bootstrap.py'
       - 'verification/ui_click_smoke.mjs'
+      - 'verification/private_page_scroll_smoke.mjs'
       - '.github/workflows/ui-click-regression.yml'
   workflow_dispatch:
 
@@ -49,6 +50,10 @@ jobs:
         env:
           NAMEMACHINE_TEST_URL: http://127.0.0.1:8080
         run: node verification/ui_click_smoke.mjs
+      - name: Check private page scrolling in Chromium and WebKit
+        env:
+          NAMEMACHINE_TEST_URL: http://127.0.0.1:8080
+        run: node verification/private_page_scroll_smoke.mjs
       - name: Dump server log on failure
         if: failure()
         run: cat /tmp/namemachine.log || true
