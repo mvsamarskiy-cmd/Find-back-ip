@@ -43,6 +43,7 @@ PRIVATE_MONEY_CONTROLS_TAG = '<script src="/static/private_money_controls_v24.js
 PRIVATE_RESEARCH_BROWSER_TAG = '<script src="/static/private_research_browser.js?v=1"></script>'
 PRIVATE_STOP_MOBILE_FIX_TAG = '<script src="/static/private_stop_mobile_fix.js?v=1"></script>'
 PRIVATE_RESULTS_PAGE_SCROLL_FIX_TAG = '<script src="/static/private_results_page_scroll_fix.js?v=1"></script>'
+PRIVATE_MONEY_REPORT_TAG = '<script src="/static/private_money_report.js?v=1"></script>'
 PRIVATE_GLOBAL_MODE_BUNDLE = "\n".join((
     PRIVATE_GLOBAL_MODE_TAG,
     UNIVERSAL_GLOBAL_MODE_TAG,
@@ -53,6 +54,7 @@ PRIVATE_GLOBAL_MODE_BUNDLE = "\n".join((
     PRIVATE_RESEARCH_BROWSER_TAG,
     PRIVATE_STOP_MOBILE_FIX_TAG,
     PRIVATE_RESULTS_PAGE_SCROLL_FIX_TAG,
+    PRIVATE_MONEY_REPORT_TAG,
 ))
 
 
