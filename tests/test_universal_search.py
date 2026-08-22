@@ -71,7 +71,7 @@ class UniversalSearchTests(unittest.TestCase):
                 "provider_status": "complete",
                 "results": [{
                     "title": "Photosynthesis overview",
-                    "description": "A general reference page",
+                    "description": "A general reference page explaining photosynthesis",
                     "url": "https://example.org/photosynthesis",
                 }],
             })
@@ -93,6 +93,72 @@ class UniversalSearchTests(unittest.TestCase):
         self.assertNotIn("European Union", calls[0][1]["json"]["query"])
         self.assertNotIn("grant", calls[0][1]["json"]["query"].lower())
         self.assertTrue(payload["results"])
+
+    def test_business_idea_typo_is_corrected_and_translation_noise_is_rejected(self):
+        calls = []
+
+        def fake_post(url, **kwargs):
+            calls.append(kwargs["json"]["query"])
+            return FakeResponse(200, {
+                "provider_status": "complete",
+                "results": [
+                    {
+                        "title": "DeepL Translator",
+                        "description": "Translate text instantly between many languages.",
+                        "url": "https://www.deepl.com/translator",
+                    },
+                    {
+                        "title": "25 business ideas to start in 2026",
+                        "description": "Business ideas, startup models and market trends for 2026.",
+                        "url": "https://example.org/business-ideas-2026",
+                    },
+                    {
+                        "title": "Google Translate",
+                        "description": "Free translation service for words and web pages.",
+                        "url": "https://translate.google.com/",
+                    },
+                ],
+            })
+
+        env = {
+            "BRAVE_SEARCH_API_KEY": "",
+            "BROWSER_EYE_URL": "http://browser-eye.internal",
+            "GLOBAL_SEARCH_BROWSER_TOKEN": "test-browser-token",
+        }
+        query = "Покажи ьізнес ідеї 2026"
+        with patch.dict(os.environ, env, clear=False):
+            payload = search_general_web(query, poster=fake_post)
+
+        self.assertEqual(calls, ["Покажи бізнес ідеї 2026"])
+        self.assertTrue(payload["query_normalized"])
+        self.assertEqual(payload["query"], query)
+        self.assertEqual(payload["normalized_query"], "Покажи бізнес ідеї 2026")
+        self.assertEqual(payload["intelligence_version"], "general-web-v2-semantic-guard")
+        self.assertEqual([row["host"] for row in payload["results"]], ["example.org"])
+        self.assertEqual(payload["result_guard"]["provider_rows"], 3)
+        self.assertEqual(payload["result_guard"]["accepted_rows"], 1)
+
+    def test_universal_router_uses_normalized_typo_query_for_retrieval(self):
+        calls = []
+
+        def fake_general(query, **_kwargs):
+            calls.append(query)
+            return {
+                "query": query,
+                "provider_status": "complete",
+                "results": [],
+                "search_plan": [query],
+                "intelligence_version": "general-web-v2-semantic-guard",
+            }
+
+        payload = search_universal(
+            "Покажи ьізнес ідеї 2026",
+            general_searcher=fake_general,
+        )
+        self.assertEqual(calls, ["Покажи бізнес ідеї 2026"])
+        self.assertEqual(payload["query"], "Покажи ьізнес ідеї 2026")
+        self.assertEqual(payload["normalized_query"], "Покажи бізнес ідеї 2026")
+        self.assertTrue(payload["query_normalized"])
 
     def test_module_search_expands_only_when_exact_query_is_sparse(self):
         calls = []
