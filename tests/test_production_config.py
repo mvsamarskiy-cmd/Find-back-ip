@@ -93,7 +93,10 @@ class ProductionConfigTests(TestCase):
         self.assertIn("def search_private_universal(", source)
         self.assertIn('money_kwargs["cancel_checker"] = cancel_checker', source)
         self.assertIn('kwargs["opportunity_searcher"] = cancellable_money', source)
-        self.assertIn("return search_universal(query, **kwargs)", source)
+        self.assertIn("payload = search_universal(query, **kwargs)", source)
+        self.assertIn("return apply_general_relevance_guard(payload, query=query)", source)
+        self.assertIn("looks_like_business_idea_query(query)", source)
+        self.assertIn("return search_business_ideas(query, **idea_kwargs)", source)
         self.assertIn("global_searcher=search_private_universal", source)
 
     def test_ui_has_one_source_of_truth(self):
