@@ -188,7 +188,12 @@ def apply_money_result_quality(payload: dict, *, category: object = "all", max_r
         for row in kept if isinstance(row.get("money_record"), dict)
     }
     kept_record_ids.discard("")
-    if isinstance(result.get("money_records"), list):
+    # Some internal callers legitimately provide graph-ready `money_records`
+    # without retrieval `results`. In that shape there is nothing to scope or
+    # deduplicate at the UI-row layer, so preserve those records for graph
+    # construction. When retrieval rows did exist, prune records to the rows that
+    # survived the final quality gate so rejected noise cannot leak into the graph.
+    if before > 0 and isinstance(result.get("money_records"), list):
         result["money_records"] = [
             record for record in result["money_records"]
             if isinstance(record, dict) and _clean(record.get("opportunity_id"), 160) in kept_record_ids
