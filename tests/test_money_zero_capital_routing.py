@@ -1,8 +1,9 @@
+from pathlib import Path
 import unittest
 
 from money_query_planner import build_money_search_plan, compile_money_profile
 from opportunity_search import infer_query_category
-from universal_search import classify_search_route
+from universal_search import classify_search_route, search_universal
 
 
 class ZeroCapitalMoneyRoutingTests(unittest.TestCase):
@@ -29,6 +30,35 @@ class ZeroCapitalMoneyRoutingTests(unittest.TestCase):
 
     def test_plain_business_research_is_not_forced_into_money(self):
         self.assertEqual(infer_query_category("Explain how a restaurant business works"), "all")
+
+    def test_universal_router_calls_money_lane_for_exact_regression_query(self):
+        calls = []
+
+        def fake_opportunity(query, **kwargs):
+            calls.append((query, kwargs))
+            return {
+                "query": query,
+                "provider_status": "complete",
+                "results": [],
+                "search_plan": [query],
+                "intelligence_version": "money-opportunity-search-v2.2",
+            }
+
+        def wrong_lane(*_args, **_kwargs):
+            raise AssertionError("zero-capital business query must not use generic/module search")
+
+        payload = search_universal(
+            "Знайди бізнес за 0 злотих",
+            category="all",
+            country="EU",
+            opportunity_searcher=fake_opportunity,
+            general_searcher=wrong_lane,
+            module_searcher=wrong_lane,
+        )
+        self.assertEqual(payload["intelligence_route"], "opportunity")
+        self.assertEqual(payload["routed_category"], "material")
+        self.assertEqual(calls[0][1]["category"], "material")
+        self.assertEqual(calls[0][1]["country"], "EU")
 
     def test_zero_zloty_becomes_explicit_capital_constraint_without_country_inference(self):
         profile = compile_money_profile("Знайди бізнес за 0 злотих", country="EU")
@@ -57,6 +87,14 @@ class ZeroCapitalMoneyRoutingTests(unittest.TestCase):
         constraint = profile["capital_constraint"]
         self.assertEqual(constraint["source"], "explicit_user_constraint")
         self.assertFalse(constraint["candidate_requirement_verified"])
+
+    def test_private_bootstrap_busts_stale_report_controls_asset(self):
+        bootstrap = Path("private_global_bootstrap.py").read_text(encoding="utf-8")
+        controls = Path("static/report_controls.js").read_text(encoding="utf-8")
+        self.assertIn('report_controls.js?v=5', bootstrap)
+        self.assertIn('report_controls.js?v=6', bootstrap)
+        self.assertIn('body.replace(STALE_REPORT_CONTROLS_TAG, FRESH_REPORT_CONTROLS_TAG)', bootstrap)
+        self.assertNotIn('search_reliability_overlay.js?v=1', controls)
 
 
 if __name__ == "__main__":
