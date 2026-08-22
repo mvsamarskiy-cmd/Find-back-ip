@@ -17,11 +17,7 @@
     note.textContent = 'Робоча сесія зберігає результати, shortlist і фідбек для продовження пошуку. TXT-звіт містить прямі лінки, Browser Eye факти та хронологію, щоб кожен результат можна було перепровірити.';
   }
 
-  if (!document.getElementById('searchReliabilityOverlay')) {
-    const script = document.createElement('script');
-    script.id = 'searchReliabilityOverlay';
-    script.src = '/static/search_reliability_overlay.js?v=1';
-    script.async = false;
-    document.body.appendChild(script);
-  }
+  // search_reliability_overlay.js is loaded explicitly once by telegram_bootstrap.
+  // Do not inject a second copy here: two independent wrappers duplicate sections
+  // 8–10 in the TXT report.
 })();
