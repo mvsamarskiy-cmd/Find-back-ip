@@ -133,19 +133,14 @@
       const response = await previousFetch(...args);
       if (meta) {
         run.http_status = response.status;
+        run.completed_at = nowIso();
         if (response.ok) {
-          try {
-            await response.clone().json();
-            run.status = 'completed';
-            run.completed_at = nowIso();
-          } catch (_) {
-            run.status = 'invalid_response';
-            run.completed_at = nowIso();
-            run.error = 'response_json_parse_failed';
-          }
+          // Do not clone+parse the large private payload here. The main search UI
+          // owns JSON validation/parsing; this layer records transport identity only.
+          // Re-parsing a 300KB+ response on mobile Safari was pure duplicate work.
+          run.status = 'completed';
         } else {
           run.status = 'http_error';
-          run.completed_at = nowIso();
           run.error = `HTTP ${response.status}`;
         }
       }

@@ -11,7 +11,7 @@ class PrivateMoneyReportTests(unittest.TestCase):
     def test_bootstrap_loads_private_report_after_private_ui_layers(self):
         body = app.test_client().get('/').get_data(as_text=True)
         report = '/static/private_money_report.js?v=1'
-        identity = '/static/private_report_run_identity.js?v=1'
+        identity = '/static/private_report_run_identity.js?v=2'
         scroll = '/static/private_results_page_scroll_fix.js?v=1'
         self.assertIn(report, body)
         self.assertIn(identity, body)
