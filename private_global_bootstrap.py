@@ -41,6 +41,7 @@ MONEY_ELIGIBILITY_UI_TAG = '<script src="/static/money_eligibility_ui.js?v=1"></
 MONEY_GRAPH_UI_TAG = '<script src="/static/money_graph_ui.js?v=1"></script>'
 PRIVATE_MONEY_CONTROLS_TAG = '<script src="/static/private_money_controls_v24.js?v=1"></script>'
 PRIVATE_RESEARCH_BROWSER_TAG = '<script src="/static/private_research_browser.js?v=1"></script>'
+PRIVATE_STOP_MOBILE_FIX_TAG = '<script src="/static/private_stop_mobile_fix.js?v=1"></script>'
 PRIVATE_GLOBAL_MODE_BUNDLE = "\n".join((
     PRIVATE_GLOBAL_MODE_TAG,
     UNIVERSAL_GLOBAL_MODE_TAG,
@@ -49,6 +50,7 @@ PRIVATE_GLOBAL_MODE_BUNDLE = "\n".join((
     MONEY_GRAPH_UI_TAG,
     PRIVATE_MONEY_CONTROLS_TAG,
     PRIVATE_RESEARCH_BROWSER_TAG,
+    PRIVATE_STOP_MOBILE_FIX_TAG,
 ))
 
 
