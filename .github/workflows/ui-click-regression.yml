@@ -10,6 +10,7 @@ on:
       - 'verification/ui_click_smoke.mjs'
       - 'verification/private_page_scroll_smoke.mjs'
       - 'verification/private_money_report_smoke.mjs'
+      - 'verification/private_mobile_result_quality_smoke.mjs'
       - '.github/workflows/ui-click-regression.yml'
   workflow_dispatch:
 
@@ -60,6 +61,10 @@ jobs:
         env:
           NAMEMACHINE_TEST_URL: http://127.0.0.1:8080
         run: node verification/private_money_report_smoke.mjs
+      - name: Check large private result response and explanations in Chromium and WebKit
+        env:
+          NAMEMACHINE_TEST_URL: http://127.0.0.1:8080
+        run: node verification/private_mobile_result_quality_smoke.mjs
       - name: Dump server log on failure
         if: failure()
         run: cat /tmp/namemachine.log || true
