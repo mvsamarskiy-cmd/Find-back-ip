@@ -9,6 +9,12 @@ from global_search_provider_smoke import maybe_start_provider_smoke
 from money_opportunity_graph_search import search_money_opportunities as search_money_with_graph
 from private_mode import install_private_mode_routes, private_mode_diagnostics
 from private_research import install_private_research_routes, private_research_diagnostics
+from search_query_quality import (
+    apply_general_relevance_guard,
+    looks_like_business_idea_query,
+    query_quality_capabilities,
+    search_business_ideas,
+)
 from universal_search_tor import search_universal, universal_search_capabilities
 
 
@@ -16,7 +22,23 @@ def search_private_universal(
     query, *, category="all", country="EU", requester=None, poster=None,
     cancel_checker=None,
 ):
-    """Keep Universal Search intact while making Money searches cooperatively cancellable."""
+    """Keep Universal Search intact while adding private query-quality safeguards."""
+    requested_category = str(category or "all").strip().lower().replace("-", "_")
+
+    # Business-idea discovery is a research intent, not automatically a grant or
+    # Money claim. Detect it only when the user left the Money category on ALL.
+    # The specialized search preserves the exact original query as lane 0, then
+    # uses a bounded typo repair / English market-discovery expansion.
+    if requested_category == "all" and looks_like_business_idea_query(query):
+        idea_kwargs = {"country": country}
+        if requester is not None:
+            idea_kwargs["requester"] = requester
+        if poster is not None:
+            idea_kwargs["poster"] = poster
+        if cancel_checker is not None:
+            idea_kwargs["cancel_checker"] = cancel_checker
+        return search_business_ideas(query, **idea_kwargs)
+
     kwargs = {"category": category, "country": country}
     if requester is not None:
         kwargs["requester"] = requester
@@ -27,7 +49,11 @@ def search_private_universal(
             money_kwargs["cancel_checker"] = cancel_checker
             return search_money_with_graph(*args, **money_kwargs)
         kwargs["opportunity_searcher"] = cancellable_money
-    return search_universal(query, **kwargs)
+
+    payload = search_universal(query, **kwargs)
+    # Generic web provider rank is not semantic relevance. A zero-overlap page
+    # must not survive merely because a search engine returned it near the top.
+    return apply_general_relevance_guard(payload, query=query)
 
 
 install_private_mode_routes(app, app_module, global_searcher=search_private_universal)
@@ -94,8 +120,9 @@ if append_private_global_controller in _callbacks:
 def api_private_mode_diagnostics():
     payload = private_mode_diagnostics()
     payload["universal_search"] = universal_search_capabilities()
+    payload["query_quality"] = query_quality_capabilities()
     payload["research_evidence"] = private_research_diagnostics()
     return jsonify(payload)
 
 
-__all__ = ["app"]
+__all__ = ["app", "search_private_universal"]
