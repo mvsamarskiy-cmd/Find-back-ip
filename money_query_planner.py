@@ -26,6 +26,23 @@ FAMILY_EXPANSIONS = {
     "other": "monetizable opportunity paid programme commercial opportunity",
 }
 
+# When the user explicitly asks for a business with no upfront capital, generic
+# funding vocabulary is too broad. These expansions search for concrete legal
+# mechanisms where a zero/near-zero cash contribution could plausibly occur.
+# They are discovery terms only: no candidate is labelled zero-cost without
+# source evidence that states the relevant acquisition/startup terms.
+ZERO_CAPITAL_FAMILY_EXPANSIONS = {
+    "assets": "business transfer takeover lease takeover liquidation distressed business token price no purchase price",
+    "local": "local business handover operator lease takeover agency reseller no entry fee",
+    "off_market": "public notice insolvency syndyk business transfer operator partner succession handover",
+    "revenue": "operator contract subcontract commission agency reseller revenue share service partnership",
+    "funding": "business start grant subsidy self employment support startup grant public aid",
+    "capital": "sweat equity operating partner partnership no cash contribution investor operator",
+    "finance": "vendor financing deferred payment earnout lease business acquisition",
+    "savings": "startup reimbursement fee waiver tax relief business start support",
+    "markets": "business opportunity demand gap local shortage low capital service",
+}
+
 LEGACY_CATEGORY_SCOPE = {
     "tender": "procurement",
     "auction": "public_auction",
@@ -44,6 +61,7 @@ NEED_FAMILY_HINTS = (
     ((r"\bexport\w*\b", r"\beksport\w*\b", r"\bекспорт\w*\b"), ("savings", "revenue", "markets", "finance")),
     ((r"\breal estate\b", r"\bnieruchomo[śs]\w*\b", r"\bнерухом\w*\b"), ("assets", "local", "finance", "off_market")),
     ((r"\bjob\w*\b", r"\bcontract\w*\b", r"\bzlecen\w*\b", r"\bробот\w*\b", r"\bконтракт\w*\b"), ("revenue", "local", "off_market")),
+    ((r"\bbusiness\b", r"\bbiznes\w*\b", r"\bfirma\w*\b", r"\bбізнес\w*\b"), ("assets", "local", "off_market", "revenue", "funding", "capital", "finance")),
 )
 
 APPLICANT_HINTS = {
@@ -53,6 +71,14 @@ APPLICANT_HINTS = {
     "company": (r"\bcompany\b", r"\bfirma\w*\b", r"\bsp[oó][łl]k\w*\b", r"\bкомпан\w*\b", r"\bбізнес\w*\b"),
     "ngo": (r"\bngo\b", r"\bfundacj\w*\b", r"\bstowarzyszen\w*\b", r"\bнго\b", r"\bфонд\w*\b"),
 }
+
+ZERO_CAPITAL_PATTERNS = (
+    r"\b0\s*(?:pln|z[łl]|zlot\w*|złot\w*|злот\w*|eur|€|usd|\$|грив\w*|uah)\b",
+    r"\b(?:za|for)\s*0\b",
+    r"\b(?:od|from|з)\s+(?:zera|zero|нуля)\b",
+    r"\b(?:bez|without|без)\s+(?:wk[łl]adu|kapita[łl]u|inwestycj\w*|capital|investment|upfront capital|вклад\w*|капітал\w*|інвестиц\w*)\b",
+    r"\bzero\s+(?:capital|budget|investment)\b",
+)
 
 
 def _clean(value: object, limit: int = 1800) -> str:
@@ -80,6 +106,28 @@ def _need_families(text: str) -> list[str]:
 
 def _applicant_types(text: str) -> list[str]:
     return [name for name, patterns in APPLICANT_HINTS.items() if any(re.search(pattern, text, flags=re.I) for pattern in patterns)]
+
+
+def _zero_capital_constraint(text: str) -> dict | None:
+    if not any(re.search(pattern, text, flags=re.I) for pattern in ZERO_CAPITAL_PATTERNS):
+        return None
+    # Do not infer Poland from PLN; country remains the explicit UI/search scope.
+    # Currency is only the unit of the user's stated cash constraint.
+    currency = None
+    if re.search(r"(?:\bpln\b|\bz[łl]\b|\bzlot\w*\b|\bzłot\w*\b|\bзлот\w*\b)", text, flags=re.I):
+        currency = "PLN"
+    elif re.search(r"(?:\beur\b|€|\bєвро\b)", text, flags=re.I):
+        currency = "EUR"
+    elif re.search(r"(?:\busd\b|\$|\bдолар\w*\b)", text, flags=re.I):
+        currency = "USD"
+    elif re.search(r"(?:\buah\b|\bгрив\w*\b)", text, flags=re.I):
+        currency = "UAH"
+    return {
+        "maximum_upfront_cash": 0,
+        "currency": currency,
+        "source": "explicit_user_constraint",
+        "candidate_requirement_verified": False,
+    }
 
 
 def _requested_scope(category: object) -> tuple[str | None, str | None, str]:
@@ -114,17 +162,19 @@ def compile_money_profile(query: object, *, country: object = "EU", category: ob
         if family not in families:
             families.append(family)
     amount = extract_amount(cleaned)
+    capital_constraint = _zero_capital_constraint(text)
     base = {
         "query": cleaned,
         "country": str(country or "EU").strip().upper(),
         "country_name": _country_name(country),
-        "money_intent": bool(scope_kind) or looks_like_material_opportunity(cleaned),
+        "money_intent": bool(scope_kind) or bool(capital_constraint) or looks_like_material_opportunity(cleaned),
         "requested_category": requested_category,
         "selected_scope": {"kind": scope_kind, "value": scope_value},
         "requested_types": explicit_types,
         "requested_families": families,
         "applicant_types": _applicant_types(text),
         "requested_amount": amount,
+        "capital_constraint": capital_constraint,
     }
     base["eligibility_profile"] = compile_eligibility_profile(cleaned, country=country, base_profile=base)
     return base
@@ -132,6 +182,9 @@ def compile_money_profile(query: object, *, country: object = "EU", category: ob
 
 def _family_order(profile: dict) -> list[str]:
     requested = list(profile.get("requested_families") or [])
+    if profile.get("capital_constraint"):
+        zero_capital = ["assets", "local", "off_market", "revenue", "funding", "capital", "finance", "savings", "markets"]
+        return list(dict.fromkeys([*requested, *zero_capital]))
     if requested:
         exploration = ["funding", "finance", "capital", "revenue", "assets", "savings", "local", "off_market", "markets"]
         return list(dict.fromkeys([*requested, *exploration]))
@@ -151,16 +204,17 @@ def build_money_search_plan(
     lanes = [{"query": cleaned, "lane": "exact", "family": None, "source_domain": None}]
     geography = profile["country_name"]
     family_order = _family_order(profile)
+    zero_capital = bool(profile.get("capital_constraint"))
 
     for family in family_order:
         if len(lanes) >= max_lanes:
             break
-        terms = FAMILY_EXPANSIONS.get(family)
+        terms = (ZERO_CAPITAL_FAMILY_EXPANSIONS if zero_capital else FAMILY_EXPANSIONS).get(family) or FAMILY_EXPANSIONS.get(family)
         if not terms:
             continue
         lanes.append({
             "query": _clean(f"{cleaned} {terms} {geography}"),
-            "lane": "mechanism_expansion",
+            "lane": "zero_capital_expansion" if zero_capital else "mechanism_expansion",
             "family": family,
             "source_domain": None,
         })
@@ -215,6 +269,8 @@ def money_query_planner_capabilities() -> dict:
         "explicit_category_scope": True,
         "explicit_eligibility_profile": True,
         "source_probe_lanes": True,
+        "zero_capital_constraint": True,
+        "zero_capital_business_lane_priority": True,
         "families": list(FAMILY_EXPANSIONS),
         "truth_semantics": "planner_inference_is_search_strategy_not_eligibility_or_profit_proof",
     }
