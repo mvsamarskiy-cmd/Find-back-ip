@@ -36,10 +36,13 @@ class SearchReliabilityUiTests(unittest.TestCase):
         ):
             self.assertIn(value, source)
 
-    def test_report_controls_load_overlay(self):
-        source = Path("static/report_controls.js").read_text(encoding="utf-8")
-        self.assertIn("search_reliability_overlay.js?v=1", source)
-        self.assertIn("TXT + перевірки", source)
+    def test_report_controls_do_not_double_load_reliability_overlay(self):
+        controls = Path("static/report_controls.js").read_text(encoding="utf-8")
+        bootstrap = Path("telegram_bootstrap.py").read_text(encoding="utf-8")
+        self.assertNotIn("search_reliability_overlay.js?v=1", controls)
+        self.assertIn('SEARCH_RELIABILITY_TAG = \'<script src="/static/search_reliability_overlay.js?v=2"></script>\'', bootstrap)
+        self.assertEqual(bootstrap.count('SEARCH_RELIABILITY_TAG ='), 1)
+        self.assertIn("TXT + перевірки", controls)
 
     def test_worker_entry_installs_hardening(self):
         source = Path("worker_entry.py").read_text(encoding="utf-8")
