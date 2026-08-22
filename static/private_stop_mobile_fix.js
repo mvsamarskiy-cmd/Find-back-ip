@@ -18,6 +18,23 @@
     return isPrivate() && start.disabled;
   }
 
+  function setDisabled(value) {
+    const next = Boolean(value);
+    if (stop.disabled !== next) stop.disabled = next;
+  }
+
+  function setAttr(name, value) {
+    if (stop.getAttribute(name) !== value) stop.setAttribute(name, value);
+  }
+
+  function setData(name, value) {
+    if (stop.dataset[name] !== value) stop.dataset[name] = value;
+  }
+
+  function setStyle(name, value) {
+    if (stop.style[name] !== value) stop.style[name] = value;
+  }
+
   function syncStopState() {
     if (!isPrivate()) {
       stop.style.removeProperty('pointer-events');
@@ -31,13 +48,13 @@
 
     const requested = stop.dataset.nmStopRequested === '1';
     const active = isBusy() && !requested;
-    stop.disabled = !active;
-    stop.setAttribute('aria-disabled', active ? 'false' : 'true');
-    stop.dataset.nmPrivateStopActive = active ? '1' : '0';
-    stop.style.pointerEvents = active ? 'auto' : 'none';
-    stop.style.touchAction = 'manipulation';
-    stop.style.position = 'relative';
-    stop.style.zIndex = '20';
+    setDisabled(!active);
+    setAttr('aria-disabled', active ? 'false' : 'true');
+    setData('nmPrivateStopActive', active ? '1' : '0');
+    setStyle('pointerEvents', active ? 'auto' : 'none');
+    setStyle('touchAction', 'manipulation');
+    setStyle('position', 'relative');
+    setStyle('zIndex', '20');
 
     if (!isBusy()) stop.removeAttribute('data-nm-stop-requested');
   }
@@ -47,8 +64,8 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     stop.dataset.nmStopRequested = '1';
-    stop.disabled = true;
-    stop.setAttribute('aria-disabled', 'true');
+    setDisabled(true);
+    setAttr('aria-disabled', 'true');
     try {
       stopSearch();
     } catch (_) {

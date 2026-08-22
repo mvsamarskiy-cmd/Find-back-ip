@@ -52,6 +52,8 @@ jobs:
       - run: node --check static/private_money_controls_v24.js
       - run: node --check static/private_research_browser.js
       - run: node --check static/private_stop_mobile_fix.js
+      - run: node --check static/private_results_page_scroll_fix.js
+      - run: node --check verification/private_page_scroll_smoke.mjs
 
   postgres-session-store:
     runs-on: ubuntu-latest

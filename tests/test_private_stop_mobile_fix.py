@@ -19,11 +19,18 @@ class PrivateStopMobileFixTests(unittest.TestCase):
         source = (ROOT / "static" / "private_stop_mobile_fix.js").read_text(encoding="utf-8")
         self.assertIn("document.body.classList.contains('nm-private-global')", source)
         self.assertIn("return isPrivate() && start.disabled", source)
-        self.assertIn("stop.disabled = !active", source)
-        self.assertIn("stop.style.pointerEvents = active ? 'auto' : 'none'", source)
+        self.assertIn("if (stop.disabled !== next) stop.disabled = next", source)
+        self.assertIn("setDisabled(!active)", source)
+        self.assertIn("setStyle('pointerEvents', active ? 'auto' : 'none')", source)
         self.assertIn("stopSearch();", source)
         self.assertIn("event.stopImmediatePropagation()", source)
         self.assertIn("new MutationObserver(syncStopState)", source)
+
+    def test_stop_observer_does_not_rewrite_the_observed_disabled_state_unconditionally(self):
+        source = (ROOT / "static" / "private_stop_mobile_fix.js").read_text(encoding="utf-8")
+        self.assertIn("observer.observe(stop, { attributes: true, attributeFilter: ['disabled'] })", source)
+        self.assertNotIn("stop.disabled = !active", source)
+        self.assertNotIn("stop.disabled = true;", source)
 
 
 if __name__ == "__main__":

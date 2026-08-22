@@ -27,13 +27,17 @@ class PrivateMoneyControlsV24Tests(unittest.TestCase):
         self.assertIn('ONION · ${onionOn ?', source)
         self.assertIn('DIRECT VERIFY · ${directOn ?', source)
 
-    def test_results_panel_is_promoted_to_main_screen_and_auto_scrolled(self):
+    def test_results_panel_follows_search_without_sticky_overlay(self):
         source = Path('static/private_money_controls_v24.js').read_text(encoding='utf-8')
-        self.assertIn("composer.insertAdjacentElement('beforebegin', panel)", source)
+        self.assertIn("composer.insertAdjacentElement('afterend', panel)", source)
         self.assertIn("panel.classList.add('nmm-primary-results')", source)
+        self.assertIn('body.nm-private-global .composer{position:relative;bottom:auto;z-index:auto}', source)
         self.assertIn("panel.scrollIntoView({behavior: 'smooth', block: 'start'})", source)
         self.assertIn("url.includes('/api/private-mode/search')", source)
         self.assertIn('nmPrivateMainCount', source)
+        self.assertIn("observer.observe(document.body, {attributes: true, attributeFilter: ['class']})", source)
+        self.assertNotIn('observer.observe(document.documentElement, {subtree: true, childList: true', source)
+        self.assertNotIn('bar.replaceChildren()', source)
 
     def test_explicit_off_market_family_is_first_planner_scope_without_mutating_exact_query(self):
         query = 'знайди цікаві можливості у Польщі'

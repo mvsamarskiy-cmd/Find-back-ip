@@ -82,7 +82,7 @@
       .nmm-transport-chip{border:1px solid var(--line);border-radius:999px;padding:5px 8px;font-size:11px;color:var(--muted)}
       .nmm-transport-chip.on{border-color:var(--ok);color:var(--ok)}
       .nmm-transport-chip.warn{border-color:#a9823f;color:#dcb869}
-      body.nm-private-global .composer{position:sticky;bottom:8px;z-index:25}
+      body.nm-private-global .composer{position:relative;bottom:auto;z-index:auto}
       @media(max-width:640px){body.nm-private-global #nmPrivateGlobalPanel.nmm-primary-results{min-height:56vh}.nmm-main-head{align-items:center}.nmm-main-title{font-size:18px}}
     `;
     document.head.appendChild(style);
@@ -175,6 +175,19 @@
     }
   }
 
+  function setTransportChip(bar, id, className, text) {
+    let chip = document.getElementById(id);
+    if (!chip) {
+      chip = node('span', className, text);
+      chip.id = id;
+      bar.appendChild(chip);
+      return chip;
+    }
+    if (chip.className !== className) chip.className = className;
+    if (chip.textContent !== text) chip.textContent = text;
+    return chip;
+  }
+
   function ensureTransport(panel) {
     let bar = document.getElementById('nmPrivateTransport');
     if (!bar) {
@@ -188,11 +201,10 @@
     const torOn = transport.enabled_by_default !== false;
     const onionOn = Boolean(transport.onion_service_evidence || transport.onion_location_discovery);
     const directOn = capability?.directVerification?.enabled !== false;
-    bar.replaceChildren();
-    const web = node('span', 'nmm-transport-chip on', 'WEB · ON'); web.id = 'nmTransportWeb'; bar.appendChild(web);
-    const tor = node('span', `nmm-transport-chip ${torOn ? 'on' : 'warn'}`, `TOR · ${torOn ? 'AUTO ON' : 'OFF'}`); tor.id = 'nmTransportTor'; bar.appendChild(tor);
-    const onion = node('span', `nmm-transport-chip ${onionOn ? 'on' : 'warn'}`, `ONION · ${onionOn ? 'EVIDENCE ON' : 'OFF'}`); onion.id = 'nmTransportOnion'; bar.appendChild(onion);
-    const direct = node('span', `nmm-transport-chip ${directOn ? 'on' : 'warn'}`, `DIRECT VERIFY · ${directOn ? 'ON' : 'OFF'}`); direct.id = 'nmTransportDirect'; bar.appendChild(direct);
+    setTransportChip(bar, 'nmTransportWeb', 'nmm-transport-chip on', 'WEB · ON');
+    setTransportChip(bar, 'nmTransportTor', `nmm-transport-chip ${torOn ? 'on' : 'warn'}`, `TOR · ${torOn ? 'AUTO ON' : 'OFF'}`);
+    setTransportChip(bar, 'nmTransportOnion', `nmm-transport-chip ${onionOn ? 'on' : 'warn'}`, `ONION · ${onionOn ? 'EVIDENCE ON' : 'OFF'}`);
+    setTransportChip(bar, 'nmTransportDirect', `nmm-transport-chip ${directOn ? 'on' : 'warn'}`, `DIRECT VERIFY · ${directOn ? 'ON' : 'OFF'}`);
   }
 
   function ensurePrimaryLayout() {
@@ -200,7 +212,7 @@
     const composer = document.querySelector('.composer');
     if (!panel || !composer) return;
     panel.classList.add('nmm-primary-results');
-    if (panel.nextElementSibling !== composer) composer.insertAdjacentElement('beforebegin', panel);
+    if (composer.nextElementSibling !== panel) composer.insertAdjacentElement('afterend', panel);
     ensureHeader(panel);
     ensureTransport(panel);
     populateCategory();
@@ -211,14 +223,17 @@
     const count = document.getElementById('nmPrivateMainCount');
     const records = Array.isArray(payload?.money_records) ? payload.money_records : null;
     const rows = records || (Array.isArray(payload?.results) ? payload.results : []);
-    if (count) count.textContent = `${rows.length} результатів · ${payload?.provider_status || 'unknown'}`;
+    const countText = `${rows.length} результатів · ${payload?.provider_status || 'unknown'}`;
+    if (count && count.textContent !== countText) count.textContent = countText;
 
     const tor = document.getElementById('nmTransportTor');
     const torState = payload?.tor_retrieval;
     if (tor && torState?.attempted) {
       const ok = torState.provider_status === 'complete';
-      tor.className = `nmm-transport-chip ${ok ? 'on' : 'warn'}`;
-      tor.textContent = `TOR · ${String(torState.provider_status || 'attempted').toUpperCase()}`;
+      const className = `nmm-transport-chip ${ok ? 'on' : 'warn'}`;
+      const text = `TOR · ${String(torState.provider_status || 'attempted').toUpperCase()}`;
+      if (tor.className !== className) tor.className = className;
+      if (tor.textContent !== text) tor.textContent = text;
     }
     const panel = document.getElementById('nmPrivateGlobalPanel');
     if (panel && document.body.classList.contains('nm-private-global')) {
@@ -252,7 +267,7 @@
   }
 
   const observer = new MutationObserver(() => refresh());
-  observer.observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['class']});
+  observer.observe(document.body, {attributes: true, attributeFilter: ['class']});
 
   addStyle();
   loadCapability();
