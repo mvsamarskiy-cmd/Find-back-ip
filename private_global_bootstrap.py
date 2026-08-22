@@ -57,13 +57,25 @@ PRIVATE_GLOBAL_MODE_BUNDLE = "\n".join((
     PRIVATE_MONEY_REPORT_TAG,
 ))
 
+# PR #134 changed report_controls.js but kept its old ?v=5 URL. Existing iPhone
+# sessions can therefore execute the cached pre-fix file, which dynamically loads
+# search_reliability_overlay.js?v=1 in addition to the canonical v2 tag. Rewrite
+# only the asset version in the production HTML shell so clients fetch the fixed
+# controls. This does not change report semantics or expose private-mode state.
+STALE_REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=5"></script>'
+FRESH_REPORT_CONTROLS_TAG = '<script src="/static/report_controls.js?v=6"></script>'
+
 
 @app.after_request
 def append_private_global_controller(response):
     if response.mimetype == "text/html":
         body = response.get_data(as_text=True)
+        if STALE_REPORT_CONTROLS_TAG in body:
+            body = body.replace(STALE_REPORT_CONTROLS_TAG, FRESH_REPORT_CONTROLS_TAG)
         if PRIVATE_GLOBAL_MODE_TAG not in body and "</body>" in body:
-            response.set_data(body.replace("</body>", PRIVATE_GLOBAL_MODE_BUNDLE + "\n</body>", 1))
+            body = body.replace("</body>", PRIVATE_GLOBAL_MODE_BUNDLE + "\n</body>", 1)
+        if body != response.get_data(as_text=True):
+            response.set_data(body)
             response.headers.pop("Content-Length", None)
     return response
 

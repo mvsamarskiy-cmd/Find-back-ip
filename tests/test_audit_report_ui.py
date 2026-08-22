@@ -10,12 +10,12 @@ class AuditReportUiTests(unittest.TestCase):
         self.assertIn('/static/audit_report.js?v=4', body)
         self.assertIn('/static/client_report.js?v=6', body)
         self.assertIn('/static/client_report_modes.js?v=2', body)
-        self.assertIn('/static/report_controls.js?v=5', body)
+        self.assertIn('/static/report_controls.js?v=6', body)
         self.assertLess(body.index('/static/background_search.js'), body.index('/static/audit_report.js?v=4'))
         self.assertLess(body.index('/static/audit_report.js?v=4'), body.index('/static/client_report.js?v=6'))
         self.assertLess(body.index('/static/client_report.js?v=6'), body.index('/static/client_report_modes.js?v=2'))
-        self.assertLess(body.index('/static/client_report_modes.js?v=2'), body.index('/static/report_controls.js?v=5'))
-        self.assertLess(body.index('/static/report_controls.js?v=5'), body.index('/static/feed_navigation.js'))
+        self.assertLess(body.index('/static/client_report_modes.js?v=2'), body.index('/static/report_controls.js?v=6'))
+        self.assertLess(body.index('/static/report_controls.js?v=6'), body.index('/static/feed_navigation.js'))
 
     def test_internal_compact_report_is_categorized_and_single_clock(self):
         source = Path("static/audit_report.js").read_text(encoding="utf-8")

@@ -11,7 +11,7 @@ class ReportMathV6Tests(unittest.TestCase):
         client_tag = '/static/client_report.js?v=6'
         modes_tag = '/static/client_report_modes.js?v=2'
         overlay_tag = '/static/report_math_overlay.js?v=1'
-        controls_tag = '/static/report_controls.js?v=5'
+        controls_tag = '/static/report_controls.js?v=6'
         for tag in (math_tag, client_tag, modes_tag, overlay_tag, controls_tag):
             self.assertIn(tag, body)
         self.assertLess(body.index(math_tag), body.index(client_tag))

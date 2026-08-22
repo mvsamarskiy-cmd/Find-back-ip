@@ -40,6 +40,13 @@ BROAD_MONEY_OPPORTUNITY_PATTERNS = (
     r"\b(?:матеріальн|фінансов|грошов)\w* можливост\w*\b",
     r"\bде (?:є|знайти) грош\w*\b",
     r"\bусі можливост\w*.*(?:грош|зароб|фінанс)\w*\b",
+    # A business constrained by zero/no upfront capital is a material-opportunity
+    # request, not a generic web lookup. Keep these patterns deliberately narrow:
+    # the word "business" alone must not hijack ordinary research queries.
+    r"\bбізнес\w*\b.*(?:\bза\s*0\b|\bз\s+нуля\b|\bбез\s+(?:вклад\w*|капітал\w*|інвестиц\w*))",
+    r"(?:\bзнайд\w*|\bшука\w*)[^\n]{0,120}\bбізнес\w*\b[^\n]{0,80}\b0\s*(?:злот\w*|грив\w*|євро|долар\w*)\b",
+    r"\bbiznes\w*\b.*(?:\bza\s*0\b|\bod\s+zera\b|\bbez\s+(?:wk[łl]adu|kapita[łl]u|inwestycj\w*))",
+    r"\bbusiness\w*\b.*(?:\bfor\s*0\b|\bfrom\s+zero\b|\bzero\s+(?:capital|budget)\b|\bno\s+upfront\s+(?:capital|investment)\b|\bwithout\s+(?:capital|investment)\b)",
 )
 
 
@@ -93,6 +100,7 @@ def opportunity_search_capabilities():
         "deep_source_verification": True,
         "natural_language_intent_routing": True,
         "material_opportunity_router": True,
+        "zero_capital_business_routing": True,
     })
     return payload
 
