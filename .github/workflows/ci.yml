@@ -54,6 +54,7 @@ jobs:
       - run: node --check static/private_stop_mobile_fix.js
       - run: node --check static/private_results_page_scroll_fix.js
       - run: node --check static/private_money_report.js
+      - run: node --check static/private_report_run_identity.js
       - run: node --check verification/private_page_scroll_smoke.mjs
       - run: node --check verification/private_money_report_smoke.mjs
 
