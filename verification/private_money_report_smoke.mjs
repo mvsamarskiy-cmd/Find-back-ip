@@ -52,15 +52,25 @@ async function run(browserType, name) {
       failures.push(`${name}: reliability overlay loaded ${reliabilityRequests.length} times`);
     }
 
-    const loaded = await page.evaluate(() => Boolean(window.__nmPrivateMoneyReport));
-    if (!loaded) failures.push(`${name}: private Money report overlay did not load`);
+    const loaded = await page.evaluate(() => ({
+      report: Boolean(window.__nmPrivateMoneyReport),
+      identity: Boolean(window.__nmPrivateReportRunIdentityInstalled),
+    }));
+    if (!loaded.report) failures.push(`${name}: private Money report overlay did not load`);
+    if (!loaded.identity) failures.push(`${name}: private report run identity guard did not load`);
+
+    await page.evaluate(() => document.body.classList.add('nm-private-global'));
+    const preSearchText = await page.evaluate(() => window.clientReportTxt?.() || '');
+    if (!preSearchText.includes('no_search_in_this_page')) failures.push(`${name}: no-search report does not expose run state`);
+    if (!preSearchText.includes('Старий in-memory payload навмисно не видається за новий результат')) {
+      failures.push(`${name}: stale-payload guard warning missing before search`);
+    }
 
     await page.route('**/api/private-mode/search', async route => {
       await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(payload)});
     });
 
     await page.evaluate(async () => {
-      document.body.classList.add('nm-private-global');
       const response = await fetch('/api/private-mode/search', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -80,10 +90,15 @@ async function run(browserType, name) {
       htmlLabel: document.getElementById('downloadClientHtml')?.textContent || '',
       txtLabel: document.getElementById('downloadClientTxt')?.textContent || '',
       snapshot: window.__nmPrivateMoneyReportSnapshot?.() || null,
+      identity: window.__nmPrivateReportRunIdentity?.() || null,
     }));
 
     const required = [
       'MONEY / GLOBAL SEARCH REPORT',
+      '0. ІДЕНТИЧНІСТЬ ЗАПУСКУ',
+      'Search ID: report-smoke-1234',
+      'Стан run: completed',
+      'Git commit:',
       'Знайди мені бізнес з 0 в Польщі',
       'Знайдено можливостей / джерел: 1',
       'Test Polish microbusiness opportunity',
@@ -102,6 +117,8 @@ async function run(browserType, name) {
     if (!state.htmlLabel.includes('Money / Global')) failures.push(`${name}: HTML report label is not private-mode specific`);
     if (!state.txtLabel.includes('Money / Global')) failures.push(`${name}: TXT report label is not private-mode specific`);
     if (state.snapshot?.payload?.results?.length !== 1) failures.push(`${name}: private payload snapshot was not captured`);
+    if (state.identity?.run?.search_id !== 'report-smoke-1234') failures.push(`${name}: run identity did not capture search_id`);
+    if (state.identity?.run?.status !== 'completed') failures.push(`${name}: run identity did not reach completed`);
 
     console.log(JSON.stringify({browser: name, reliabilityRequests: reliabilityRequests.length, reportLength: state.text.length}, null, 2));
   } catch (error) {
