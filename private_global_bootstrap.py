@@ -44,6 +44,7 @@ PRIVATE_RESEARCH_BROWSER_TAG = '<script src="/static/private_research_browser.js
 PRIVATE_STOP_MOBILE_FIX_TAG = '<script src="/static/private_stop_mobile_fix.js?v=1"></script>'
 PRIVATE_RESULTS_PAGE_SCROLL_FIX_TAG = '<script src="/static/private_results_page_scroll_fix.js?v=1"></script>'
 PRIVATE_MONEY_REPORT_TAG = '<script src="/static/private_money_report.js?v=1"></script>'
+PRIVATE_REPORT_RUN_IDENTITY_TAG = '<script src="/static/private_report_run_identity.js?v=1"></script>'
 PRIVATE_GLOBAL_MODE_BUNDLE = "\n".join((
     PRIVATE_GLOBAL_MODE_TAG,
     UNIVERSAL_GLOBAL_MODE_TAG,
@@ -55,6 +56,7 @@ PRIVATE_GLOBAL_MODE_BUNDLE = "\n".join((
     PRIVATE_STOP_MOBILE_FIX_TAG,
     PRIVATE_RESULTS_PAGE_SCROLL_FIX_TAG,
     PRIVATE_MONEY_REPORT_TAG,
+    PRIVATE_REPORT_RUN_IDENTITY_TAG,
 ))
 
 # PR #134 changed report_controls.js but kept its old ?v=5 URL. Existing iPhone
