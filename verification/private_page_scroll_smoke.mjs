@@ -3,20 +3,37 @@ import { chromium, webkit } from 'playwright';
 const base = (process.env.NAMEMACHINE_TEST_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const failures = [];
 
+function bounded(label, promise, ms = 8_000) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function run(browserType, name) {
-  const browser = await browserType.launch({ headless: true });
+  console.log(`[${name}] launch`);
+  const browser = await bounded(`${name} launch`, browserType.launch({ headless: true }), 15_000);
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,
   });
   const page = await context.newPage();
+  page.setDefaultTimeout(5_000);
+  page.setDefaultNavigationTimeout(12_000);
   try {
-    const response = await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 20_000 });
+    console.log(`[${name}] goto`);
+    const response = await bounded(
+      `${name} goto`,
+      page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 12_000 }),
+      14_000,
+    );
     if (response?.status() !== 200) failures.push(`${name}: root status ${response?.status()}`);
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(500);
 
-    await page.evaluate(() => {
+    console.log(`[${name}] activate private layout`);
+    await bounded(`${name} activate private layout`, page.evaluate(() => {
       document.body.classList.add('nm-private-global');
       const results = document.getElementById('nmPrivateResults');
       if (results) {
@@ -26,10 +43,11 @@ async function run(browserType, name) {
         filler.style.pointerEvents = 'none';
         results.appendChild(filler);
       }
-    });
-    await page.waitForTimeout(350);
+    }), 6_000);
+    await page.waitForTimeout(250);
 
-    const layout = await page.evaluate(() => {
+    console.log(`[${name}] inspect layout`);
+    const layout = await bounded(`${name} inspect layout`, page.evaluate(() => {
       const composer = document.querySelector('.composer');
       const panel = document.getElementById('nmPrivateGlobalPanel');
       const viewport = document.getElementById('nmPrivateViewport');
@@ -51,7 +69,7 @@ async function run(browserType, name) {
         scrollHeight: (document.scrollingElement || document.documentElement).scrollHeight,
         clientHeight: document.documentElement.clientHeight,
       };
-    });
+    }), 6_000);
 
     if (!layout.fixLoaded) failures.push(`${name}: page-scroll fix did not load`);
     if (layout.composerPosition === 'sticky' || layout.composerPosition === 'fixed') {
@@ -78,15 +96,18 @@ async function run(browserType, name) {
 
     const down = page.locator('#nmScrollDown');
     const up = page.locator('#nmScrollUp');
-    if (await down.count()) {
-      await down.click({ timeout: 5_000 });
-      await page.waitForTimeout(900);
-      const downY = await page.evaluate(() => window.scrollY);
+    const downCount = await bounded(`${name} count scroll buttons`, down.count(), 3_000);
+    if (downCount) {
+      console.log(`[${name}] click down`);
+      await bounded(`${name} click down`, down.click({ timeout: 4_000 }), 5_000);
+      await page.waitForTimeout(700);
+      const downY = await bounded(`${name} read down scroll`, page.evaluate(() => window.scrollY), 4_000);
       if (!(downY > 200)) failures.push(`${name}: page Down button did not scroll document (${downY})`);
 
-      await up.click({ timeout: 5_000 });
-      await page.waitForTimeout(900);
-      const upY = await page.evaluate(() => window.scrollY);
+      console.log(`[${name}] click up`);
+      await bounded(`${name} click up`, up.click({ timeout: 4_000 }), 5_000);
+      await page.waitForTimeout(700);
+      const upY = await bounded(`${name} read up scroll`, page.evaluate(() => window.scrollY), 4_000);
       if (!(upY < 20)) failures.push(`${name}: page Up button did not return to top (${upY})`);
     } else {
       failures.push(`${name}: page scroll buttons missing`);
@@ -96,7 +117,10 @@ async function run(browserType, name) {
   } catch (error) {
     failures.push(`${name}: ${String(error?.stack || error)}`);
   } finally {
-    await browser.close();
+    console.log(`[${name}] close`);
+    await bounded(`${name} browser close`, browser.close(), 8_000).catch(error => {
+      failures.push(`${name}: ${String(error?.message || error)}`);
+    });
   }
 }
 
