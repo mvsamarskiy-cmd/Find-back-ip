@@ -6,6 +6,7 @@ on:
       - 'static/**'
       - 'templates/**'
       - 'telegram_bootstrap.py'
+      - 'private_global_bootstrap.py'
       - 'verification/ui_click_smoke.mjs'
       - 'verification/private_page_scroll_smoke.mjs'
       - '.github/workflows/ui-click-regression.yml'
@@ -33,11 +34,11 @@ jobs:
           pip install -r requirements.txt
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium webkit
-      - name: Start branch application
+      - name: Start production private bootstrap
         shell: bash
         run: |
           set -euo pipefail
-          PORT=8080 gunicorn telegram_bootstrap:app --config gunicorn.conf.py >/tmp/namemachine.log 2>&1 &
+          PORT=8080 gunicorn private_global_bootstrap:app --config gunicorn.conf.py >/tmp/namemachine.log 2>&1 &
           for attempt in {1..30}; do
             if curl -fsS http://127.0.0.1:8080/health >/dev/null; then
               exit 0
