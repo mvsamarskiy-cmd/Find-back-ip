@@ -33,6 +33,7 @@ STATUS_VALUES = (
 )
 ACTIONABLE_STATUSES = frozenset({"claimable", "purchasable"})
 UNRESOLVED_STATUSES = frozenset({"rate_limited", "unknown"})
+TELEGRAM_USERNAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_")
 
 
 def normalize_resources(resources=None):
@@ -306,8 +307,6 @@ def check_instagram(name):
                     "Instagram page is unavailable; claimability is not confirmed",
                     url, confidence=0.62, occupancy="not_found",
                 )
-            # A generic HTTP 200 may be a login/challenge page, so it is not
-            # sufficient evidence that the requested handle exists.
             handle = name.lower()
             profile_markers = (f'\"username\":\"{handle}\"', f'@{handle}')
             if any(marker in text for marker in profile_markers):
@@ -326,13 +325,25 @@ def check_instagram(name):
 
 
 def check_telegram(name):
-    url = f"https://t.me/{name.lower()}"
+    """Public t.me evidence only — never promotes free claimability without MTProto."""
+    handle = str(name or "").lower().lstrip("@")
+    url = f"https://t.me/{handle}"
+    if not (5 <= len(handle) <= 32) or any(ch not in TELEGRAM_USERNAME_CHARS for ch in handle):
+        return _result(
+            "invalid",
+            "Telegram usernames must be 5-32 characters (letters, digits, underscore)",
+            url,
+            method="username_syntax",
+            confidence=0.99,
+            occupancy="unknown",
+            claimability="not_claimable",
+        )
     try:
         response = requests.get(
             url,
             timeout=HTTP_TIMEOUT,
             allow_redirects=True,
-            headers={"User-Agent": "Mozilla/5.0"},
+            headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.8"},
         )
         text = response.text.lower()
         if response.status_code == 404:
@@ -342,10 +353,40 @@ def check_telegram(name):
                 url, confidence=0.72, occupancy="not_found",
             )
         if response.status_code == 200:
-            if "tgme_page_title" in text and "tgme_page_extra" in text:
+            has_profile_card = "tgme_page_title" in text and "tgme_page_extra" in text
+            has_peer_action = any(
+                marker in text
+                for marker in (
+                    "tgme_action_button_new",
+                    "tgme_page_action",
+                    "tgme_page_context_link",
+                )
+            )
+            generic_missing = any(
+                marker in text
+                for marker in (
+                    "if you have telegram, you can contact @",
+                    "username not found",
+                    "this username doesn't exist",
+                    "this username doesn’t exist",
+                )
+            )
+            if has_profile_card and has_peer_action and not generic_missing:
                 return _result(
-                    "taken", "Public Telegram page exists", url,
-                    confidence=0.85, occupancy="occupied", claimability="not_claimable",
+                    "taken",
+                    "Public Telegram peer profile/channel card observed",
+                    url,
+                    confidence=0.88,
+                    occupancy="occupied",
+                    claimability="not_claimable",
+                )
+            if generic_missing:
+                return _result(
+                    "not_found",
+                    "Telegram public page shows no concrete peer; claimability is not confirmed",
+                    url,
+                    confidence=0.68,
+                    occupancy="not_found",
                 )
             return _result("unknown", "Telegram response inconclusive", url)
         if response.status_code == 429:
@@ -358,13 +399,7 @@ def check_telegram(name):
 
 
 def _check_public_profile(name, platform, url, taken_markers=(), missing_markers=()):
-    """Classify public evidence without equating absence with claimability.
-
-    Social platforms can return a 404 or a missing-account page for blocked,
-    reserved, suspended, localized, or otherwise unavailable handles. Those
-    responses are useful evidence that no public profile was observed, but
-    they do not prove the handle can be claimed.
-    """
+    """Classify public evidence without equating absence with claimability."""
     handle = name.lower()
     try:
         response = requests.get(
@@ -557,8 +592,6 @@ def check_all(name, resources=None):
         "total_resources": len(checks),
         "all_claimable": claimable_count == len(checks),
         "all_verified": unresolved_count == 0,
-        # Compatibility for API clients from before the evidence-status release.
-        # Only confirmed actionable results count; ``not_found`` never does.
         "available_count": actionable_count,
         "all_available": actionable_count == len(checks),
     }

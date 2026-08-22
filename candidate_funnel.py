@@ -3,10 +3,12 @@ import re
 
 VOWELS = frozenset("aeiouy")
 LOCAL_SOURCE = "local_lexical_expansion"
-DEFAULT_LOCAL_RAW_LIMIT = 4000
-DEFAULT_STRUCTURAL_LIMIT = 1200
-DEFAULT_LINGUISTIC_LIMIT = 420
-DEFAULT_COLLISION_LIMIT = 180
+# Production-safe defaults scaled for Railway disk/CPU capacity.
+# External network checks remain capped elsewhere; this only expands cheap local search.
+DEFAULT_LOCAL_RAW_LIMIT = 20000
+DEFAULT_STRUCTURAL_LIMIT = 6000
+DEFAULT_LINGUISTIC_LIMIT = 1500
+DEFAULT_COLLISION_LIMIT = 300
 
 # Deliberately small stoplist: the local expander should use project-specific
 # nouns/adjectives, not prose glue from a brief. It is not a semantic model.
@@ -97,7 +99,7 @@ def _candidate(name, family, roots, pattern):
 
 def _expand_raw_local_families(brief="", brand_dna=None, limit=DEFAULT_LOCAL_RAW_LIMIT):
     """Create a large deterministic raw pool without another AI request."""
-    limit = max(0, min(10000, int(limit)))
+    limit = max(0, min(25000, int(limit)))
     seeds = lexical_seeds(brief, brand_dna)
     if len(seeds) < 2 or limit == 0:
         return []
@@ -306,7 +308,7 @@ def _stage_rows(
     linguistic_limit=DEFAULT_LINGUISTIC_LIMIT,
     collision_limit=DEFAULT_COLLISION_LIMIT,
 ):
-    structural_limit = max(1, min(5000, int(structural_limit)))
+    structural_limit = max(1, min(10000, int(structural_limit)))
     linguistic_limit = max(1, min(structural_limit, int(linguistic_limit)))
     collision_limit = max(1, min(linguistic_limit, int(collision_limit)))
 
@@ -351,11 +353,11 @@ def _stage_rows(
     }
 
 
-def expand_local_families(brief="", brand_dna=None, limit=180):
+def expand_local_families(brief="", brand_dna=None, limit=300):
     """Return the best local survivors from a much larger cheap candidate space.
 
     The public `limit` remains the returned-pool limit for backward compatibility.
-    Internally the generator explores up to 4,000 deterministic candidates and
+    Internally the generator explores up to 20,000 deterministic candidates and
     reduces them through structural, readability, and internal-collision stages.
     """
     limit = max(0, min(DEFAULT_COLLISION_LIMIT, int(limit)))
@@ -385,7 +387,7 @@ def staged_candidate_pool(
     collision_limit=DEFAULT_COLLISION_LIMIT,
 ):
     """Expose the full hybrid pre-check funnel with stage metrics for tests/audit."""
-    local_limit = max(0, min(10000, int(local_limit)))
+    local_limit = max(0, min(25000, int(local_limit)))
     model_rows = [dict(row) for row in model_candidates if isinstance(row, dict)]
     local_rows = _expand_raw_local_families(brief, brand_dna, limit=local_limit)
     survivors, metrics = _stage_rows(
